@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 members = [
     "ai-accounts-core",
     "ai-accounts-litestar",
+    "ai-accounts-playground",
     "ai-accounts-workspace",
 ]
 
@@ -40,6 +41,23 @@ dependencies = [
 requires-dist = [
     { name = "ai-accounts-core", editable = "packages/core" },
     { name = "litestar", extras = ["standard"], specifier = ">=2.12" },
+]
+
+[[package]]
+name = "ai-accounts-playground"
+version = "0.0.0"
+source = { editable = "apps/playground" }
+dependencies = [
+    { name = "ai-accounts-core" },
+    { name = "ai-accounts-litestar" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ai-accounts-core", editable = "packages/core" },
+    { name = "ai-accounts-litestar", editable = "packages/litestar" },
+    { name = "uvicorn", specifier = ">=0.30" },
 ]
 
 [[package]]

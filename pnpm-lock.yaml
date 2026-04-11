@@ -39,6 +39,34 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.17)(happy-dom@15.11.7)
 
+  apps/playground:
+    dependencies:
+      '@ai-accounts/ts-core':
+        specifier: workspace:*
+        version: link:../../packages/ts-core
+      '@ai-accounts/vue-headless':
+        specifier: workspace:*
+        version: link:../../packages/vue-headless
+      '@ai-accounts/vue-styled':
+        specifier: workspace:*
+        version: link:../../packages/vue-styled
+      vue:
+        specifier: ^3.4.0
+        version: 3.5.32(typescript@5.9.3)
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^5.1.0
+        version: 5.2.4(vite@5.4.21(@types/node@22.19.17))(vue@3.5.32(typescript@5.9.3))
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.21(@types/node@22.19.17)
+      vue-tsc:
+        specifier: ^2.1.0
+        version: 2.2.12(typescript@5.9.3)
+
   docs:
     devDependencies:
       vitepress:

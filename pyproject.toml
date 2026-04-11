@@ -5,7 +5,7 @@ description = "ai-accounts monorepo workspace root (not published)"
 requires-python = ">=3.11"
 
 [tool.uv.workspace]
-members = ["packages/core", "packages/litestar"]
+members = ["packages/core", "packages/litestar", "apps/playground"]
 
 [tool.uv]
 dev-dependencies = [
