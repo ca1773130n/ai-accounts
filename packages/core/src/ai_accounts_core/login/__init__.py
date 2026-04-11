@@ -8,11 +8,13 @@ from ai_accounts_core.login.events import (
     TextPrompt,
     UrlPrompt,
 )
+from ai_accounts_core.login.session import LoginSession
 
 __all__ = [
     "LoginComplete",
     "LoginEvent",
     "LoginFailed",
+    "LoginSession",
     "ProgressUpdate",
     "PromptAnswer",
     "StdoutChunk",
