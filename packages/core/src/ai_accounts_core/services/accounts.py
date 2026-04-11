@@ -5,9 +5,6 @@ import shutil
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
-
-import msgspec
 
 from ai_accounts_core.domain.backend import (
     Backend,
@@ -16,15 +13,9 @@ from ai_accounts_core.domain.backend import (
     DetectResult,
 )
 from ai_accounts_core.ids import new_id
-from ai_accounts_core.protocols.backend import (
-    BackendProtocol,
-    CredentialLogin,
-    LoginError,
-    LoginFlow,
-    LoginResult,
-    Model,
-    OAuthDeviceLogin,
-)
+from ai_accounts_core.login import LoginSession
+from ai_accounts_core.login.registry import LoginSessionRegistry
+from ai_accounts_core.protocols.backend import BackendProtocol, Model
 from ai_accounts_core.protocols.storage import StorageProtocol
 from ai_accounts_core.protocols.vault import VaultProtocol
 
@@ -45,12 +36,6 @@ def _now() -> datetime:
 _SENTINEL: object = object()
 
 
-class LoginResponse(msgspec.Struct, kw_only=True):
-    kind: Literal["complete", "pending"]
-    backend: Backend | None = None
-    oauth: OAuthDeviceLogin | None = None
-
-
 class AccountService:
     def __init__(
         self,
@@ -59,12 +44,18 @@ class AccountService:
         vault: VaultProtocol,
         backends: Mapping[str, BackendProtocol],
         isolation_base_dir: Path,
+        login_registry: LoginSessionRegistry | None = None,
     ) -> None:
         self._storage = storage
         self._vault = vault
         self._backend_impls: dict[str, BackendProtocol] = dict(backends)
         self._isolation_base_dir = Path(isolation_base_dir)
         self._isolation_base_dir.mkdir(parents=True, exist_ok=True)
+        self._login_registry = login_registry or LoginSessionRegistry()
+
+    @property
+    def login_registry(self) -> LoginSessionRegistry:
+        return self._login_registry
 
     def available_kinds(self) -> builtins.list[str]:
         return sorted(self._backend_impls.keys())
@@ -159,11 +150,17 @@ class AccountService:
             )
         return result
 
-    async def login(
-        self, backend_id: str, *, flow_kind: str, inputs: dict[str, str]
-    ) -> LoginResponse:
+    async def begin_login(
+        self,
+        backend_id: str,
+        *,
+        flow_kind: str,
+        inputs: dict[str, str],
+    ) -> LoginSession:
         backend = await self.get(backend_id)
-        impl = self._backend_impls[backend.kind]
+        impl = self._backend_impls.get(backend.kind)
+        if impl is None:
+            raise BackendKindUnknown(f"backend kind '{backend.kind}' not registered")
         if flow_kind not in impl.supported_login_flows:
             raise LoginFlowUnsupported(
                 f"{backend.kind} does not support flow {flow_kind!r}; "
@@ -171,36 +168,25 @@ class AccountService:
             )
         isolation_dir = self._isolation_dir(backend_id)
         isolation_dir.mkdir(parents=True, exist_ok=True)
-        result = await impl.login(
-            LoginFlow(kind=flow_kind, inputs=inputs),
+        session = impl.begin_login(
+            flow_kind=flow_kind,
+            config=dict(backend.config),
+            vault_ctx={"backend_id": backend_id, "kind": backend.kind},
             isolation_dir=isolation_dir,
         )
-        return await self._handle_login_result(backend, result)
+        await self._login_registry.register(session)
+        return session
 
-    async def poll_login(
-        self, backend_id: str, *, handle: str
-    ) -> LoginResponse:
+    async def store_credential(
+        self, backend_id: str, credential: bytes
+    ) -> Backend:
+        """Persist an encrypted credential for backend_id and mark it VALIDATING."""
         backend = await self.get(backend_id)
-        impl = self._backend_impls[backend.kind]
-        isolation_dir = self._isolation_dir(backend_id)
-        result = await impl.poll_login(handle, isolation_dir=isolation_dir)
-        return await self._handle_login_result(backend, result)
-
-    async def _handle_login_result(
-        self, backend: Backend, result: LoginResult
-    ) -> LoginResponse:
-        if isinstance(result, LoginError):
-            await self._update_status(
-                backend, BackendStatus.ERROR, last_error=f"{result.code}: {result.message}"
-            )
-            raise BackendValidationFailed(f"{result.code}: {result.message}")
-        if isinstance(result, OAuthDeviceLogin):
-            return LoginResponse(kind="pending", oauth=result)
         ciphertext = await self._vault.encrypt(
-            result.credential, context={"backend_id": backend.id}
+            credential, context={"backend_id": backend.id}
         )
         key_id = await self._vault.current_key_id()
-        credential = BackendCredential(
+        cred = BackendCredential(
             id=new_id("crd"),
             backend_id=backend.id,
             ciphertext=ciphertext,
@@ -208,9 +194,8 @@ class AccountService:
             created_at=_now(),
         )
         repo = await self._storage.backends()
-        await repo.put_credential(credential)
-        updated = await self._update_status(backend, BackendStatus.VALIDATING)
-        return LoginResponse(kind="complete", backend=updated)
+        await repo.put_credential(cred)
+        return await self._update_status(backend, BackendStatus.VALIDATING)
 
     async def validate(self, backend_id: str) -> Backend:
         backend = await self.get(backend_id)

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Literal
-
 import msgspec
 
 from ai_accounts_core.domain.backend import Backend, DetectResult
@@ -43,11 +40,6 @@ class UpdateBackendRequest(msgspec.Struct, kw_only=True):
     config: dict[str, object] | None = None
 
 
-class LoginRequest(msgspec.Struct, kw_only=True):
-    flow_kind: str
-    inputs: dict[str, str] = {}
-
-
 class DetectResultDTO(msgspec.Struct, kw_only=True):
     installed: bool
     version: str | None = None
@@ -57,39 +49,6 @@ class DetectResultDTO(msgspec.Struct, kw_only=True):
     @classmethod
     def from_domain(cls, r: DetectResult) -> "DetectResultDTO":
         return cls(installed=r.installed, version=r.version, path=r.path, notes=r.notes)
-
-
-class OAuthDeviceLoginDTO(msgspec.Struct, kw_only=True):
-    verification_uri: str
-    user_code: str
-    expires_at: datetime
-    handle: str
-
-
-class LoginResponseDTO(msgspec.Struct, kw_only=True):
-    kind: Literal["complete", "pending"]
-    backend: BackendDTO | None = None
-    oauth: OAuthDeviceLoginDTO | None = None
-
-    @classmethod
-    def from_service(cls, response: object) -> "LoginResponseDTO":
-        from ai_accounts_core.services.accounts import LoginResponse
-
-        assert isinstance(response, LoginResponse)
-        backend_dto = BackendDTO.from_domain(response.backend) if response.backend else None
-        oauth_dto = None
-        if response.oauth is not None:
-            oauth_dto = OAuthDeviceLoginDTO(
-                verification_uri=response.oauth.verification_uri,
-                user_code=response.oauth.user_code,
-                expires_at=response.oauth.expires_at,
-                handle=response.oauth.handle,
-            )
-        return cls(kind=response.kind, backend=backend_dto, oauth=oauth_dto)
-
-
-class PollLoginRequest(msgspec.Struct, kw_only=True):
-    handle: str
 
 
 class OnboardingStateDTO(msgspec.Struct, kw_only=True):

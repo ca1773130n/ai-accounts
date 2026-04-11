@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 from collections import defaultdict
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -27,14 +26,7 @@ from ai_accounts_core.metadata import (
     LoginFlowSpec,
 )
 from ai_accounts_core.protocols.auth import RequestContext
-from ai_accounts_core.protocols.backend import (
-    CredentialLogin,
-    LoginError,
-    LoginFlow,
-    LoginResult,
-    Model,
-    OAuthDeviceLogin,
-)
+from ai_accounts_core.protocols.backend import Model
 from ai_accounts_core.protocols.storage import (
     BackendRepository,
     HistoryRepository,
@@ -198,13 +190,16 @@ class FakeAuth:
 
 class _FakeLoginSession(LoginSession):
     def __init__(self, flow_kind: str) -> None:
+        import uuid
+
         self._flow_kind = flow_kind
         self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
         self._done = False
+        self._sid = f"sess-fake-{uuid.uuid4().hex[:8]}"
 
     @property
     def session_id(self) -> str:
-        return "sess-fake"
+        return self._sid
 
     @property
     def backend_kind(self) -> str:
@@ -256,7 +251,6 @@ class FakeBackend:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, Any]] = []
-        self._oauth_poll_counts: dict[str, int] = {}
 
     def begin_login(
         self,
@@ -272,43 +266,11 @@ class FakeBackend:
         self.calls.append(("detect", None))
         return DetectResult(installed=True, version="fake/0.0", path="/usr/local/bin/fake")
 
-    async def login(self, flow: LoginFlow, *, isolation_dir: Path) -> LoginResult:
-        self.calls.append(("login", flow))
-        if flow.kind == "api_key":
-            return CredentialLogin(credential=b"fake-credential")
-        if flow.kind == "oauth_device":
-            handle = f"fake-handle-{len(self._oauth_poll_counts)}"
-            self._oauth_poll_counts[handle] = 0
-            return OAuthDeviceLogin(
-                verification_uri="https://example.com/device",
-                user_code="FAKE-1234",
-                expires_at=datetime.now(UTC) + timedelta(minutes=15),
-                handle=handle,
-            )
-        return LoginError(
-            code="unsupported_flow",
-            message=f"FakeBackend does not support {flow.kind!r}",
-        )
-
-    async def poll_login(self, handle: str, *, isolation_dir: Path) -> LoginResult:
-        self.calls.append(("poll_login", handle))
-        if handle not in self._oauth_poll_counts:
-            return LoginError(code="unknown_handle", message=handle)
-        self._oauth_poll_counts[handle] += 1
-        if self._oauth_poll_counts[handle] >= 2:
-            isolation_dir.mkdir(parents=True, exist_ok=True)
-            (isolation_dir / "oauth_token.fake").write_text("logged-in")
-            return CredentialLogin(credential=b"")
-        return OAuthDeviceLogin(
-            verification_uri="https://example.com/device",
-            user_code="FAKE-1234",
-            expires_at=datetime.now(UTC) + timedelta(minutes=15),
-            handle=handle,
-        )
-
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
         self.calls.append(("validate", credential))
         if credential == b"fake-credential":
+            return True
+        if credential.startswith(b"sk-fake") or credential.startswith(b"fake"):
             return True
         if credential == b"" and (isolation_dir / "oauth_token.fake").exists():
             return True

@@ -5,13 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from ai_accounts_core.backends.claude import ClaudeBackend
-from ai_accounts_core.protocols.backend import (
-    ChatRequest,
-    CredentialLogin,
-    LoginError,
-    LoginFlow,
-    PtyRequest,
-)
+from ai_accounts_core.protocols.backend import ChatRequest, PtyRequest
 
 
 @pytest.mark.asyncio
@@ -46,60 +40,9 @@ async def test_detect_version_command_fails():
     assert "version" in (result.notes or "").lower()
 
 
-@pytest.mark.asyncio
-async def test_login_api_key_returns_credential_login(tmp_path: Path):
-    backend = ClaudeBackend()
-    result = await backend.login(
-        LoginFlow(kind="api_key", inputs={"api_key": "sk-ant-abc123"}),
-        isolation_dir=tmp_path / "claude",
-    )
-    assert isinstance(result, CredentialLogin)
-    assert result.credential == b"sk-ant-abc123"
-
-
-@pytest.mark.asyncio
-async def test_login_api_key_strips_whitespace(tmp_path: Path):
-    backend = ClaudeBackend()
-    result = await backend.login(
-        LoginFlow(kind="api_key", inputs={"api_key": "  sk-ant-x  \n"}),
-        isolation_dir=tmp_path / "claude",
-    )
-    assert isinstance(result, CredentialLogin)
-    assert result.credential == b"sk-ant-x"
-
-
-@pytest.mark.asyncio
-async def test_login_missing_api_key_returns_error(tmp_path: Path):
-    backend = ClaudeBackend()
-    result = await backend.login(
-        LoginFlow(kind="api_key", inputs={}),
-        isolation_dir=tmp_path / "claude",
-    )
-    assert isinstance(result, LoginError)
-    assert result.code == "missing_input"
-
-
-@pytest.mark.asyncio
-async def test_login_unsupported_flow_returns_error(tmp_path: Path):
-    backend = ClaudeBackend()
-    result = await backend.login(
-        LoginFlow(kind="oauth_device", inputs={}),
-        isolation_dir=tmp_path / "claude",
-    )
-    assert isinstance(result, LoginError)
-    assert result.code == "unsupported_flow"
-
-
-@pytest.mark.asyncio
-async def test_poll_login_not_pollable(tmp_path: Path):
-    backend = ClaudeBackend()
-    result = await backend.poll_login("x", isolation_dir=tmp_path / "claude")
-    assert isinstance(result, LoginError)
-    assert result.code == "not_pollable"
-
-
-def test_supported_login_flows_is_api_key_only():
-    assert ClaudeBackend.supported_login_flows == frozenset({"api_key"})
+def test_supported_login_flows_includes_api_key_and_cli_browser():
+    assert "api_key" in ClaudeBackend.supported_login_flows
+    assert "cli_browser" in ClaudeBackend.supported_login_flows
 
 
 @pytest.mark.asyncio

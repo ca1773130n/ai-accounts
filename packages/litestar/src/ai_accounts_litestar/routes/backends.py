@@ -7,10 +7,6 @@ from ..dto import (
     BackendListDTO,
     CreateBackendRequest,
     DetectResultDTO,
-    LoginRequest,
-    LoginResponseDTO,
-    OAuthDeviceLoginDTO,
-    PollLoginRequest,
     UpdateBackendRequest,
 )
 
@@ -65,22 +61,6 @@ class BackendsController(Controller):
         self, backend_id: str, account_service: AccountService
     ) -> DetectResultDTO:
         return DetectResultDTO.from_domain(await account_service.detect(backend_id))
-
-    @post("/{backend_id:str}/login")
-    async def login(
-        self, backend_id: str, data: LoginRequest, account_service: AccountService
-    ) -> LoginResponseDTO:
-        response = await account_service.login(
-            backend_id, flow_kind=data.flow_kind, inputs=data.inputs
-        )
-        return LoginResponseDTO.from_service(response)
-
-    @post("/{backend_id:str}/login/poll")
-    async def poll_login(
-        self, backend_id: str, data: PollLoginRequest, account_service: AccountService
-    ) -> LoginResponseDTO:
-        response = await account_service.poll_login(backend_id, handle=data.handle)
-        return LoginResponseDTO.from_service(response)
 
     @post("/{backend_id:str}/validate")
     async def validate(

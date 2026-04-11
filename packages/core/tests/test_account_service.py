@@ -68,7 +68,7 @@ async def test_get_backend_missing_raises(tmp_path):
 async def test_delete_backend_removes_credential_too(tmp_path):
     service, storage, _, _ = _make_service(tmp_path)
     created = await service.create("fake", display_name="A")
-    await service.login(created.id, flow_kind="api_key", inputs={})
+    await service.store_credential(created.id, b"fake-credential")
     await service.delete(created.id)
     with pytest.raises(BackendNotFound):
         await service.get(created.id)
@@ -86,33 +86,28 @@ async def test_detect_backend_returns_result(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_login_then_validate_happy_path(tmp_path):
+async def test_store_credential_then_validate_happy_path(tmp_path):
     service, storage, _, _ = _make_service(tmp_path)
     created = await service.create("fake", display_name="A")
 
-    after_login = await service.login(created.id, flow_kind="api_key", inputs={})
-    assert after_login.kind == "complete"
-    assert after_login.backend is not None
-    assert after_login.backend.status is BackendStatus.VALIDATING
+    after = await service.store_credential(created.id, b"fake-credential")
+    assert after.status is BackendStatus.VALIDATING
 
-    # Credential was stored encrypted
     repo = await storage.backends()
     stored_cred = await repo.get_credential(created.id)
     assert stored_cred is not None
     assert stored_cred.ciphertext != b"fake-credential"  # must be encrypted
 
-    after_validate = await service.validate(created.id)
-    assert after_validate.status is BackendStatus.READY
-    assert after_validate.last_error is None
+    validated = await service.validate(created.id)
+    assert validated.status is BackendStatus.READY
+    assert validated.last_error is None
 
 
 @pytest.mark.asyncio
 async def test_validate_failure_sets_error_status(tmp_path):
     service, storage, vault, _ = _make_service(tmp_path)
     created = await service.create("fake", display_name="A")
-    await service.login(created.id, flow_kind="api_key", inputs={})
 
-    # Replace stored credential with one that FakeBackend.validate rejects.
     repo = await storage.backends()
     wrong_ct = await vault.encrypt(
         b"wrong-credential", context={"backend_id": created.id}
@@ -153,74 +148,11 @@ async def test_delete_backend_removes_isolation_dir(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_login_oauth_returns_pending_response(tmp_path):
+async def test_begin_login_unsupported_flow_raises(tmp_path):
     service, _, _, _ = _make_service(tmp_path)
-    created = await service.create("fake", display_name="Test")
-    response = await service.login(created.id, flow_kind="oauth_device", inputs={})
-    assert response.kind == "pending"
-    assert response.oauth is not None
-    assert response.oauth.handle.startswith("fake-handle-")
-
-
-@pytest.mark.asyncio
-async def test_poll_login_eventually_completes(tmp_path):
-    service, _, _, _ = _make_service(tmp_path)
-    created = await service.create("fake", display_name="Test")
-    start = await service.login(created.id, flow_kind="oauth_device", inputs={})
-    assert start.kind == "pending"
-    handle = start.oauth.handle
-
-    first_poll = await service.poll_login(created.id, handle=handle)
-    assert first_poll.kind == "pending"
-    second_poll = await service.poll_login(created.id, handle=handle)
-    assert second_poll.kind == "complete"
-    assert second_poll.backend.status is BackendStatus.VALIDATING
-
-    validated = await service.validate(created.id)
-    assert validated.status is BackendStatus.READY
-
-
-@pytest.mark.asyncio
-async def test_login_unsupported_flow_raises(tmp_path):
-    from ai_accounts_core.protocols.backend import CredentialLogin
-    from ai_accounts_core.testing import FakeStorage, FakeVault
-
-    class ApiKeyOnlyFake:
-        kind = "ko"
-        supported_login_flows: frozenset[str] = frozenset({"api_key"})
-
-        async def detect(self):  # type: ignore[return]
-            from ai_accounts_core.domain.backend import DetectResult
-            return DetectResult(installed=True)
-
-        async def login(self, flow, *, isolation_dir):  # type: ignore[return]
-            return CredentialLogin(credential=b"x")
-
-        async def poll_login(self, handle, *, isolation_dir):  # type: ignore[return]
-            from ai_accounts_core.protocols.backend import LoginError
-            return LoginError(code="not_pollable", message="")
-
-        async def validate(self, credential, *, isolation_dir) -> bool:
-            return True
-
-        async def list_models(self, credential, *, isolation_dir):  # type: ignore[return]
-            return []
-
-        async def chat(self, request, credential, *, isolation_dir):
-            raise NotImplementedError
-
-        async def pty(self, request, credential, *, isolation_dir):
-            raise NotImplementedError
-
-    svc = AccountService(
-        storage=FakeStorage(),
-        vault=FakeVault(),
-        backends={"ko": ApiKeyOnlyFake()},  # type: ignore[dict-item]
-        isolation_base_dir=tmp_path / "backend_dirs",
-    )
-    created = await svc.create("ko", display_name="X")
+    created = await service.create("fake", display_name="X")
     with pytest.raises(LoginFlowUnsupported):
-        await svc.login(created.id, flow_kind="oauth_device", inputs={})
+        await service.begin_login(created.id, flow_kind="martian_flow", inputs={})
 
 
 @pytest.mark.asyncio
@@ -269,7 +201,6 @@ async def test_update_backend_missing_raises(tmp_path):
 async def test_update_backend_preserves_fields_when_omitted(tmp_path):
     service, _, _, _ = _make_service(tmp_path)
     created = await service.create("fake", display_name="Keep", config={"email": "a@b"})
-    # Call update with NO kwargs — should be a no-op that still returns the current row
     updated = await service.update(created.id)
     assert updated.display_name == "Keep"
     assert updated.config == {"email": "a@b"}

@@ -23,13 +23,9 @@ def test_auth_protocol_exports():
 
 def test_backend_protocol_exports():
     assert hasattr(backend, "BackendProtocol")
-    assert hasattr(backend, "LoginFlow")
     assert hasattr(backend, "ChatRequest")
     assert hasattr(backend, "PtyRequest")
-    assert hasattr(backend, "CredentialLogin")
-    assert hasattr(backend, "OAuthDeviceLogin")
-    assert hasattr(backend, "LoginError")
-    assert hasattr(backend, "LoginResult")
+    assert hasattr(backend, "Model")
 
 
 def test_fake_backend_supported_login_flows():

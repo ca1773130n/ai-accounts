@@ -61,69 +61,8 @@ def test_detect_backend(client):
         "/api/v1/backends/", json={"kind": "fake", "display_name": "T"}
     ).json()
     response = client.post(f"/api/v1/backends/{created['id']}/detect")
-    assert response.status_code == 201  # Litestar @post defaults to 201
+    assert response.status_code == 201
     assert response.json()["installed"] is True
-
-
-def test_login_api_key_returns_complete(client):
-    created = client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "T"}
-    ).json()
-    login = client.post(
-        f"/api/v1/backends/{created['id']}/login",
-        json={"flow_kind": "api_key", "inputs": {}},
-    )
-    assert login.status_code == 201
-    body = login.json()
-    assert body["kind"] == "complete"
-    assert body["backend"]["status"] == "validating"
-    assert body["oauth"] is None
-
-    validate = client.post(f"/api/v1/backends/{created['id']}/validate")
-    assert validate.status_code == 201
-    assert validate.json()["status"] == "ready"
-
-
-def test_login_oauth_returns_pending_with_challenge(client):
-    created = client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "T"}
-    ).json()
-    login = client.post(
-        f"/api/v1/backends/{created['id']}/login",
-        json={"flow_kind": "oauth_device", "inputs": {}},
-    )
-    assert login.status_code == 201
-    body = login.json()
-    assert body["kind"] == "pending"
-    assert body["oauth"]["user_code"] == "FAKE-1234"
-    assert body["oauth"]["handle"].startswith("fake-handle-")
-    assert body["backend"] is None
-
-
-def test_poll_login_eventually_completes(client):
-    created = client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "T"}
-    ).json()
-    start = client.post(
-        f"/api/v1/backends/{created['id']}/login",
-        json={"flow_kind": "oauth_device", "inputs": {}},
-    ).json()
-    handle = start["oauth"]["handle"]
-
-    first = client.post(
-        f"/api/v1/backends/{created['id']}/login/poll",
-        json={"handle": handle},
-    )
-    assert first.status_code == 201
-    assert first.json()["kind"] == "pending"
-
-    second = client.post(
-        f"/api/v1/backends/{created['id']}/login/poll",
-        json={"handle": handle},
-    )
-    assert second.status_code == 201
-    assert second.json()["kind"] == "complete"
-    assert second.json()["backend"]["status"] == "validating"
 
 
 def test_delete_backend(client):

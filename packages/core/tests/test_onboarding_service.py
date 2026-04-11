@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from ai_accounts_core.domain.onboarding import OnboardingStep
+from ai_accounts_core.login import LoginSession
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.errors import BackendKindUnknown
 from ai_accounts_core.services.onboarding import (
@@ -76,43 +77,12 @@ async def test_pick_kind_unknown_kind_raises(onboarding_service):
 
 
 @pytest.mark.asyncio
-async def test_begin_login_api_key_happy_path(onboarding_service):
+async def test_begin_login_returns_login_session(onboarding_service):
     state = await onboarding_service.start()
     await onboarding_service.detect_all(state.id)
     await onboarding_service.pick_kind(state.id, "fake", display_name="X")
-    response = await onboarding_service.begin_login(
+    session = await onboarding_service.begin_login(
         state.id, flow_kind="api_key", inputs={}
     )
-    assert response.kind == "complete"
-
-
-@pytest.mark.asyncio
-async def test_finalize_validates_and_transitions_to_done(onboarding_service):
-    state = await onboarding_service.start()
-    await onboarding_service.detect_all(state.id)
-    await onboarding_service.pick_kind(state.id, "fake", display_name="X")
-    await onboarding_service.begin_login(state.id, flow_kind="api_key", inputs={})
-    final = await onboarding_service.finalize(state.id)
-    assert final.current_step is OnboardingStep.DONE
-    assert final.created_backend_id is not None
-    assert final.error is None
-
-
-@pytest.mark.asyncio
-async def test_oauth_polling_through_onboarding(onboarding_service):
-    state = await onboarding_service.start()
-    await onboarding_service.detect_all(state.id)
-    await onboarding_service.pick_kind(state.id, "fake", display_name="X")
-    start = await onboarding_service.begin_login(
-        state.id, flow_kind="oauth_device", inputs={}
-    )
-    assert start.kind == "pending"
-    handle = start.oauth.handle
-
-    first = await onboarding_service.poll_login(state.id, handle=handle)
-    assert first.kind == "pending"
-    second = await onboarding_service.poll_login(state.id, handle=handle)
-    assert second.kind == "complete"
-
-    final = await onboarding_service.finalize(state.id)
-    assert final.current_step is OnboardingStep.DONE
+    assert isinstance(session, LoginSession)
+    assert session.flow_kind == "api_key"

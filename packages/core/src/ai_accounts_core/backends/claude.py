@@ -32,10 +32,6 @@ from ai_accounts_core.metadata import (
 from ai_accounts_core.protocols.backend import (
     ChatRequest,
     ChatStreamEvent,
-    CredentialLogin,
-    LoginError,
-    LoginFlow,
-    LoginResult,
     Model,
     PtyHandle,
     PtyRequest,
@@ -161,7 +157,7 @@ class ClaudeBackend:
     kind: ClassVar[str] = "claude"
     _CLI_NAME: ClassVar[str] = "claude"
     _ISOLATION_ENV_VAR: ClassVar[str] = "CLAUDE_CONFIG_DIR"
-    supported_login_flows: ClassVar[frozenset[str]] = frozenset({"api_key"})
+    supported_login_flows: ClassVar[frozenset[str]] = frozenset({"api_key", "cli_browser"})
 
     metadata: ClassVar[BackendMetadata] = BackendMetadata(
         kind="claude",
@@ -227,23 +223,6 @@ class ClaudeBackend:
             first_line = stdout.decode(errors="replace").strip().splitlines()[0]
             version = first_line or None
         return DetectResult(installed=True, version=version, path=path)
-
-    async def login(self, flow: LoginFlow, *, isolation_dir: Path) -> LoginResult:
-        if flow.kind != "api_key":
-            return LoginError(
-                code="unsupported_flow",
-                message=f"ClaudeBackend does not support {flow.kind!r}",
-            )
-        key = flow.inputs.get("api_key", "").strip()
-        if not key:
-            return LoginError(code="missing_input", message="api_key is required")
-        return CredentialLogin(credential=key.encode())
-
-    async def poll_login(self, handle: str, *, isolation_dir: Path) -> LoginResult:
-        return LoginError(
-            code="not_pollable",
-            message="ClaudeBackend only supports the synchronous api_key flow",
-        )
 
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
         path = shutil.which(self._CLI_NAME)
