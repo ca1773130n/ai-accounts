@@ -1,3 +1,4 @@
+from ai_accounts_core.metadata.registry import BackendRegistry
 from ai_accounts_core.metadata.types import (
     BackendMetadata,
     InputSpec,
@@ -8,6 +9,7 @@ from ai_accounts_core.metadata.types import (
 
 __all__ = [
     "BackendMetadata",
+    "BackendRegistry",
     "InputSpec",
     "InstallCheck",
     "LoginFlowSpec",
