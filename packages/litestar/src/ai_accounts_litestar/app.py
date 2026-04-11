@@ -6,6 +6,7 @@ from litestar.di import Provide
 
 from ai_accounts_core import __version__ as core_version
 from ai_accounts_core.adapters.auth_noauth import NoAuth
+from ai_accounts_core.login.registry import LoginSessionRegistry
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.errors import ServiceError
 from ai_accounts_core.services.onboarding import OnboardingService
@@ -13,6 +14,7 @@ from ai_accounts_core.services.onboarding import OnboardingService
 from .config import AiAccountsConfig
 from .errors import service_error_handler
 from .routes.backends import BackendsController
+from .routes.login import LoginController
 from .routes.onboarding import OnboardingController
 
 
@@ -52,11 +54,14 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     _enforce_production_guards(config)
 
     impls = {b.kind: b for b in config.backends}
+
+    login_registry = LoginSessionRegistry(ttl_seconds=config.login_session_ttl_seconds)
     account_service = AccountService(
         storage=config.storage,
         vault=config.vault,
         backends=impls,
         isolation_base_dir=config.backend_dirs_path,
+        login_registry=login_registry,
     )
     onboarding_service = OnboardingService(
         storage=config.storage,
@@ -87,7 +92,12 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         await config.storage.migrate()
 
     return Litestar(
-        route_handlers=[health, BackendsController, OnboardingController],
+        route_handlers=[
+            health,
+            BackendsController,
+            LoginController,
+            OnboardingController,
+        ],
         dependencies=dependencies,
         cors_config=cors_config,
         exception_handlers={ServiceError: service_error_handler},
