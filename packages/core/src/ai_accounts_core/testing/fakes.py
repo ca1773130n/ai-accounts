@@ -1,16 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections import defaultdict
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from ai_accounts_core.domain.backend import Backend, BackendCredential, DetectResult
 from ai_accounts_core.domain.chat import ChatMessage, ChatSession
 from ai_accounts_core.domain.onboarding import OnboardingState
 from ai_accounts_core.domain.principal import Principal
 from ai_accounts_core.domain.session import LiveSession
+from ai_accounts_core.login import (
+    LoginComplete,
+    LoginEvent,
+    LoginSession,
+    PromptAnswer,
+    TextPrompt,
+)
+from ai_accounts_core.metadata import (
+    BackendMetadata,
+    InputSpec,
+    InstallCheck,
+    LoginFlowSpec,
+)
 from ai_accounts_core.protocols.auth import RequestContext
 from ai_accounts_core.protocols.backend import (
     CredentialLogin,
@@ -181,13 +196,77 @@ class FakeAuth:
         return self._principal
 
 
+class _FakeLoginSession(LoginSession):
+    def __init__(self, flow_kind: str) -> None:
+        self._flow_kind = flow_kind
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._done = False
+
+    @property
+    def session_id(self) -> str:
+        return "sess-fake"
+
+    @property
+    def backend_kind(self) -> str:
+        return "fake"
+
+    @property
+    def flow_kind(self) -> str:
+        return self._flow_kind
+
+    @property
+    def done(self) -> bool:
+        return self._done
+
+    async def events(self) -> AsyncIterator[LoginEvent]:
+        if self._flow_kind == "api_key":
+            yield TextPrompt(prompt_id="key", prompt="API key:", hidden=True)
+            await self._answers.get()
+        yield LoginComplete(account_id="bkd-fake", backend_status="validating")
+        self._done = True
+
+    async def respond(self, answer: PromptAnswer) -> None:
+        await self._answers.put(answer)
+
+    async def cancel(self) -> None:
+        self._done = True
+
+
 class FakeBackend:
-    kind = "fake"
-    supported_login_flows: frozenset[str] = frozenset({"api_key", "oauth_device"})
+    kind: ClassVar[str] = "fake"
+    supported_login_flows: ClassVar[frozenset[str]] = frozenset({"api_key", "oauth_device"})
+    metadata: ClassVar[BackendMetadata] = BackendMetadata(
+        kind="fake",
+        display_name="Fake",
+        icon_url=None,
+        install_check=InstallCheck(command=["fake", "--version"], version_regex=r"(\d+)"),
+        login_flows=[
+            LoginFlowSpec(
+                kind="api_key",
+                display_name="API key",
+                description="Paste your fake API key",
+                requires_inputs=[InputSpec(name="key", label="Key", kind="secret")],
+            ),
+        ],
+        plan_options=None,
+        config_schema={"type": "object"},
+        supports_multi_account=True,
+        isolation_env_var=None,
+    )
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, Any]] = []
         self._oauth_poll_counts: dict[str, int] = {}
+
+    def begin_login(
+        self,
+        flow_kind: str,
+        config: dict,
+        vault_ctx: dict,
+        isolation_dir: Path,
+    ) -> LoginSession:
+        self.calls.append(("begin_login", flow_kind))
+        return _FakeLoginSession(flow_kind)
 
     async def detect(self) -> DetectResult:
         self.calls.append(("detect", None))

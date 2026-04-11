@@ -7,6 +7,8 @@ import msgspec
 
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatMessage
+from ai_accounts_core.login import LoginSession
+from ai_accounts_core.metadata import BackendMetadata
 
 
 class Model(msgspec.Struct, frozen=True, kw_only=True):
@@ -76,8 +78,16 @@ class PtyHandle(Protocol):
 class BackendProtocol(Protocol):
     kind: ClassVar[str]
     supported_login_flows: ClassVar[frozenset[str]]
+    metadata: ClassVar[BackendMetadata]
 
     async def detect(self) -> DetectResult: ...
+    def begin_login(
+        self,
+        flow_kind: str,
+        config: dict,
+        vault_ctx: dict,
+        isolation_dir: Path,
+    ) -> LoginSession: ...
     async def login(self, flow: LoginFlow, *, isolation_dir: Path) -> LoginResult: ...
     async def poll_login(self, handle: str, *, isolation_dir: Path) -> LoginResult: ...
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool: ...
