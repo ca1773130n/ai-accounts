@@ -35,7 +35,10 @@ class LoginSession(ABC):
     def done(self) -> bool: ...
 
     @abstractmethod
-    def events(self) -> AsyncIterator[LoginEvent]: ...
+    async def events(self) -> AsyncIterator[LoginEvent]:
+        """Yield login events until the flow completes or fails."""
+        if False:
+            yield  # pragma: no cover  # makes the abstract body an async generator
 
     @abstractmethod
     async def respond(self, answer: PromptAnswer) -> None: ...
