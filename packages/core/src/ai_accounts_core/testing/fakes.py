@@ -18,7 +18,7 @@ from ai_accounts_core.protocols.storage import (
     SessionRepository,
     StorageProtocol,
 )
-from ai_accounts_core.protocols.vault import VaultError
+from ai_accounts_core.protocols.vault import VaultError, canonicalize_vault_context
 
 
 class _FakeBackendRepo:
@@ -131,16 +131,14 @@ class FakeStorage:
         return None
 
 
-def _canonical_ctx(context: dict[str, str]) -> bytes:
-    return b"|".join(f"{k}={v}".encode() for k, v in sorted(context.items()))
-
-
 class FakeVault:
+    """Test-only vault. Stores plaintext inside the envelope — DO NOT use outside tests."""
+
     def __init__(self, key_id: str = "fake://v1") -> None:
         self._key_id = key_id
 
     async def encrypt(self, plaintext: bytes, *, context: dict[str, str]) -> bytes:
-        ctx = _canonical_ctx(context)
+        ctx = canonicalize_vault_context(context)
         payload = b"ENC|" + ctx + b"||" + plaintext
         digest = hashlib.sha256(payload).digest()
         return payload + digest
@@ -154,7 +152,7 @@ class FakeVault:
         if not payload.startswith(b"ENC|"):
             raise VaultError("not a FakeVault envelope")
         body = payload[4:]
-        expected_ctx = _canonical_ctx(context)
+        expected_ctx = canonicalize_vault_context(context)
         if not body.startswith(expected_ctx + b"||"):
             raise VaultError("context mismatch")
         return body[len(expected_ctx) + 2 :]

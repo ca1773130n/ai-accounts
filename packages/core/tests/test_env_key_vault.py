@@ -61,3 +61,15 @@ def test_rotate_not_implemented(monkeypatch):
     vault = EnvKeyVault.from_env()
     with pytest.raises(NotImplementedError):
         asyncio.run(vault.rotate("old-key-id"))
+
+
+@pytest.mark.asyncio
+async def test_nonces_are_unique_across_calls(monkeypatch):
+    monkeypatch.setenv("AI_ACCOUNTS_VAULT_KEY", base64.b64encode(b"\x00" * 32).decode())
+    vault = EnvKeyVault.from_env()
+    ct1 = await vault.encrypt(b"same", context={"k": "v"})
+    ct2 = await vault.encrypt(b"same", context={"k": "v"})
+    # Version byte is ct[0], nonce is ct[1:13]
+    assert ct1[1:13] != ct2[1:13]
+    # Ciphertexts must also differ (non-deterministic AEAD)
+    assert ct1 != ct2

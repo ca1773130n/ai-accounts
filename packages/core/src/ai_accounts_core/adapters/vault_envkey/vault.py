@@ -9,18 +9,13 @@ from typing import Literal
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from ai_accounts_core.protocols.vault import VaultError
+from ai_accounts_core.protocols.vault import VaultError, canonicalize_vault_context
 
 log = logging.getLogger(__name__)
 
 _ENVELOPE_VERSION = 1
 _NONCE_LEN = 12
 _KEY_ID = "envkey://v1"
-
-
-def _canonical_context(context: dict[str, str]) -> bytes:
-    items = sorted(context.items())
-    return b"|".join(f"{k}={v}".encode() for k, v in items)
 
 
 class EnvKeyVault:
@@ -65,7 +60,7 @@ class EnvKeyVault:
 
     async def encrypt(self, plaintext: bytes, *, context: dict[str, str]) -> bytes:
         nonce = os.urandom(_NONCE_LEN)
-        aad = _canonical_context(context)
+        aad = canonicalize_vault_context(context)
         ct = self._aesgcm.encrypt(nonce, plaintext, aad)
         return bytes([_ENVELOPE_VERSION]) + nonce + ct
 
@@ -76,7 +71,7 @@ class EnvKeyVault:
             raise VaultError(f"unknown vault envelope version {ciphertext[0]}")
         nonce = ciphertext[1 : 1 + _NONCE_LEN]
         ct = ciphertext[1 + _NONCE_LEN :]
-        aad = _canonical_context(context)
+        aad = canonicalize_vault_context(context)
         try:
             return self._aesgcm.decrypt(nonce, ct, aad)
         except InvalidTag as exc:

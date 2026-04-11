@@ -8,6 +8,7 @@ from ai_accounts_core.protocols.vault import VaultError, VaultProtocol
 async def run_vault_conformance(vault: VaultProtocol) -> None:
     await _roundtrip(vault)
     await _context_binding(vault)
+    await _injective_binding(vault)
     await _tamper_detection(vault)
     await _key_id_exposed(vault)
 
@@ -23,6 +24,19 @@ async def _context_binding(vault: VaultProtocol) -> None:
     ct = await vault.encrypt(b"x", context={"backend_id": "bkd-A"})
     with pytest.raises(VaultError):
         await vault.decrypt(ct, context={"backend_id": "bkd-B"})
+
+
+async def _injective_binding(vault: VaultProtocol) -> None:
+    """Binding must be injective: different context dicts cannot decrypt each other."""
+    # Craft two dicts designed to collide under a naive `|`/`=` separator scheme.
+    ct_a = await vault.encrypt(b"payload", context={"a=b": "c"})
+    with pytest.raises(VaultError):
+        await vault.decrypt(ct_a, context={"a": "b=c"})
+
+    # Classic substring vs. separator adversarial pair.
+    ct_c = await vault.encrypt(b"payload", context={"key": "value|other=data"})
+    with pytest.raises(VaultError):
+        await vault.decrypt(ct_c, context={"key|other": "value", "": "data"})
 
 
 async def _tamper_detection(vault: VaultProtocol) -> None:
