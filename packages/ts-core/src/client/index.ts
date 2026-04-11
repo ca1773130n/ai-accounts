@@ -80,7 +80,15 @@ export class AiAccountsClient {
   constructor(opts: ClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, '');
     this.token = opts.token;
-    this._fetch = opts.fetch ?? fetch;
+    // Bind to globalThis so the global `fetch` retains its Window/ServiceWorker
+    // context when called as a method via `this._fetch(...)`. Without this,
+    // browsers throw "Illegal invocation". A caller-supplied fetch is assumed
+    // to already be bound correctly, so we only wrap the default.
+    if (opts.fetch) {
+      this._fetch = opts.fetch;
+    } else {
+      this._fetch = (input, init) => fetch(input, init);
+    }
     // paths is imported for type-checking — proves generated file exists and compiles.
     // Re-exported above for consumer use.
     void (null as unknown as paths);

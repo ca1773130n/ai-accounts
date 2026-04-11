@@ -1,5 +1,11 @@
 # @ai-accounts/ts-core
 
+## 0.2.2
+
+### Patch Changes
+
+- Fix AiAccountsClient constructor binding global `fetch` to the instance, which triggered "Illegal invocation" in browsers. Now wraps the default fetch so it's called against the global scope. Caller-supplied fetch is passed through unchanged.
+
 ## 0.2.1
 
 ### Patch Changes

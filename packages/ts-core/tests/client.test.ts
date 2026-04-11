@@ -231,3 +231,54 @@ describe('AiAccountsClient', () => {
     expect(body.config).toEqual({ email: 'x@y.z' });
   });
 });
+
+describe('AiAccountsClient fetch binding', () => {
+  it('default global fetch is wrapped so "Illegal invocation" does not fire', async () => {
+    // Simulate the browser situation where window.fetch throws Illegal
+    // invocation if called as an unbound method. Replace the global with a
+    // function that requires `this === globalThis`.
+    const originalFetch = (globalThis as { fetch?: unknown }).fetch;
+    let capturedThis: unknown = 'unset';
+    const strictFetch = function (
+      this: unknown,
+      _url: string,
+      _init?: RequestInit
+    ) {
+      capturedThis = this;
+      if (this !== globalThis && this !== undefined) {
+        throw new TypeError(
+          "Failed to execute 'fetch' on 'Window': Illegal invocation"
+        );
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ items: [] }),
+      } as unknown as Response);
+    };
+    (globalThis as { fetch?: unknown }).fetch = strictFetch;
+    try {
+      const client = new AiAccountsClient({ baseUrl: 'http://t' });
+      const result = await client.listBackends();
+      expect(result.items).toEqual([]);
+      // The wrapper invokes fetch without a receiver, so `this` is undefined —
+      // either way, NOT the AiAccountsClient instance (which would throw).
+      expect(capturedThis).not.toBe((client as unknown as object));
+    } finally {
+      (globalThis as { fetch?: unknown }).fetch = originalFetch;
+    }
+  });
+
+  it('caller-supplied fetch is passed through unwrapped', async () => {
+    const supplied = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ items: [] }),
+    } as unknown as Response);
+    const client = new AiAccountsClient({ baseUrl: 'http://t', fetch: supplied });
+    await client.listBackends();
+    expect(supplied).toHaveBeenCalledTimes(1);
+  });
+});
