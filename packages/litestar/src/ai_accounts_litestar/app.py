@@ -7,6 +7,7 @@ from litestar.di import Provide
 from ai_accounts_core import __version__ as core_version
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.login.registry import LoginSessionRegistry
+from ai_accounts_core.metadata import BackendRegistry
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.errors import ServiceError
 from ai_accounts_core.services.onboarding import OnboardingService
@@ -15,6 +16,7 @@ from .config import AiAccountsConfig
 from .errors import service_error_handler
 from .routes.backends import BackendsController
 from .routes.login import LoginController
+from .routes.meta import MetaController
 from .routes.onboarding import OnboardingController
 
 
@@ -69,6 +71,10 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         backend_kinds=tuple(impls.keys()),
     )
 
+    backend_registry = BackendRegistry()
+    for b in config.backends:
+        backend_registry.register(b.metadata)
+
     def _provide_config() -> AiAccountsConfig:
         return config
 
@@ -78,10 +84,14 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     def _provide_onboarding_service() -> OnboardingService:
         return onboarding_service
 
+    def _provide_backend_registry() -> BackendRegistry:
+        return backend_registry
+
     dependencies: dict[str, Any] = {
         "config": Provide(_provide_config, sync_to_thread=False),
         "account_service": Provide(_provide_account_service, sync_to_thread=False),
         "onboarding_service": Provide(_provide_onboarding_service, sync_to_thread=False),
+        "backend_registry": Provide(_provide_backend_registry, sync_to_thread=False),
     }
 
     cors_config = (
@@ -96,6 +106,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
             health,
             BackendsController,
             LoginController,
+            MetaController,
             OnboardingController,
         ],
         dependencies=dependencies,
