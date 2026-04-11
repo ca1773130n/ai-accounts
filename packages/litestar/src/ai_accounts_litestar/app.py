@@ -15,6 +15,8 @@ from ai_accounts_core.services.onboarding import OnboardingService
 from .config import AiAccountsConfig
 from .errors import service_error_handler
 from .routes.backends import BackendsController
+from .routes.cliproxy import CliproxyController
+from .routes.install import InstallController
 from .routes.login import LoginController
 from .routes.meta import MetaController
 from .routes.onboarding import OnboardingController
@@ -105,6 +107,8 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         route_handlers=[
             health,
             BackendsController,
+            CliproxyController,
+            InstallController,
             LoginController,
             MetaController,
             OnboardingController,
