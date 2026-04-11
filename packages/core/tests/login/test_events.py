@@ -26,7 +26,7 @@ def test_text_prompt_hidden_flag():
     assert evt.hidden is True
 
 
-def test_stdout_chunk_contains_ansi_stripped_text():
+def test_stdout_chunk_holds_text():
     evt = StdoutChunk(text="hello world")
     assert evt.text == "hello world"
 

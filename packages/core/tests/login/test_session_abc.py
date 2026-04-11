@@ -74,3 +74,27 @@ async def test_session_cancel_sets_done():
     sess = _Echo()
     await sess.cancel()
     assert sess.done is True
+
+
+@pytest.mark.asyncio
+async def test_session_cancel_during_consumption():
+    sess = _Echo()
+    started = asyncio.Event()
+
+    async def consume() -> list[LoginEvent]:
+        out: list[LoginEvent] = []
+        async for ev in sess.events():
+            out.append(ev)
+            started.set()
+            # blocks on next iteration waiting for respond()
+        return out
+
+    task = asyncio.create_task(consume())
+    await started.wait()
+    await sess.cancel()
+    # Cancel does not inject an event; consumer task will hang waiting for
+    # the answer queue. Close by cancelling the task.
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert sess.done is True
