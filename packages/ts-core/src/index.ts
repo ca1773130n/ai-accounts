@@ -30,6 +30,13 @@ export type {
   LoginFlowSpec,
   PlanOption,
 } from './types/metadata';
+export type {
+  InstallResult,
+  CliproxyStatus,
+  CliproxyInstallResult,
+  CliproxyLoginBeginResponse,
+  CliproxyCallbackForwardResponse,
+} from './types/install';
 export type { AiAccountsEvent, AiAccountsEventHandler } from './events';
 export { createAccountWizard } from './machines/accountWizard';
 export type {

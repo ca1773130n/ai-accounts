@@ -2,6 +2,13 @@ import type { paths } from './generated';
 import { parseSseLoginEvents } from './login-stream';
 import type { LoginEvent, LoginFlowKind } from '../types/login';
 import type { BackendMetadata } from '../types/metadata';
+import type {
+  InstallResult,
+  CliproxyStatus,
+  CliproxyInstallResult,
+  CliproxyLoginBeginResponse,
+  CliproxyCallbackForwardResponse,
+} from '../types/install';
 
 export type { paths } from './generated';
 
@@ -299,6 +306,68 @@ export class AiAccountsClient {
 
   async finalizeOnboarding(id: string): Promise<OnboardingStateDTO> {
     return this.onboardingAction<OnboardingStateDTO>(id, 'finalize');
+  }
+
+  // --- Backend CLI install ---
+
+  async installBackendCli(kind: string): Promise<InstallResult> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/backends/${encodeURIComponent(kind)}/install`,
+      {
+        method: 'POST',
+        headers: this.headers(),
+      }
+    );
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as InstallResult;
+  }
+
+  // --- CLIProxyAPI ---
+
+  async cliproxyStatus(): Promise<CliproxyStatus> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/cliproxy/status`, {
+      method: 'GET',
+      headers: this.headers(),
+    });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as CliproxyStatus;
+  }
+
+  async cliproxyInstall(): Promise<CliproxyInstallResult> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/cliproxy/install`, {
+      method: 'POST',
+      headers: this.headers(),
+    });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as CliproxyInstallResult;
+  }
+
+  async cliproxyLoginBegin(
+    backendKind: string,
+    configDir?: string
+  ): Promise<CliproxyLoginBeginResponse> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/cliproxy/login/begin`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ backend_kind: backendKind, config_dir: configDir ?? null }),
+    });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as CliproxyLoginBeginResponse;
+  }
+
+  async cliproxyCallbackForward(
+    callbackUrl: string
+  ): Promise<CliproxyCallbackForwardResponse> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/cliproxy/login/callback-forward`,
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ callback_url: callbackUrl }),
+      }
+    );
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as CliproxyCallbackForwardResponse;
   }
 
   private async postAction<T>(id: string, action: string, body?: unknown): Promise<T> {
