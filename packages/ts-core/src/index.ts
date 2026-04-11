@@ -18,5 +18,11 @@ export type {
   WizardState,
   CreateAccountWizardOptions,
 } from './machines/accountWizard';
+export { createOnboardingFlow } from './machines/onboardingFlow';
+export type {
+  OnboardingFlowMachine,
+  OnboardingMachineState,
+  CreateOnboardingFlowOptions,
+} from './machines/onboardingFlow';
 
 export const version = '0.0.0';
