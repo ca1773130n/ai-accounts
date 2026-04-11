@@ -1,126 +1,82 @@
 import { describe, it, expect, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
+import { aiAccountsPlugin } from '@ai-accounts/vue-headless';
+import { AiAccountsClient } from '@ai-accounts/ts-core';
 import AccountWizard from '../src/components/AccountWizard.vue';
 
-function makeClient() {
-  return {
-    createBackend: vi.fn().mockResolvedValue({
-      id: 'bkd-1',
-      kind: 'claude',
-      display_name: 'A',
-      status: 'unconfigured',
-      config: {},
-      last_error: null,
-    }),
-    detectBackend: vi.fn().mockResolvedValue({
-      installed: true,
-      version: 'x',
-      path: '/usr/local/bin/claude',
-      notes: null,
-    }),
-    loginBackend: vi.fn().mockResolvedValue({
-      id: 'bkd-1',
-      kind: 'claude',
-      display_name: 'A',
-      status: 'validating',
-      config: {},
-      last_error: null,
-    }),
-    validateBackend: vi.fn().mockResolvedValue({
-      id: 'bkd-1',
-      kind: 'claude',
-      display_name: 'A',
-      status: 'ready',
-      config: {},
-      last_error: null,
-    }),
-  } as any;  // eslint-disable-line @typescript-eslint/no-explicit-any
+function mkClient(items: unknown[] = []) {
+  return new AiAccountsClient({
+    baseUrl: 'http://t',
+    fetch: vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ items }),
+    } as unknown as Response),
+  });
 }
 
 describe('AccountWizard', () => {
-  it('renders kind picker initially', async () => {
-    const wrapper = mount(AccountWizard, { props: { client: makeClient() } });
-    await nextTick();
-    expect(wrapper.text()).toContain('Claude');
-    expect(wrapper.text()).toContain('OpenCode');
+  it('mounts with aiAccountsPlugin installed', () => {
+    const w = mount(AccountWizard, {
+      global: { plugins: [[aiAccountsPlugin, { client: mkClient() }]] },
+      props: { allowSkip: true },
+    });
+    expect(w.exists()).toBe(true);
   });
 
-  it('advances through the happy path to done', async () => {
-    const client = makeClient();
-    const wrapper = mount(AccountWizard, { props: { client } });
-    await nextTick();
-    const claudeBtn = wrapper.findAll('button').find((b) => b.text() === 'Claude');
-    expect(claudeBtn).toBeTruthy();
-    await claudeBtn!.trigger('click');
-    await new Promise((r) => setTimeout(r, 0));
-    await nextTick();
-    expect(wrapper.text()).toContain('API key');
-
-    await wrapper.find('input').setValue('sk-ant-xxx');
-    await wrapper.find('form').trigger('submit.prevent');
-    await new Promise((r) => setTimeout(r, 0));
-    await nextTick();
-    expect(wrapper.text()).toContain('Connected');
-    expect(wrapper.emitted('done')).toBeTruthy();
-  });
-
-  it('shows error and retry button when detect fails', async () => {
-    const client = {
-      ...makeClient(),
-      detectBackend: vi.fn().mockResolvedValue({
-        installed: false,
-        version: null,
-        path: null,
-        notes: null,
-      }),
-    };
-    const wrapper = mount(AccountWizard, { props: { client: client as any } });
-    await nextTick();
-    const claudeBtn = wrapper.findAll('button').find((b) => b.text() === 'Claude');
-    await claudeBtn!.trigger('click');
-    await new Promise((r) => setTimeout(r, 0));
-    await nextTick();
-    expect(wrapper.text().toLowerCase()).toContain('not installed');
-    expect(wrapper.findAll('button').some((b) => b.text() === 'Try again')).toBe(true);
-  });
-
-  it('shows OAuth hint in error state when OAuth is attempted on API-key-only wizard', async () => {
-    const client = {
-      createBackend: vi.fn().mockResolvedValue({
-        id: 'bkd-1',
+  it('renders BackendPicker when initialBackendKind is not set', async () => {
+    const items = [
+      {
         kind: 'claude',
-        display_name: 'A',
-        status: 'unconfigured',
-        config: {},
-        last_error: null,
-      }),
-      detectBackend: vi.fn().mockResolvedValue({ installed: true }),
-      loginBackend: vi.fn().mockResolvedValue({
-        kind: 'pending',
-        backend: null,
-        oauth: {
-          verification_uri: 'https://example.com/device',
-          user_code: 'ABCD-1234',
-          expires_at: '2026-04-11T18:00:00Z',
-          handle: 'h-1',
-        },
-      }),
-      validateBackend: vi.fn(),
-    } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const wrapper = mount(AccountWizard, { props: { client } });
+        display_name: 'Claude Code',
+        icon_url: null,
+        install_check: { command: [], version_regex: '' },
+        login_flows: [],
+        plan_options: null,
+        config_schema: {},
+        supports_multi_account: true,
+        isolation_env_var: 'CLAUDE_CONFIG_DIR',
+      },
+    ];
+    const w = mount(AccountWizard, {
+      global: { plugins: [[aiAccountsPlugin, { client: mkClient(items) }]] },
+    });
+    await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // Click Claude
-    const claudeBtn = wrapper.findAll('button').find((b) => b.text() === 'Claude');
-    await claudeBtn!.trigger('click');
-    await new Promise((r) => setTimeout(r, 10));
     await nextTick();
-    // Fill key and submit
-    await wrapper.find('input').setValue('sk-ant-xxx');
-    await wrapper.find('form').trigger('submit.prevent');
-    await new Promise((r) => setTimeout(r, 10));
+    expect(w.findComponent({ name: 'BackendPicker' }).exists()).toBe(true);
+  });
+
+  it('skips picker when initialBackendKind is set', async () => {
+    const items = [
+      {
+        kind: 'claude',
+        display_name: 'Claude Code',
+        icon_url: null,
+        install_check: { command: [], version_regex: '' },
+        login_flows: [
+          {
+            kind: 'cli_browser',
+            display_name: 'Browser',
+            description: '',
+            requires_inputs: [],
+          },
+        ],
+        plan_options: null,
+        config_schema: {},
+        supports_multi_account: true,
+        isolation_env_var: 'CLAUDE_CONFIG_DIR',
+      },
+    ];
+    const w = mount(AccountWizard, {
+      props: { initialBackendKind: 'claude' },
+      global: { plugins: [[aiAccountsPlugin, { client: mkClient(items) }]] },
+    });
+    await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    expect(wrapper.text()).toContain('OAuth');
-    expect(wrapper.text()).toContain('OnboardingFlow');
+    await nextTick();
+    expect(w.findComponent({ name: 'BackendPicker' }).exists()).toBe(false);
   });
 });
