@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { AiAccountsClient } from '@ai-accounts/ts-core';
-import { AccountWizard } from '@ai-accounts/vue-styled';
+import { OnboardingFlow } from '@ai-accounts/vue-styled';
 
 const client = new AiAccountsClient({ baseUrl: '' });
 const doneId = ref<string | null>(null);
@@ -15,13 +15,13 @@ function onDone(id: string) {
   <main class="playground">
     <h1>ai-accounts playground</h1>
     <p class="intro">
-      Minimum runnable demo of the account management flow. Start the backend
-      on <code>localhost:20000</code> and the Vite dev server proxies
-      <code>/api</code> to it.
+      Full onboarding flow for AI backends. Claude, OpenCode, Gemini, and
+      Codex all registered. Gemini and Codex support both API key and
+      browser login.
     </p>
-    <AccountWizard :client="client" @done="onDone" />
+    <OnboardingFlow :client="client" @done="onDone" />
     <p v-if="doneId" class="created">
-      Created backend: <code>{{ doneId }}</code>
+      Ready backend: <code>{{ doneId }}</code>
     </p>
   </main>
 </template>
