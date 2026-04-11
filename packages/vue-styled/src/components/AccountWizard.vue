@@ -95,6 +95,9 @@ function onRetry() {
 
     <div v-else-if="wiz.state.value === 'error'" class="aia-wizard__error">
       <p>{{ wiz.error.value }}</p>
+      <p v-if="wiz.error.value?.includes('OAuth')" class="aia-wizard__hint">
+        Try the full <code>&lt;OnboardingFlow&gt;</code> component instead &mdash; it supports browser login.
+      </p>
       <button class="aia-btn" type="button" @click="onRetry">Try again</button>
     </div>
   </section>
@@ -184,5 +187,11 @@ function onRetry() {
 
 .aia-wizard__error {
   color: var(--aia-danger);
+}
+
+.aia-wizard__hint {
+  color: var(--aia-fg-muted);
+  font-size: var(--aia-text-sm);
+  margin-top: var(--aia-space-2);
 }
 </style>

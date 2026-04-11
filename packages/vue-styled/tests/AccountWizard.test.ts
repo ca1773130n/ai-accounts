@@ -84,4 +84,43 @@ describe('AccountWizard', () => {
     expect(wrapper.text().toLowerCase()).toContain('not installed');
     expect(wrapper.findAll('button').some((b) => b.text() === 'Try again')).toBe(true);
   });
+
+  it('shows OAuth hint in error state when OAuth is attempted on API-key-only wizard', async () => {
+    const client = {
+      createBackend: vi.fn().mockResolvedValue({
+        id: 'bkd-1',
+        kind: 'claude',
+        display_name: 'A',
+        status: 'unconfigured',
+        config: {},
+        last_error: null,
+      }),
+      detectBackend: vi.fn().mockResolvedValue({ installed: true }),
+      loginBackend: vi.fn().mockResolvedValue({
+        kind: 'pending',
+        backend: null,
+        oauth: {
+          verification_uri: 'https://example.com/device',
+          user_code: 'ABCD-1234',
+          expires_at: '2026-04-11T18:00:00Z',
+          handle: 'h-1',
+        },
+      }),
+      validateBackend: vi.fn(),
+    } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const wrapper = mount(AccountWizard, { props: { client } });
+    await nextTick();
+    // Click Claude
+    const claudeBtn = wrapper.findAll('button').find((b) => b.text() === 'Claude');
+    await claudeBtn!.trigger('click');
+    await new Promise((r) => setTimeout(r, 10));
+    await nextTick();
+    // Fill key and submit
+    await wrapper.find('input').setValue('sk-ant-xxx');
+    await wrapper.find('form').trigger('submit.prevent');
+    await new Promise((r) => setTimeout(r, 10));
+    await nextTick();
+    expect(wrapper.text()).toContain('OAuth');
+    expect(wrapper.text()).toContain('OnboardingFlow');
+  });
 });
