@@ -1,6 +1,6 @@
 {
   "name": "@ai-accounts/vue-styled",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Vue 3 styled components for ai-accounts",
   "license": "Apache-2.0",
   "type": "module",
@@ -15,7 +15,9 @@
     },
     "./styles.css": "./dist/styles.css"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "peerDependencies": {
     "vue": "^3.4.0"
   },
