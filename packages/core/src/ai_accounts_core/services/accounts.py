@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import builtins
+import shutil
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Literal
+
+import msgspec
 
 from ai_accounts_core.domain.backend import (
     Backend,
@@ -11,7 +16,15 @@ from ai_accounts_core.domain.backend import (
     DetectResult,
 )
 from ai_accounts_core.ids import new_id
-from ai_accounts_core.protocols.backend import BackendProtocol, LoginFlow, Model
+from ai_accounts_core.protocols.backend import (
+    BackendProtocol,
+    CredentialLogin,
+    LoginError,
+    LoginFlow,
+    LoginResult,
+    Model,
+    OAuthDeviceLogin,
+)
 from ai_accounts_core.protocols.storage import StorageProtocol
 from ai_accounts_core.protocols.vault import VaultProtocol
 
@@ -21,6 +34,7 @@ from .errors import (
     BackendNotReady,
     BackendValidationFailed,
     CredentialMissing,
+    LoginFlowUnsupported,
 )
 
 
@@ -31,6 +45,12 @@ def _now() -> datetime:
 _SENTINEL: object = object()
 
 
+class LoginResponse(msgspec.Struct, kw_only=True):
+    kind: Literal["complete", "pending"]
+    backend: Backend | None = None
+    oauth: OAuthDeviceLogin | None = None
+
+
 class AccountService:
     def __init__(
         self,
@@ -38,10 +58,22 @@ class AccountService:
         storage: StorageProtocol,
         vault: VaultProtocol,
         backends: Mapping[str, BackendProtocol],
+        isolation_base_dir: Path,
     ) -> None:
         self._storage = storage
         self._vault = vault
         self._backend_impls: dict[str, BackendProtocol] = dict(backends)
+        self._isolation_base_dir = Path(isolation_base_dir)
+        self._isolation_base_dir.mkdir(parents=True, exist_ok=True)
+
+    def available_kinds(self) -> builtins.list[str]:
+        return sorted(self._backend_impls.keys())
+
+    def _impl_for(self, kind: str) -> BackendProtocol:
+        return self._backend_impls[kind]
+
+    def _isolation_dir(self, backend_id: str) -> Path:
+        return self._isolation_base_dir / backend_id
 
     async def create(
         self,
@@ -62,6 +94,7 @@ class AccountService:
         )
         repo = await self._storage.backends()
         await repo.create(backend)
+        self._isolation_dir(backend.id).mkdir(parents=True, exist_ok=True)
         return backend
 
     async def get(self, backend_id: str) -> Backend:
@@ -71,14 +104,17 @@ class AccountService:
             raise BackendNotFound(backend_id)
         return backend
 
-    async def list(self) -> list[Backend]:
+    async def list(self) -> builtins.list[Backend]:
         repo = await self._storage.backends()
         return await repo.list()
 
     async def delete(self, backend_id: str) -> None:
-        backend = await self.get(backend_id)  # raises BackendNotFound
+        backend = await self.get(backend_id)
         repo = await self._storage.backends()
         await repo.delete(backend.id)
+        isolation_dir = self._isolation_dir(backend.id)
+        if isolation_dir.exists():
+            shutil.rmtree(isolation_dir, ignore_errors=True)
 
     async def detect(self, backend_id: str) -> DetectResult:
         backend = await self.get(backend_id)
@@ -92,25 +128,56 @@ class AccountService:
 
     async def login(
         self, backend_id: str, *, flow_kind: str, inputs: dict[str, str]
-    ) -> Backend:
+    ) -> LoginResponse:
         backend = await self.get(backend_id)
         impl = self._backend_impls[backend.kind]
-        plaintext = await impl.login(LoginFlow(kind=flow_kind, inputs=inputs))
+        if flow_kind not in impl.supported_login_flows:
+            raise LoginFlowUnsupported(
+                f"{backend.kind} does not support flow {flow_kind!r}; "
+                f"supported: {sorted(impl.supported_login_flows)}"
+            )
+        isolation_dir = self._isolation_dir(backend_id)
+        isolation_dir.mkdir(parents=True, exist_ok=True)
+        result = await impl.login(
+            LoginFlow(kind=flow_kind, inputs=inputs),
+            isolation_dir=isolation_dir,
+        )
+        return await self._handle_login_result(backend, result)
 
+    async def poll_login(
+        self, backend_id: str, *, handle: str
+    ) -> LoginResponse:
+        backend = await self.get(backend_id)
+        impl = self._backend_impls[backend.kind]
+        isolation_dir = self._isolation_dir(backend_id)
+        result = await impl.poll_login(handle, isolation_dir=isolation_dir)
+        return await self._handle_login_result(backend, result)
+
+    async def _handle_login_result(
+        self, backend: Backend, result: LoginResult
+    ) -> LoginResponse:
+        if isinstance(result, LoginError):
+            await self._update_status(
+                backend, BackendStatus.ERROR, last_error=f"{result.code}: {result.message}"
+            )
+            raise BackendValidationFailed(f"{result.code}: {result.message}")
+        if isinstance(result, OAuthDeviceLogin):
+            return LoginResponse(kind="pending", oauth=result)
         ciphertext = await self._vault.encrypt(
-            plaintext, context={"backend_id": backend_id}
+            result.credential, context={"backend_id": backend.id}
         )
         key_id = await self._vault.current_key_id()
         credential = BackendCredential(
             id=new_id("crd"),
-            backend_id=backend_id,
+            backend_id=backend.id,
             ciphertext=ciphertext,
             key_id=key_id,
             created_at=_now(),
         )
         repo = await self._storage.backends()
         await repo.put_credential(credential)
-        return await self._update_status(backend, BackendStatus.VALIDATING)
+        updated = await self._update_status(backend, BackendStatus.VALIDATING)
+        return LoginResponse(kind="complete", backend=updated)
 
     async def validate(self, backend_id: str) -> Backend:
         backend = await self.get(backend_id)
@@ -122,7 +189,8 @@ class AccountService:
         plaintext = await self._vault.decrypt(
             stored.ciphertext, context={"backend_id": backend_id}
         )
-        ok = await impl.validate(plaintext)
+        isolation_dir = self._isolation_dir(backend_id)
+        ok = await impl.validate(plaintext, isolation_dir=isolation_dir)
         if not ok:
             await self._update_status(
                 backend, BackendStatus.ERROR, last_error="validation failed"
@@ -142,7 +210,8 @@ class AccountService:
         plaintext = await self._vault.decrypt(
             stored.ciphertext, context={"backend_id": backend_id}
         )
-        return await impl.list_models(plaintext)
+        isolation_dir = self._isolation_dir(backend_id)
+        return await impl.list_models(plaintext, isolation_dir=isolation_dir)
 
     async def _update_status(
         self,

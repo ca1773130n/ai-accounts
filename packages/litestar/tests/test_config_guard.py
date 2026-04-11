@@ -27,6 +27,7 @@ def test_production_mode_rejects_no_auth(real_vault, tmp_path):
         auth=NoAuth(),
         backends=(ClaudeBackend(),),
         cors_origins=("https://example.com",),
+        backend_dirs_path=tmp_path / "backend_dirs",
     )
     with pytest.raises(RuntimeError, match="NoAuth"):
         create_app(config)
@@ -41,6 +42,7 @@ def test_production_mode_rejects_wildcard_cors(real_vault, tmp_path, monkeypatch
         auth=ApiKeyAuth.from_env(),
         backends=(ClaudeBackend(),),
         cors_origins=("*",),
+        backend_dirs_path=tmp_path / "backend_dirs",
     )
     with pytest.raises(RuntimeError, match="wildcard"):
         create_app(config)
@@ -55,6 +57,7 @@ def test_production_mode_rejects_empty_cors(real_vault, tmp_path, monkeypatch):
         auth=ApiKeyAuth.from_env(),
         backends=(ClaudeBackend(),),
         cors_origins=(),
+        backend_dirs_path=tmp_path / "backend_dirs",
     )
     with pytest.raises(RuntimeError, match="cors_origins"):
         create_app(config)
@@ -69,6 +72,7 @@ def test_production_mode_rejects_fake_vault(tmp_path, monkeypatch):
         auth=ApiKeyAuth.from_env(),
         backends=(ClaudeBackend(),),
         cors_origins=("https://example.com",),
+        backend_dirs_path=tmp_path / "backend_dirs",
     )
     with pytest.raises(RuntimeError, match="fake"):
         create_app(config)
@@ -81,6 +85,7 @@ def test_development_mode_allows_all(tmp_path):
         vault=FakeVault(),
         auth=NoAuth(),
         backends=(ClaudeBackend(),),
+        backend_dirs_path=tmp_path / "backend_dirs",
     )
     app = create_app(config)
     assert app is not None

@@ -16,6 +16,7 @@ def client(tmp_path):
         vault=FakeVault(),
         auth=NoAuth(),
         backends=(FakeBackend(),),
+        backend_dirs_path=tmp_path / "backend_dirs",
     )
     app = create_app(config)
     with TestClient(app=app) as c:

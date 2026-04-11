@@ -24,3 +24,7 @@ class BackendValidationFailed(ServiceError):
 
 class CredentialMissing(ServiceError):
     code = "credential_missing"
+
+
+class LoginFlowUnsupported(ServiceError):
+    code = "login_flow_unsupported"

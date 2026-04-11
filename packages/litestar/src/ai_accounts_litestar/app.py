@@ -51,7 +51,10 @@ def create_app(config: AiAccountsConfig) -> Litestar:
 
     impls = {b.kind: b for b in config.backends}
     account_service = AccountService(
-        storage=config.storage, vault=config.vault, backends=impls
+        storage=config.storage,
+        vault=config.vault,
+        backends=impls,
+        isolation_base_dir=config.backend_dirs_path,
     )
 
     def _provide_config() -> AiAccountsConfig:
