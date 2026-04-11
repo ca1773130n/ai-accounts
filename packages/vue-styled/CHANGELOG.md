@@ -1,5 +1,19 @@
 # @ai-accounts/vue-styled
 
+## 0.2.0
+
+### Minor Changes
+
+- Add OnboardingFlow, Gemini + Codex backends with OAuth device flow, and per-account isolation directories.
+
+  BREAKING: BackendProtocol.login() now returns LoginResult (tagged union of CredentialLogin, OAuthDeviceLogin, LoginError) and takes isolation_dir: Path. All validate/list_models/chat/pty methods also require isolation_dir. New poll_login() method. AccountService constructor now requires isolation_base_dir. AiAccountsClient.loginBackend() TypeScript return type changes from unknown to LoginResponseDTO.
+
+### Patch Changes
+
+- Updated dependencies
+  - @ai-accounts/ts-core@0.2.0
+  - @ai-accounts/vue-headless@0.2.0
+
 ## 0.1.0
 
 ### Minor Changes
