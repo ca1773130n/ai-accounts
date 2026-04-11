@@ -1,4 +1,7 @@
 import type { paths } from './generated';
+import { parseSseLoginEvents } from './login-stream';
+import type { LoginEvent, LoginFlowKind } from '../types/login';
+import type { BackendMetadata } from '../types/metadata';
 
 export type { paths } from './generated';
 
@@ -182,6 +185,72 @@ export class AiAccountsClient {
 
   async validateBackend(id: string): Promise<BackendDTO> {
     return this.postAction<BackendDTO>(id, 'validate');
+  }
+
+  async beginLogin(
+    accountId: string,
+    flowKind: LoginFlowKind,
+    inputs: Record<string, string>
+  ): Promise<{ session_id: string }> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/backends/${encodeURIComponent(accountId)}/login/begin`,
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ flow_kind: flowKind, inputs }),
+      }
+    );
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as { session_id: string };
+  }
+
+  async respondLogin(
+    accountId: string,
+    sessionId: string,
+    promptId: string,
+    answer: string
+  ): Promise<void> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/backends/${encodeURIComponent(accountId)}/login/respond`,
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ session_id: sessionId, prompt_id: promptId, answer }),
+      }
+    );
+    if (!r.ok) throw await toError(r);
+  }
+
+  async cancelLogin(accountId: string, sessionId: string): Promise<void> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/backends/${encodeURIComponent(accountId)}/login/cancel`,
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ session_id: sessionId }),
+      }
+    );
+    if (!r.ok) throw await toError(r);
+  }
+
+  async *streamLogin(
+    accountId: string,
+    sessionId: string
+  ): AsyncIterable<LoginEvent> {
+    const url = `${this.baseUrl}/api/v1/backends/${encodeURIComponent(accountId)}/login/stream?session_id=${encodeURIComponent(sessionId)}`;
+    const headers: Record<string, string> = { Accept: 'text/event-stream' };
+    if (this.token) headers['authorization'] = `Bearer ${this.token}`;
+    const r = await this._fetch(url, { method: 'GET', headers });
+    if (!r.ok) throw await toError(r);
+    yield* parseSseLoginEvents(r);
+  }
+
+  async getBackendMetadata(): Promise<{ items: BackendMetadata[] }> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/backends/_meta`, {
+      headers: this.headers(),
+    });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as { items: BackendMetadata[] };
   }
 
   async startOnboarding(): Promise<OnboardingStateDTO> {
