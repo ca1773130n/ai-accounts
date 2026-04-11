@@ -28,9 +28,12 @@ class LoginSessionRegistry:
         self._entries: dict[str, _Entry] = {}
         self._ttl = ttl_seconds
         self._lock = asyncio.Lock()
+        self._pending_cancels: set[asyncio.Task[None]] = set()
 
     async def register(self, session: LoginSession) -> None:
         async with self._lock:
+            if session.session_id in self._entries:
+                raise ValueError(f"session {session.session_id!r} already registered")
             self._entries[session.session_id] = _Entry(session, time.monotonic())
 
     async def get(self, session_id: str) -> LoginSession | None:
@@ -54,5 +57,7 @@ class LoginSessionRegistry:
                 entry = self._entries.pop(sid)
                 purged += 1
                 if not entry.session.done:
-                    asyncio.create_task(entry.session.cancel())
+                    task = asyncio.create_task(entry.session.cancel())
+                    self._pending_cancels.add(task)
+                    task.add_done_callback(self._pending_cancels.discard)
         return purged

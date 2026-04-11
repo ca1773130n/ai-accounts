@@ -54,6 +54,14 @@ async def test_expired_session_purged():
 
 
 @pytest.mark.asyncio
+async def test_register_duplicate_raises():
+    reg = LoginSessionRegistry(ttl_seconds=60)
+    await reg.register(_Stub("sess-dup"))
+    with pytest.raises(ValueError, match="already registered"):
+        await reg.register(_Stub("sess-dup"))
+
+
+@pytest.mark.asyncio
 async def test_done_session_removable():
     reg = LoginSessionRegistry(ttl_seconds=60)
     s = _Stub("sess-3")
