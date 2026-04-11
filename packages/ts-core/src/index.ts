@@ -3,5 +3,11 @@ export type * from './protocol/wire';
 export { AiAccountsClient } from './client';
 export type { ClientOptions, ApiError, BackendDTO, DetectResultDTO } from './client';
 export type { paths as AiAccountsApiPaths } from './client/generated';
+export { createAccountWizard } from './machines/accountWizard';
+export type {
+  AccountWizard,
+  WizardState,
+  CreateAccountWizardOptions,
+} from './machines/accountWizard';
 
 export const version = '0.0.0';
