@@ -6,6 +6,7 @@ their implementations match the contract.
 
 from .fakes import FakeAuth, FakeBackend, FakeStorage, FakeVault
 from .storage_conformance import run_storage_conformance
+from .vault_conformance import run_vault_conformance
 
 __all__ = [
     "FakeAuth",
@@ -13,4 +14,5 @@ __all__ = [
     "FakeStorage",
     "FakeVault",
     "run_storage_conformance",
+    "run_vault_conformance",
 ]
