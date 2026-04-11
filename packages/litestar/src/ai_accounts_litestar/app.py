@@ -8,10 +8,12 @@ from ai_accounts_core import __version__ as core_version
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.errors import ServiceError
+from ai_accounts_core.services.onboarding import OnboardingService
 
 from .config import AiAccountsConfig
 from .errors import service_error_handler
 from .routes.backends import BackendsController
+from .routes.onboarding import OnboardingController
 
 
 @get("/health", sync_to_thread=False)
@@ -56,6 +58,11 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         backends=impls,
         isolation_base_dir=config.backend_dirs_path,
     )
+    onboarding_service = OnboardingService(
+        storage=config.storage,
+        accounts=account_service,
+        backend_kinds=tuple(impls.keys()),
+    )
 
     def _provide_config() -> AiAccountsConfig:
         return config
@@ -63,9 +70,13 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     def _provide_account_service() -> AccountService:
         return account_service
 
+    def _provide_onboarding_service() -> OnboardingService:
+        return onboarding_service
+
     dependencies: dict[str, Any] = {
         "config": Provide(_provide_config, sync_to_thread=False),
         "account_service": Provide(_provide_account_service, sync_to_thread=False),
+        "onboarding_service": Provide(_provide_onboarding_service, sync_to_thread=False),
     }
 
     cors_config = (
@@ -76,7 +87,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         await config.storage.migrate()
 
     return Litestar(
-        route_handlers=[health, BackendsController],
+        route_handlers=[health, BackendsController, OnboardingController],
         dependencies=dependencies,
         cors_config=cors_config,
         exception_handlers={ServiceError: service_error_handler},
