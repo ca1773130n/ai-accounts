@@ -125,6 +125,176 @@ class _GeminiOAuthDeviceSession(LoginSession):
         self._done = True
 
 
+class _GeminiDirectOAuthSession(LoginSession):
+    """Direct Google OAuth flow using PKCE — bypasses Gemini CLI's broken TUI auth.
+
+    Emits a UrlPrompt with the Google consent URL, awaits the user's auth code
+    as a TextPrompt response, exchanges for tokens via oauth2.googleapis.com,
+    and writes the credentials to ~/.gemini/oauth_creds.json (+ optionally
+    ~/.cli-proxy-api/gemini-<email>.json).
+    """
+
+    _CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+    _REDIRECT_URI = "https://codeassist.google.com/authcode"
+    _SCOPES = " ".join(
+        [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+        ]
+    )
+
+    def __init__(self, config: dict, isolation_dir: Path) -> None:
+        self._sid = f"sess-{uuid.uuid4().hex[:10]}"
+        self._config = config
+        self._isolation_dir = isolation_dir
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._done = False
+        self._state: str | None = None
+        self._code_verifier: str | None = None
+
+    @property
+    def session_id(self) -> str:
+        return self._sid
+
+    @property
+    def backend_kind(self) -> str:
+        return "gemini"
+
+    @property
+    def flow_kind(self) -> str:
+        return "direct_oauth"
+
+    @property
+    def done(self) -> bool:
+        return self._done
+
+    def _build_oauth_url(self) -> str:
+        import base64
+        import hashlib
+        import secrets
+        from urllib.parse import urlencode
+
+        self._code_verifier = secrets.token_urlsafe(64)
+        code_challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(self._code_verifier.encode()).digest())
+            .decode()
+            .rstrip("=")
+        )
+        self._state = secrets.token_hex(32)
+
+        return "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(
+            {
+                "client_id": self._CLIENT_ID,
+                "redirect_uri": self._REDIRECT_URI,
+                "response_type": "code",
+                "scope": self._SCOPES,
+                "access_type": "offline",
+                "code_challenge_method": "S256",
+                "code_challenge": code_challenge,
+                "state": self._state,
+                "prompt": "consent",
+            }
+        )
+
+    async def _exchange_code(self, auth_code: str) -> dict:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=15.0) as http:
+            resp = await http.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": auth_code,
+                    "client_id": self._CLIENT_ID,
+                    "redirect_uri": self._REDIRECT_URI,
+                    "grant_type": "authorization_code",
+                    "code_verifier": self._code_verifier or "",
+                },
+            )
+        if resp.status_code != 200:
+            ct = resp.headers.get("content-type", "")
+            if ct.startswith("application/json"):
+                err = resp.json().get("error_description") or resp.json().get("error")
+            else:
+                err = resp.text[:200]
+            raise RuntimeError(f"token exchange failed: {err}")
+        return resp.json()
+
+    def _write_credentials(self, tokens: dict) -> None:
+        import time
+
+        email = str(self._config.get("email", ""))
+
+        config_path_raw = self._config.get("config_path")
+        if config_path_raw:
+            gemini_dir = Path(os.path.expanduser(str(config_path_raw))) / ".gemini"
+        else:
+            gemini_dir = Path.home() / ".gemini"
+        gemini_dir.mkdir(parents=True, exist_ok=True)
+
+        expiry_ms = int(time.time() * 1000) + int(tokens.get("expires_in", 3600)) * 1000
+
+        creds = {
+            "access_token": tokens.get("access_token", ""),
+            "refresh_token": tokens.get("refresh_token", ""),
+            "scope": self._SCOPES,
+            "token_type": tokens.get("token_type", "Bearer"),
+            "id_token": tokens.get("id_token", ""),
+            "expiry_date": expiry_ms,
+        }
+        (gemini_dir / "oauth_creds.json").write_text(json.dumps(creds, indent=2))
+
+        cliproxy_dir = Path.home() / ".cli-proxy-api"
+        if cliproxy_dir.exists() and email:
+            safe_email = email.replace("/", "_").replace("\\", "_")
+            (cliproxy_dir / f"gemini-{safe_email}.json").write_text(json.dumps(creds, indent=2))
+
+    async def events(self) -> AsyncIterator[LoginEvent]:
+        try:
+            oauth_url = self._build_oauth_url()
+        except Exception as exc:
+            self._done = True
+            yield LoginFailed(code="pkce_init_failed", message=str(exc))
+            return
+
+        yield UrlPrompt(prompt_id="oauth", url=oauth_url)
+        yield TextPrompt(
+            prompt_id="auth_code",
+            prompt="Paste the authorization code from Google",
+            hidden=False,
+        )
+
+        answer = await self._answers.get()
+        auth_code = answer.answer.strip()
+        if not auth_code:
+            self._done = True
+            yield LoginFailed(code="empty_code", message="Authorization code cannot be empty")
+            return
+
+        try:
+            tokens = await self._exchange_code(auth_code)
+        except Exception as exc:
+            self._done = True
+            yield LoginFailed(code="token_exchange_failed", message=str(exc))
+            return
+
+        try:
+            self._write_credentials(tokens)
+        except Exception as exc:
+            self._done = True
+            yield LoginFailed(code="credential_write_failed", message=str(exc))
+            return
+
+        self._done = True
+        yield LoginComplete(account_id="", backend_status="validating")
+
+    async def respond(self, answer: PromptAnswer) -> None:
+        await self._answers.put(answer)
+
+    async def cancel(self) -> None:
+        self._done = True
+
+
 class _GeminiApiKeySession(LoginSession):
     def __init__(self) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
@@ -169,7 +339,9 @@ class GeminiBackend:
     _CLI_NAME: ClassVar[str] = "gemini"
     _ISOLATION_ENV_VAR: ClassVar[str] = "GEMINI_CLI_HOME"
     _API_KEY_ENV_VAR: ClassVar[str] = "GEMINI_API_KEY"
-    supported_login_flows: ClassVar[frozenset[str]] = frozenset({"api_key", "oauth_device"})
+    supported_login_flows: ClassVar[frozenset[str]] = frozenset(
+        {"api_key", "oauth_device", "direct_oauth"}
+    )
 
     metadata: ClassVar[BackendMetadata] = BackendMetadata(
         kind="gemini",
@@ -184,6 +356,12 @@ class GeminiBackend:
                 kind="oauth_device",
                 display_name="Sign in with Google",
                 description="Sign in via Google device flow",
+                requires_inputs=[],
+            ),
+            LoginFlowSpec(
+                kind="direct_oauth",
+                display_name="Sign in with Google (direct)",
+                description="Paste a Google OAuth code from the Code Assist page",
                 requires_inputs=[],
             ),
             LoginFlowSpec(
@@ -213,6 +391,8 @@ class GeminiBackend:
     ) -> LoginSession:
         if flow_kind == "oauth_device":
             return _GeminiOAuthDeviceSession(isolation_dir)
+        if flow_kind == "direct_oauth":
+            return _GeminiDirectOAuthSession(config, isolation_dir)
         if flow_kind == "api_key":
             return _GeminiApiKeySession()
         raise ValueError(f"unsupported flow_kind: {flow_kind}")
