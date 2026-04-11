@@ -14,7 +14,12 @@
  *   5) Done
  */
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import type { LoginFlowKind, BackendMetadata } from '@ai-accounts/ts-core';
+import type {
+  LoginFlowKind,
+  BackendMetadata,
+  InstallResult,
+  CliproxyInstallResult,
+} from '@ai-accounts/ts-core';
 import {
   useAiAccounts,
   useBackendRegistry,
@@ -120,32 +125,54 @@ const setTourTarget = (_selector: string | null) => {};
 // ---------------------------------------------------------------------------
 // Wizard step management
 // ---------------------------------------------------------------------------
-type WizardStep = 'subscription' | 'cli' | 'login' | 'plan' | 'done';
-const STEP_ORDER: WizardStep[] = ['subscription', 'cli', 'login', 'plan', 'done'];
-const VISIBLE_STEPS: WizardStep[] = ['subscription', 'cli', 'login', 'plan'];
+type WizardStep = 'subscription' | 'cli' | 'login' | 'proxy' | 'plan' | 'done';
+const STEP_ORDER: WizardStep[] = ['subscription', 'cli', 'login', 'proxy', 'plan', 'done'];
 const currentStep = ref<WizardStep>('subscription');
 
-const currentStepIndex = computed(() => STEP_ORDER.indexOf(currentStep.value));
+// Backends that the CLIProxyAPI supports registering. Other backends skip
+// the proxy step entirely.
+const PROXY_SUPPORTED_KINDS = ['claude', 'codex', 'gemini'] as const;
+const supportsProxy = computed(() =>
+  PROXY_SUPPORTED_KINDS.includes(
+    (backendKind.value ?? '') as (typeof PROXY_SUPPORTED_KINDS)[number]
+  )
+);
+
+const VISIBLE_STEPS = computed<WizardStep[]>(() => {
+  const base: WizardStep[] = ['subscription', 'cli', 'login'];
+  if (supportsProxy.value) base.push('proxy');
+  base.push('plan');
+  return base;
+});
+
+const currentStepIndex = computed(() =>
+  VISIBLE_STEPS.value.indexOf(currentStep.value)
+);
 
 const stepLabels = computed<Record<WizardStep, string>>(() => ({
   subscription: t('accountWizard.stepSubscription'),
   cli: t('accountWizard.stepCliSetup'),
   login: t('accountWizard.stepLogin'),
+  proxy: 'API Proxy',
   plan: t('accountWizard.stepPlanSave'),
   done: t('accountWizard.stepDone'),
 }));
 
 function goNext() {
-  const idx = currentStepIndex.value;
-  if (idx < STEP_ORDER.length - 1) {
-    currentStep.value = STEP_ORDER[idx + 1]!;
+  const visible = VISIBLE_STEPS.value;
+  const idx = visible.indexOf(currentStep.value);
+  if (idx >= 0 && idx < visible.length - 1) {
+    currentStep.value = visible[idx + 1]!;
+  } else if (currentStep.value === visible[visible.length - 1]) {
+    currentStep.value = 'done';
   }
 }
 
 function goPrev() {
-  const idx = currentStepIndex.value;
+  const visible = VISIBLE_STEPS.value;
+  const idx = visible.indexOf(currentStep.value);
   if (idx > 0) {
-    currentStep.value = STEP_ORDER[idx - 1]!;
+    currentStep.value = visible[idx - 1]!;
   }
 }
 
@@ -246,10 +273,36 @@ async function checkCli() {
   }
 }
 
+const installResult = ref<InstallResult | null>(null);
+
 async function installCli() {
-  // Omitted: no install endpoint in ai-accounts v0.3.0-alpha.1.
-  installError.value =
-    'Automated CLI installation is not available in this build. Please install the CLI manually and click Continue.';
+  if (!backendKind.value) return;
+  isInstallingCli.value = true;
+  installError.value = '';
+  installResult.value = null;
+  try {
+    const res = await client.installBackendCli(backendKind.value);
+    installResult.value = res;
+    if (res.success) {
+      cliInstalled.value = true;
+      cliVersion.value = '';
+    } else {
+      installError.value = res.stderr || res.stdout || 'Installation failed';
+    }
+  } catch (e: unknown) {
+    installError.value = e instanceof Error ? e.message : String(e);
+    installResult.value = {
+      kind: backendKind.value,
+      success: false,
+      display: 'install failed',
+      stdout: '',
+      stderr: installError.value,
+      exit_code: -1,
+      binary_path: null,
+    };
+  } finally {
+    isInstallingCli.value = false;
+  }
 }
 
 async function createConfigDir() {
@@ -266,6 +319,9 @@ onMounted(async () => {
   checkCli();
   setTourTarget('[data-tour="account-wizard"]');
   busEmit({ type: 'wizard.opened', backendKind: backendKind.value });
+  // Kick off a CLIProxyAPI status check so the proxy step can render
+  // install/register UI without a spinner lag.
+  checkCliproxyStatus();
 });
 
 // Reset dir state when config path changes
@@ -390,11 +446,125 @@ const isDefault = ref(false);
 const isSaving = ref(false);
 const saveError = ref('');
 
-// Proxy login (CLIProxyAPI) is Agented-specific and has no equivalent in
-// ai-accounts 0.3.0-alpha.1. The "proxyLoginStatus" block is omitted from
-// the template; we keep the refs so existing styles don't become dead code
-// if a host ever extends them.
-const proxyLoginStatus = ref<'idle'>('idle');
+// ---------------------------------------------------------------------------
+// CLIProxyAPI registration step (Step 3.5) — optional register-with-proxy
+// flow backed by POST /api/v1/cliproxy/login/begin and /callback-forward.
+// ---------------------------------------------------------------------------
+type ProxyLoginStatus =
+  | 'idle'
+  | 'running'
+  | 'device_auth'
+  | 'success'
+  | 'skipped'
+  | 'error';
+
+const proxyLoginStatus = ref<ProxyLoginStatus>('idle');
+const proxyLoginMessage = ref('');
+const proxyOauthUrl = ref('');
+const proxyDeviceCode = ref('');
+const proxyCallbackUrl = ref('');
+const proxyCallbackError = ref('');
+
+const cliproxyInstalled = ref(false);
+const cliproxyInstalling = ref(false);
+const cliproxyInstallResult = ref<CliproxyInstallResult | null>(null);
+const cliproxyStatusChecked = ref(false);
+
+async function checkCliproxyStatus() {
+  try {
+    const s = await client.cliproxyStatus();
+    cliproxyInstalled.value = s.installed;
+  } catch (e: unknown) {
+    console.warn('[AccountWizard] cliproxy status check failed:', e);
+    cliproxyInstalled.value = false;
+  } finally {
+    cliproxyStatusChecked.value = true;
+  }
+}
+
+async function installCliproxy() {
+  cliproxyInstalling.value = true;
+  cliproxyInstallResult.value = null;
+  try {
+    const res = await client.cliproxyInstall();
+    cliproxyInstallResult.value = res;
+    if (res.success) {
+      cliproxyInstalled.value = true;
+    }
+  } catch (e: unknown) {
+    cliproxyInstallResult.value = {
+      success: false,
+      display: 'install failed',
+      stdout: '',
+      stderr: e instanceof Error ? e.message : String(e),
+      binary_path: null,
+    };
+  } finally {
+    cliproxyInstalling.value = false;
+  }
+}
+
+function resetProxyLogin() {
+  proxyLoginStatus.value = 'idle';
+  proxyLoginMessage.value = '';
+  proxyOauthUrl.value = '';
+  proxyDeviceCode.value = '';
+  proxyCallbackUrl.value = '';
+  proxyCallbackError.value = '';
+}
+
+async function runProxyLogin() {
+  if (!backendKind.value) return;
+  proxyLoginStatus.value = 'running';
+  proxyLoginMessage.value = `Registering ${backendName.value} account with API proxy…`;
+  proxyCallbackError.value = '';
+
+  try {
+    const res = await client.cliproxyLoginBegin(
+      backendKind.value,
+      configPath.value?.trim() || undefined
+    );
+    proxyLoginMessage.value = res.message;
+    if (res.status === 'imported') {
+      proxyLoginStatus.value = 'success';
+    } else if (res.status === 'started' && res.oauth_url) {
+      proxyLoginStatus.value = 'device_auth';
+      proxyOauthUrl.value = res.oauth_url;
+      proxyDeviceCode.value = res.device_code ?? '';
+      if (res.device_code) {
+        proxyLoginMessage.value = `Open the URL and enter code ${res.device_code}`;
+      } else {
+        proxyLoginMessage.value =
+          'Complete OAuth in the browser; paste the callback URL below if it fails to redirect';
+      }
+    } else if (res.status === 'skipped') {
+      proxyLoginStatus.value = 'skipped';
+    } else {
+      proxyLoginStatus.value = 'error';
+    }
+  } catch (e: unknown) {
+    proxyLoginStatus.value = 'error';
+    proxyLoginMessage.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function submitProxyCallback() {
+  if (!proxyCallbackUrl.value.trim()) return;
+  proxyCallbackError.value = '';
+  try {
+    const res = await client.cliproxyCallbackForward(
+      proxyCallbackUrl.value.trim()
+    );
+    if (res.status === 'completed') {
+      proxyLoginStatus.value = 'success';
+      proxyLoginMessage.value = 'API proxy login completed';
+    } else {
+      proxyCallbackError.value = res.message;
+    }
+  } catch (e: unknown) {
+    proxyCallbackError.value = e instanceof Error ? e.message : String(e);
+  }
+}
 
 async function saveAccount() {
   isSaving.value = true;
@@ -633,6 +803,10 @@ function skipWizard() {
           <div v-if="isInstallingCli" class="spinner-sm"></div>
         </div>
         <div v-if="installError" class="error-text">{{ installError }}</div>
+        <div v-if="installResult && installResult.success" class="install-success-text">
+          Installed{{ installResult.binary_path ? ` at ${installResult.binary_path}` : '' }}
+        </div>
+        <pre v-if="installResult && !installResult.success && installResult.stderr" class="install-stderr">{{ installResult.stderr }}</pre>
 
         <!-- Config directory -->
         <div v-if="configPath" class="config-dir-section">
@@ -740,6 +914,119 @@ function skipWizard() {
         </button>
         <button class="btn btn-primary" @click="goNext">
           {{ loginStatus === 'idle' ? t('common.skip') : t('accountWizard.continueBtn') }}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 3.5: CLIProxyAPI registration (optional) -->
+    <div v-if="backendKind && currentStep === 'proxy'" class="wizard-step">
+      <div class="step-body">
+        <!-- CLIProxyAPI not installed — offer auto-install -->
+        <div v-if="cliproxyStatusChecked && !cliproxyInstalled" class="cliproxy-install-block">
+          <p class="step-description">
+            CLIProxyAPI is not installed. Install it to expose this account
+            through an OpenAI-compatible endpoint for other tools.
+          </p>
+          <button
+            class="btn btn-primary"
+            :disabled="cliproxyInstalling"
+            @click="installCliproxy"
+          >
+            <div v-if="cliproxyInstalling" class="spinner-sm"></div>
+            {{ cliproxyInstalling ? 'Installing cliproxyapi…' : 'Install CLIProxyAPI' }}
+          </button>
+          <div v-if="cliproxyInstallResult">
+            <p v-if="cliproxyInstallResult.success" class="install-success-text">
+              Installed{{ cliproxyInstallResult.binary_path ? ` at ${cliproxyInstallResult.binary_path}` : '' }}
+            </p>
+            <div v-else>
+              <p class="error-text">Install failed</p>
+              <pre v-if="cliproxyInstallResult.stderr" class="install-stderr">{{ cliproxyInstallResult.stderr }}</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- CLIProxyAPI is installed — show registration flow -->
+        <div v-else-if="cliproxyInstalled" class="proxy-step-body">
+          <h4 class="proxy-heading">Register with API proxy</h4>
+          <p class="step-description">
+            Optional: register this account with CLIProxyAPI so other tools
+            can reach it through an OpenAI-compatible endpoint.
+          </p>
+
+          <button
+            v-if="proxyLoginStatus === 'idle'"
+            class="btn btn-primary"
+            @click="runProxyLogin"
+          >
+            Start proxy registration
+          </button>
+
+          <div v-if="proxyLoginStatus === 'running'" class="proxy-running">
+            <div class="spinner-sm"></div>
+            <span>{{ proxyLoginMessage }}</span>
+          </div>
+
+          <div v-if="proxyLoginStatus === 'device_auth'" class="proxy-device-auth">
+            <p>{{ proxyLoginMessage }}</p>
+            <a v-if="proxyOauthUrl" :href="proxyOauthUrl" target="_blank" rel="noopener" class="proxy-oauth-link">
+              {{ proxyOauthUrl }}
+            </a>
+            <p v-if="proxyDeviceCode" class="proxy-code">
+              Code: <code>{{ proxyDeviceCode }}</code>
+            </p>
+            <div class="callback-paste">
+              <label class="callback-label">
+                If the redirect to localhost fails, paste the callback URL:
+                <input
+                  v-model="proxyCallbackUrl"
+                  type="url"
+                  placeholder="http://localhost:8085/callback?code=..."
+                />
+              </label>
+              <button class="btn btn-outline btn-sm" @click="submitProxyCallback">
+                Submit callback
+              </button>
+              <p v-if="proxyCallbackError" class="error-text">{{ proxyCallbackError }}</p>
+            </div>
+          </div>
+
+          <div v-if="proxyLoginStatus === 'success'" class="proxy-success">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <strong>{{ proxyLoginMessage || 'Registered successfully' }}</strong>
+          </div>
+
+          <div v-if="proxyLoginStatus === 'skipped'" class="proxy-skipped">
+            <p>{{ proxyLoginMessage }}</p>
+            <button class="btn btn-outline btn-sm" @click="resetProxyLogin">Retry</button>
+          </div>
+
+          <div v-if="proxyLoginStatus === 'error'" class="proxy-error">
+            <p class="error-text"><strong>Error:</strong> {{ proxyLoginMessage }}</p>
+            <button class="btn btn-outline btn-sm" @click="resetProxyLogin">Retry</button>
+          </div>
+        </div>
+
+        <!-- Status check still pending -->
+        <div v-else class="proxy-loading">
+          <div class="spinner-sm"></div>
+          <span>Checking CLIProxyAPI status…</span>
+        </div>
+      </div>
+      <div class="step-actions">
+        <button class="btn btn-secondary" @click="goPrev">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          {{ t('common.back') }}
+        </button>
+        <button class="btn btn-primary" @click="goNext">
+          {{ proxyLoginStatus === 'success' ? t('accountWizard.continueBtn') : t('common.skip') }}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
             <polyline points="9 18 15 12 9 6"/>
           </svg>
