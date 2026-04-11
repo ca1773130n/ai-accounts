@@ -8,6 +8,9 @@ from ..dto import (
     CreateBackendRequest,
     DetectResultDTO,
     LoginRequest,
+    LoginResponseDTO,
+    OAuthDeviceLoginDTO,
+    PollLoginRequest,
 )
 
 
@@ -50,21 +53,18 @@ class BackendsController(Controller):
     @post("/{backend_id:str}/login")
     async def login(
         self, backend_id: str, data: LoginRequest, account_service: AccountService
-    ) -> BackendDTO:
-        from litestar.exceptions import HTTPException
-
+    ) -> LoginResponseDTO:
         response = await account_service.login(
             backend_id, flow_kind=data.flow_kind, inputs=data.inputs
         )
-        if response.kind != "complete" or response.backend is None:
-            raise HTTPException(
-                detail=(
-                    "OAuth flows not supported on this endpoint yet"
-                    " (Task 8 adds LoginResponseDTO)"
-                ),
-                status_code=500,
-            )
-        return BackendDTO.from_domain(response.backend)
+        return LoginResponseDTO.from_service(response)
+
+    @post("/{backend_id:str}/login/poll")
+    async def poll_login(
+        self, backend_id: str, data: PollLoginRequest, account_service: AccountService
+    ) -> LoginResponseDTO:
+        response = await account_service.poll_login(backend_id, handle=data.handle)
+        return LoginResponseDTO.from_service(response)
 
     @post("/{backend_id:str}/validate")
     async def validate(
