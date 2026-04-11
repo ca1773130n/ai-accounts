@@ -104,12 +104,18 @@ export function createAccountWizard(opts: CreateAccountWizardOptions): AccountWi
       state = 'validating';
       emit();
       try {
-        await opts.client.loginBackend(backend.id, flowKind, inputs);
-        backend = await opts.client.validateBackend(backend.id);
+        const response = await opts.client.loginBackend(backend.id, flowKind, inputs);
+        if (response.kind === 'pending') {
+          state = 'error';
+          error = 'OAuth flows are not supported in AccountWizard; use OnboardingFlow instead';
+          emit();
+          return;
+        }
+        backend = (await opts.client.validateBackend(backend.id)) as BackendDTO;
         state = 'done';
       } catch (e) {
         state = 'error';
-        error = e instanceof Error ? e.message : 'validation failed';
+        error = (e as { message?: string }).message ?? 'validation failed';
       }
       emit();
     },
