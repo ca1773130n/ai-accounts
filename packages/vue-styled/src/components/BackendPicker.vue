@@ -12,6 +12,10 @@ const emit = defineEmits<{
 
 const registry = useBackendRegistry();
 
+function statusFor(kind: string) {
+  return props.installStatus ? props.installStatus[kind] : undefined;
+}
+
 onMounted(async () => {
   if (!registry.loaded.value) await registry.load();
 });
@@ -24,20 +28,14 @@ onMounted(async () => {
         <img v-if="meta.icon_url" :src="meta.icon_url" :alt="meta.display_name" />
         <div class="aia-backend-info">
           <strong>{{ meta.display_name }}</strong>
-          <span
-            v-if="props.installStatus && props.installStatus[meta.kind] && props.installStatus[meta.kind].installed"
-            class="aia-installed"
-          >
-            installed{{
-              props.installStatus[meta.kind].version
-                ? ' v' + props.installStatus[meta.kind].version
-                : ''
-            }}
-          </span>
-          <span
-            v-else-if="props.installStatus && props.installStatus[meta.kind]"
-            class="aia-not-installed"
-          >not detected</span>
+          <template v-if="statusFor(meta.kind)">
+            <span v-if="statusFor(meta.kind)!.installed" class="aia-installed">
+              installed{{
+                statusFor(meta.kind)!.version ? ' v' + statusFor(meta.kind)!.version : ''
+              }}
+            </span>
+            <span v-else class="aia-not-installed">not detected</span>
+          </template>
         </div>
       </button>
     </li>
