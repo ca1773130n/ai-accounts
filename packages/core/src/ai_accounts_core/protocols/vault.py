@@ -1,0 +1,13 @@
+from typing import Protocol, runtime_checkable
+
+
+class VaultError(Exception):
+    """Raised when a vault operation fails (key missing, tamper, etc.)."""
+
+
+@runtime_checkable
+class VaultProtocol(Protocol):
+    async def encrypt(self, plaintext: bytes, *, context: dict[str, str]) -> bytes: ...
+    async def decrypt(self, ciphertext: bytes, *, context: dict[str, str]) -> bytes: ...
+    async def current_key_id(self) -> str: ...
+    async def rotate(self, old_key_id: str) -> None: ...
