@@ -9,6 +9,7 @@ from .errors import (
     LoginFlowUnsupported,
     ServiceError,
 )
+from .onboarding import OnboardingNotFound, OnboardingService
 
 __all__ = [
     "AccountService",
@@ -20,5 +21,7 @@ __all__ = [
     "CredentialMissing",
     "LoginFlowUnsupported",
     "LoginResponse",
+    "OnboardingNotFound",
+    "OnboardingService",
     "ServiceError",
 ]
