@@ -1,0 +1,21 @@
+[project]
+name = "ai-accounts-litestar"
+version = "0.0.0"
+description = "Litestar HTTP layer for ai-accounts."
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.11"
+dependencies = [
+    "ai-accounts-core",
+    "litestar[standard]>=2.12",
+]
+
+[tool.uv.sources]
+ai-accounts-core = {workspace = true}
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_accounts_litestar"]
