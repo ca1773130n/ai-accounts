@@ -5,13 +5,17 @@ import json
 import os
 import shutil
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any, ClassVar
 
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.protocols.backend import (
     ChatRequest,
     ChatStreamEvent,
+    CredentialLogin,
+    LoginError,
     LoginFlow,
+    LoginResult,
     Model,
     PtyHandle,
     PtyRequest,
@@ -21,6 +25,8 @@ from ai_accounts_core.protocols.backend import (
 class ClaudeBackend:
     kind: ClassVar[str] = "claude"
     _CLI_NAME: ClassVar[str] = "claude"
+    _ISOLATION_ENV_VAR: ClassVar[str] = "CLAUDE_CONFIG_DIR"
+    supported_login_flows: ClassVar[frozenset[str]] = frozenset({"api_key"})
 
     async def detect(self) -> DetectResult:
         path = shutil.which(self._CLI_NAME)
@@ -35,29 +41,38 @@ class ClaudeBackend:
             version = first_line or None
         return DetectResult(installed=True, version=version, path=path)
 
-    async def login(self, flow: LoginFlow) -> bytes:
-        if flow.kind == "api_key":
-            key = flow.inputs.get("api_key", "").strip()
-            if not key:
-                raise ValueError("api_key input is required for api_key flow")
-            return key.encode()
-        raise ValueError(f"unsupported login flow: {flow.kind}")
+    async def login(self, flow: LoginFlow, *, isolation_dir: Path) -> LoginResult:
+        if flow.kind != "api_key":
+            return LoginError(
+                code="unsupported_flow",
+                message=f"ClaudeBackend does not support {flow.kind!r}",
+            )
+        key = flow.inputs.get("api_key", "").strip()
+        if not key:
+            return LoginError(code="missing_input", message="api_key is required")
+        return CredentialLogin(credential=key.encode())
 
-    async def validate(self, credential: bytes) -> bool:
+    async def poll_login(self, handle: str, *, isolation_dir: Path) -> LoginResult:
+        return LoginError(
+            code="not_pollable",
+            message="ClaudeBackend only supports the synchronous api_key flow",
+        )
+
+    async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return False
-        env = {**os.environ, "ANTHROPIC_API_KEY": credential.decode()}
+        env = self._env(credential, isolation_dir)
         rc, _stdout, _stderr = await self._run(
             {"argv": [path, "auth", "status"], "env": env}
         )
         return rc == 0
 
-    async def list_models(self, credential: bytes) -> list[Model]:
+    async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return []
-        env = {**os.environ, "ANTHROPIC_API_KEY": credential.decode()}
+        env = self._env(credential, isolation_dir)
         rc, stdout, _stderr = await self._run(
             {"argv": [path, "models", "list", "--json"], "env": env}
         )
@@ -74,12 +89,30 @@ class ClaudeBackend:
         ]
 
     async def chat(
-        self, request: ChatRequest, credential: bytes
+        self,
+        request: ChatRequest,
+        credential: bytes,
+        *,
+        isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
         raise NotImplementedError("chat lands in Phase 3")
 
-    async def pty(self, request: PtyRequest, credential: bytes) -> PtyHandle:
+    async def pty(
+        self,
+        request: PtyRequest,
+        credential: bytes,
+        *,
+        isolation_dir: Path,
+    ) -> PtyHandle:
         raise NotImplementedError("pty lands in Phase 4")
+
+    def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:
+        isolation_dir.mkdir(parents=True, exist_ok=True)
+        return {
+            **os.environ,
+            "ANTHROPIC_API_KEY": credential.decode(),
+            self._ISOLATION_ENV_VAR: str(isolation_dir),
+        }
 
     async def _run(self, spec: dict[str, Any]) -> tuple[int, bytes, bytes]:
         argv: list[str] = spec["argv"]
