@@ -26,6 +26,18 @@ def test_backend_protocol_exports():
     assert hasattr(backend, "LoginFlow")
     assert hasattr(backend, "ChatRequest")
     assert hasattr(backend, "PtyRequest")
+    assert hasattr(backend, "CredentialLogin")
+    assert hasattr(backend, "OAuthDeviceLogin")
+    assert hasattr(backend, "LoginError")
+    assert hasattr(backend, "LoginResult")
+
+
+def test_fake_backend_supported_login_flows():
+    from ai_accounts_core.testing import FakeBackend
+    fb = FakeBackend()
+    assert hasattr(fb, "supported_login_flows")
+    assert "api_key" in fb.supported_login_flows
+    assert "oauth_device" in fb.supported_login_flows
 
 
 def test_transport_protocol_exports():

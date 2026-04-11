@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from ai_accounts_core.domain.backend import Backend, BackendCredential, DetectResult
@@ -10,7 +12,14 @@ from ai_accounts_core.domain.onboarding import OnboardingState
 from ai_accounts_core.domain.principal import Principal
 from ai_accounts_core.domain.session import LiveSession
 from ai_accounts_core.protocols.auth import RequestContext
-from ai_accounts_core.protocols.backend import LoginFlow, Model
+from ai_accounts_core.protocols.backend import (
+    CredentialLogin,
+    LoginError,
+    LoginFlow,
+    LoginResult,
+    Model,
+    OAuthDeviceLogin,
+)
 from ai_accounts_core.protocols.storage import (
     BackendRepository,
     HistoryRepository,
@@ -174,28 +183,64 @@ class FakeAuth:
 
 class FakeBackend:
     kind = "fake"
+    supported_login_flows: frozenset[str] = frozenset({"api_key", "oauth_device"})
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, Any]] = []
+        self._oauth_poll_counts: dict[str, int] = {}
 
     async def detect(self) -> DetectResult:
         self.calls.append(("detect", None))
         return DetectResult(installed=True, version="fake/0.0", path="/usr/local/bin/fake")
 
-    async def login(self, flow: LoginFlow) -> bytes:
+    async def login(self, flow: LoginFlow, *, isolation_dir: Path) -> LoginResult:
         self.calls.append(("login", flow))
-        return b"fake-credential"
+        if flow.kind == "api_key":
+            return CredentialLogin(credential=b"fake-credential")
+        if flow.kind == "oauth_device":
+            handle = f"fake-handle-{len(self._oauth_poll_counts)}"
+            self._oauth_poll_counts[handle] = 0
+            return OAuthDeviceLogin(
+                verification_uri="https://example.com/device",
+                user_code="FAKE-1234",
+                expires_at=datetime.now(UTC) + timedelta(minutes=15),
+                handle=handle,
+            )
+        return LoginError(
+            code="unsupported_flow",
+            message=f"FakeBackend does not support {flow.kind!r}",
+        )
 
-    async def validate(self, credential: bytes) -> bool:
+    async def poll_login(self, handle: str, *, isolation_dir: Path) -> LoginResult:
+        self.calls.append(("poll_login", handle))
+        if handle not in self._oauth_poll_counts:
+            return LoginError(code="unknown_handle", message=handle)
+        self._oauth_poll_counts[handle] += 1
+        if self._oauth_poll_counts[handle] >= 2:
+            isolation_dir.mkdir(parents=True, exist_ok=True)
+            (isolation_dir / "oauth_token.fake").write_text("logged-in")
+            return CredentialLogin(credential=b"")
+        return OAuthDeviceLogin(
+            verification_uri="https://example.com/device",
+            user_code="FAKE-1234",
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            handle=handle,
+        )
+
+    async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
         self.calls.append(("validate", credential))
-        return credential == b"fake-credential"
+        if credential == b"fake-credential":
+            return True
+        if credential == b"" and (isolation_dir / "oauth_token.fake").exists():
+            return True
+        return False
 
-    async def list_models(self, credential: bytes) -> list[Model]:
+    async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
         self.calls.append(("list_models", credential))
         return [Model(id="fake-1", display_name="Fake Model 1")]
 
-    async def chat(self, request: object, credential: bytes):  # type: ignore[no-untyped-def]
-        raise NotImplementedError
+    async def chat(self, request: object, credential: bytes, *, isolation_dir: Path):  # type: ignore[no-untyped-def]
+        raise NotImplementedError("chat lands in Phase 3")
 
-    async def pty(self, request: object, credential: bytes):  # type: ignore[no-untyped-def]
-        raise NotImplementedError
+    async def pty(self, request: object, credential: bytes, *, isolation_dir: Path):  # type: ignore[no-untyped-def]
+        raise NotImplementedError("pty lands in Phase 4")
