@@ -4,7 +4,13 @@ from enum import Enum
 import msgspec
 
 
-class BackendKind(str, Enum):
+class BackendKind:
+    """String constants for built-in backend kinds.
+
+    Third-party backends may define their own kinds — `AccountService.create`
+    accepts any string, validated against the set of registered backend impls.
+    """
+
     CLAUDE = "claude"
     OPENCODE = "opencode"
     GEMINI = "gemini"
@@ -22,7 +28,7 @@ class BackendStatus(str, Enum):
 
 class Backend(msgspec.Struct, frozen=True, kw_only=True):
     id: str
-    kind: BackendKind
+    kind: str
     display_name: str
     config: dict[str, object]
     status: BackendStatus

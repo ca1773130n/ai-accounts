@@ -15,7 +15,7 @@ def test_backend_construction():
         created_at=datetime.now(UTC),
     )
     assert backend.id == "bkd-abc123"
-    assert backend.kind is BackendKind.CLAUDE
+    assert backend.kind == BackendKind.CLAUDE
     assert backend.status is BackendStatus.READY
 
 

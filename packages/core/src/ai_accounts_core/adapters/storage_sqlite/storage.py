@@ -9,7 +9,6 @@ import aiosqlite
 from ai_accounts_core.domain.backend import (
     Backend,
     BackendCredential,
-    BackendKind,
     BackendStatus,
 )
 from ai_accounts_core.domain.chat import ChatMessage, ChatRole, ChatSession
@@ -46,7 +45,7 @@ class _SqliteBackendRepo:
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 backend.id,
-                backend.kind.value,
+                backend.kind,
                 backend.display_name,
                 json.dumps(backend.config),
                 backend.status.value,
@@ -79,7 +78,7 @@ class _SqliteBackendRepo:
             "UPDATE backends SET kind = ?, display_name = ?, config = ?, status = ?, "
             "updated_at = ?, last_error = ? WHERE id = ?",
             (
-                backend.kind.value,
+                backend.kind,
                 backend.display_name,
                 json.dumps(backend.config),
                 backend.status.value,
@@ -143,7 +142,7 @@ class _SqliteBackendRepo:
         assert created_at is not None
         return Backend(
             id=row[0],
-            kind=BackendKind(row[1]),
+            kind=row[1],
             display_name=row[2],
             config=json.loads(row[3]),
             status=BackendStatus(row[4]),
