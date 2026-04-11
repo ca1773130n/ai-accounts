@@ -1,8 +1,12 @@
-from typing import Literal
+from typing import Any, Literal
 
 import msgspec
 
 
-class AiAccountsConfig(msgspec.Struct, frozen=True, kw_only=True):
+class AiAccountsConfig(msgspec.Struct, kw_only=True):
     env: Literal["development", "production"] = "development"
+    storage: Any = None
+    vault: Any = None
+    auth: Any = None
+    backends: tuple[Any, ...] = ()
     cors_origins: tuple[str, ...] = ()
