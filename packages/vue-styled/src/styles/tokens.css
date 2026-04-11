@@ -1,0 +1,35 @@
+:root {
+  --aia-bg: #0a0a0a;
+  --aia-bg-elevated: #141414;
+  --aia-bg-hover: #1f1f1f;
+  --aia-fg: #fafafa;
+  --aia-fg-muted: #a1a1aa;
+  --aia-fg-subtle: #71717a;
+  --aia-border: #27272a;
+  --aia-border-hover: #3f3f46;
+  --aia-primary: #7c3aed;
+  --aia-primary-hover: #8b5cf6;
+  --aia-primary-fg: #ffffff;
+  --aia-success: #10b981;
+  --aia-warning: #f59e0b;
+  --aia-danger: #ef4444;
+  --aia-radius-sm: 4px;
+  --aia-radius: 8px;
+  --aia-radius-lg: 12px;
+  --aia-space-1: 4px;
+  --aia-space-2: 8px;
+  --aia-space-3: 12px;
+  --aia-space-4: 16px;
+  --aia-space-6: 24px;
+  --aia-space-8: 32px;
+  --aia-font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --aia-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --aia-text-xs: 12px;
+  --aia-text-sm: 14px;
+  --aia-text-base: 16px;
+  --aia-text-lg: 18px;
+  --aia-text-xl: 24px;
+  --aia-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --aia-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --aia-transition: 150ms ease-out;
+}

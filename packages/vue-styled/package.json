@@ -4,14 +4,14 @@
   "description": "Vue 3 styled components for ai-accounts",
   "license": "Apache-2.0",
   "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "main": "./dist/ai-accounts-vue-styled.cjs.js",
+  "module": "./dist/ai-accounts-vue-styled.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/ai-accounts-vue-styled.js",
+      "require": "./dist/ai-accounts-vue-styled.cjs.js"
     },
     "./styles.css": "./dist/styles.css"
   },
@@ -24,12 +24,17 @@
     "@ai-accounts/vue-headless": "workspace:*"
   },
   "devDependencies": {
-    "vue": "^3.4.0"
+    "vue": "^3.4.0",
+    "vite": "^5.4.0",
+    "@vitejs/plugin-vue": "^5.1.0",
+    "vue-tsc": "^2.1.0",
+    "@vue/test-utils": "^2.4.0",
+    "happy-dom": "^15.0.0"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean --external vue",
+    "build": "vite build && vue-tsc --emitDeclarationOnly --declaration",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit -p tsconfig.test.json"
   }
 }
