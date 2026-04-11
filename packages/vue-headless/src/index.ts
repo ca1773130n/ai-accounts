@@ -3,5 +3,8 @@ export type { UseAccountWizardOptions, UseAccountWizardReturn } from './useAccou
 export { useOnboarding } from './useOnboarding';
 export type { UseOnboardingOptions, UseOnboardingReturn } from './useOnboarding';
 
-export const version = '0.2.0';
+export { aiAccountsPlugin, type AiAccountsPluginOptions } from './plugin';
+export { aiAccountsKey, type AiAccountsContext } from './injection-keys';
+export { useAiAccounts } from './composables/useAiAccounts';
 
+export const version = '0.3.0-alpha.1';
