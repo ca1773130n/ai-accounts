@@ -1,0 +1,35 @@
+{
+  "name": "@ai-accounts/vue-styled",
+  "version": "0.0.0",
+  "description": "Vue 3 styled components for ai-accounts",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "files": ["dist"],
+  "peerDependencies": {
+    "vue": "^3.4.0"
+  },
+  "dependencies": {
+    "@ai-accounts/ts-core": "workspace:*",
+    "@ai-accounts/vue-headless": "workspace:*"
+  },
+  "devDependencies": {
+    "vue": "^3.4.0"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --external vue",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  }
+}
