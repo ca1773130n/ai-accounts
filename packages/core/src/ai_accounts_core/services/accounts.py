@@ -108,6 +108,39 @@ class AccountService:
         repo = await self._storage.backends()
         return await repo.list()
 
+    async def update(
+        self,
+        backend_id: str,
+        *,
+        display_name: str | None = None,
+        config: dict[str, object] | None | object = _SENTINEL,
+    ) -> Backend:
+        """Patch a backend's display_name and/or config.
+
+        Unspecified kwargs are left unchanged. Pass `config=None` to clear,
+        or `config={...}` to replace (merge is caller's responsibility —
+        pass the full new dict).
+        """
+        backend = await self.get(backend_id)
+        new_display = display_name if display_name is not None else backend.display_name
+        if config is _SENTINEL:
+            new_config = backend.config
+        else:
+            new_config = config if config is not None else {}
+        updated = Backend(
+            id=backend.id,
+            kind=backend.kind,
+            display_name=new_display,
+            config=new_config,  # type: ignore[arg-type]
+            status=backend.status,
+            created_at=backend.created_at,
+            updated_at=_now(),
+            last_error=backend.last_error,
+        )
+        repo = await self._storage.backends()
+        await repo.update(updated)
+        return updated
+
     async def delete(self, backend_id: str) -> None:
         backend = await self.get(backend_id)
         repo = await self._storage.backends()

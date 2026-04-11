@@ -37,7 +37,8 @@ export interface paths {
         delete: operations["ApiV1BackendsBackendIdDeleteBackend"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** UpdateBackend */
+        patch: operations["ApiV1BackendsBackendIdUpdateBackend"];
         trace?: never;
     };
     "/api/v1/backends/{backend_id}/detect": {
@@ -323,6 +324,13 @@ export interface components {
         PollLoginRequest: {
             handle: string;
         };
+        /** UpdateBackendRequest */
+        UpdateBackendRequest: {
+            config?: {
+                [key: string]: unknown;
+            } | null;
+            display_name?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -445,6 +453,47 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1BackendsBackendIdUpdateBackend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                backend_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBackendRequest"];
+            };
+        };
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackendDTO"];
+                };
             };
             /** @description Bad request syntax or unsupported method */
             400: {

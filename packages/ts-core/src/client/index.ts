@@ -131,6 +131,22 @@ export class AiAccountsClient {
     if (!r.ok) throw await toError(r);
   }
 
+  async updateBackend(
+    id: string,
+    patch: { display_name?: string; config?: Record<string, unknown> }
+  ): Promise<BackendDTO> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/backends/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: this.headers(),
+        body: JSON.stringify(patch),
+      }
+    );
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as BackendDTO;
+  }
+
   async detectBackend(id: string): Promise<DetectResultDTO> {
     return this.postAction<DetectResultDTO>(id, 'detect');
   }

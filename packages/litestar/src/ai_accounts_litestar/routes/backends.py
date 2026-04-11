@@ -1,4 +1,4 @@
-from litestar import Controller, delete, get, post, status_codes
+from litestar import Controller, delete, get, patch, post, status_codes
 
 from ai_accounts_core.services.accounts import AccountService
 
@@ -11,6 +11,7 @@ from ..dto import (
     LoginResponseDTO,
     OAuthDeviceLoginDTO,
     PollLoginRequest,
+    UpdateBackendRequest,
 )
 
 
@@ -37,6 +38,21 @@ class BackendsController(Controller):
         self, backend_id: str, account_service: AccountService
     ) -> BackendDTO:
         return BackendDTO.from_domain(await account_service.get(backend_id))
+
+    @patch("/{backend_id:str}")
+    async def update_backend(
+        self,
+        backend_id: str,
+        data: UpdateBackendRequest,
+        account_service: AccountService,
+    ) -> BackendDTO:
+        kwargs: dict[str, object] = {}
+        if data.display_name is not None:
+            kwargs["display_name"] = data.display_name
+        if data.config is not None:
+            kwargs["config"] = data.config
+        updated = await account_service.update(backend_id, **kwargs)  # type: ignore[arg-type]
+        return BackendDTO.from_domain(updated)
 
     @delete("/{backend_id:str}")
     async def delete_backend(

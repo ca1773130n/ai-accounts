@@ -204,4 +204,30 @@ describe('AiAccountsClient', () => {
     expect(final.current_step).toBe('done');
     expect(final.created_backend_id).toBe('bkd-1');
   });
+
+  it('updateBackend sends PATCH with patch body', async () => {
+    const fetchMock = mockFetch({
+      body: {
+        id: 'bkd-1',
+        kind: 'claude',
+        display_name: 'New Name',
+        status: 'validating',
+        config: { email: 'x@y.z' },
+        last_error: null,
+      },
+    });
+    const client = new AiAccountsClient({ baseUrl: 'http://test', fetch: fetchMock });
+    const updated = await client.updateBackend('bkd-1', {
+      display_name: 'New Name',
+      config: { email: 'x@y.z' },
+    });
+    expect(updated.display_name).toBe('New Name');
+    const callArgs = fetchMock.mock.calls[0];
+    expect((callArgs[1] as RequestInit).method).toBe('PATCH');
+    const url = callArgs[0] as string;
+    expect(url).toContain('/api/v1/backends/bkd-1');
+    const body = JSON.parse((callArgs[1] as RequestInit).body as string);
+    expect(body.display_name).toBe('New Name');
+    expect(body.config).toEqual({ email: 'x@y.z' });
+  });
 });

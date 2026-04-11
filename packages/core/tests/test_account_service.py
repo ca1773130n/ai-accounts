@@ -221,3 +221,55 @@ async def test_login_unsupported_flow_raises(tmp_path):
     created = await svc.create("ko", display_name="X")
     with pytest.raises(LoginFlowUnsupported):
         await svc.login(created.id, flow_kind="oauth_device", inputs={})
+
+
+@pytest.mark.asyncio
+async def test_update_backend_display_name(tmp_path):
+    service, _, _, _ = _make_service(tmp_path)
+    created = await service.create("fake", display_name="Work")
+    updated = await service.update(created.id, display_name="Personal")
+    assert updated.display_name == "Personal"
+    assert updated.kind == created.kind
+    assert updated.config == created.config
+
+    refetched = await service.get(created.id)
+    assert refetched.display_name == "Personal"
+
+
+@pytest.mark.asyncio
+async def test_update_backend_config(tmp_path):
+    service, _, _, _ = _make_service(tmp_path)
+    created = await service.create("fake", display_name="A", config={"plan": "free"})
+    updated = await service.update(created.id, config={"plan": "pro", "email": "x@y.z"})
+    assert updated.config == {"plan": "pro", "email": "x@y.z"}
+    assert updated.display_name == "A"
+
+
+@pytest.mark.asyncio
+async def test_update_backend_both_fields(tmp_path):
+    service, _, _, _ = _make_service(tmp_path)
+    created = await service.create("fake", display_name="Old")
+    updated = await service.update(
+        created.id, display_name="New", config={"email": "new@example.com"}
+    )
+    assert updated.display_name == "New"
+    assert updated.config == {"email": "new@example.com"}
+
+
+@pytest.mark.asyncio
+async def test_update_backend_missing_raises(tmp_path):
+    from ai_accounts_core.services.errors import BackendNotFound
+
+    service, _, _, _ = _make_service(tmp_path)
+    with pytest.raises(BackendNotFound):
+        await service.update("bkd-nope", display_name="x")
+
+
+@pytest.mark.asyncio
+async def test_update_backend_preserves_fields_when_omitted(tmp_path):
+    service, _, _, _ = _make_service(tmp_path)
+    created = await service.create("fake", display_name="Keep", config={"email": "a@b"})
+    # Call update with NO kwargs — should be a no-op that still returns the current row
+    updated = await service.update(created.id)
+    assert updated.display_name == "Keep"
+    assert updated.config == {"email": "a@b"}

@@ -143,3 +143,44 @@ def test_list_after_create(client):
     assert response.status_code == 200
     items = response.json()["items"]
     assert len(items) == 2
+
+
+def test_patch_backend_display_name(client):
+    created = client.post(
+        "/api/v1/backends/", json={"kind": "fake", "display_name": "Old"}
+    ).json()
+    response = client.patch(
+        f"/api/v1/backends/{created['id']}",
+        json={"display_name": "New"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["display_name"] == "New"
+    assert body["id"] == created["id"]
+
+    refetched = client.get(f"/api/v1/backends/{created['id']}")
+    assert refetched.json()["display_name"] == "New"
+
+
+def test_patch_backend_config(client):
+    created = client.post(
+        "/api/v1/backends/",
+        json={"kind": "fake", "display_name": "X", "config": {"plan": "free"}},
+    ).json()
+    response = client.patch(
+        f"/api/v1/backends/{created['id']}",
+        json={"config": {"plan": "pro", "email": "a@b.c"}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["config"] == {"plan": "pro", "email": "a@b.c"}
+    assert body["display_name"] == "X"  # unchanged
+
+
+def test_patch_backend_not_found(client):
+    response = client.patch(
+        "/api/v1/backends/bkd-nope",
+        json={"display_name": "x"},
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "backend_not_found"

@@ -1,5 +1,14 @@
 # playground
 
+## 0.0.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @ai-accounts/ts-core@0.2.1
+  - @ai-accounts/vue-headless@0.2.1
+  - @ai-accounts/vue-styled@0.2.1
+
 ## 0.0.2
 
 ### Patch Changes

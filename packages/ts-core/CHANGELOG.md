@@ -1,5 +1,11 @@
 # @ai-accounts/ts-core
 
+## 0.2.1
+
+### Patch Changes
+
+- Add PATCH /api/v1/backends/{id} route, AccountService.update(), and AiAccountsClient.updateBackend() for editing backend display_name and config after creation.
+
 ## 0.2.0
 
 ### Minor Changes

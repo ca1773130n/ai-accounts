@@ -38,6 +38,11 @@ class CreateBackendRequest(msgspec.Struct, kw_only=True):
     config: dict[str, object] = {}
 
 
+class UpdateBackendRequest(msgspec.Struct, kw_only=True):
+    display_name: str | None = None
+    config: dict[str, object] | None = None
+
+
 class LoginRequest(msgspec.Struct, kw_only=True):
     flow_kind: str
     inputs: dict[str, str] = {}
