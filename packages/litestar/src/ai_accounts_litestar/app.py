@@ -15,6 +15,7 @@ from ai_accounts_core.services.errors import ServiceError
 from ai_accounts_core.services.chat import ChatService
 from ai_accounts_core.services.onboarding import OnboardingService
 from ai_accounts_core.services.pty import PtyService
+from ai_accounts_core.services.scheduler import AccountScheduler
 
 from .config import AiAccountsConfig
 from .errors import service_error_handler
@@ -27,6 +28,7 @@ from .routes.meta import MetaController
 from .routes.models import ModelsController
 from .routes.onboarding import OnboardingController
 from .routes.pty_ws import PtyController, pty_websocket
+from .routes.scheduler import SchedulerController
 
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,16 @@ async def _sweep_loop(registry: LoginSessionRegistry) -> None:
                 logger.info("periodic sweep: removed %d expired sessions", purged)
         except Exception:
             logger.exception("periodic sweep failed")
+
+
+async def _usage_poll_loop(sched: AccountScheduler) -> None:
+    """Periodically poll usage data for all ready backends."""
+    while True:
+        await asyncio.sleep(sched.poll_interval_seconds)
+        try:
+            await sched.poll_all()
+        except Exception:
+            logger.exception("usage poll failed")
 
 
 @get("/health", sync_to_thread=False)
@@ -100,6 +112,9 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     pty_service = PtyService(
         account_service=account_service, storage=config.storage
     )
+    scheduler = AccountScheduler(
+        account_service=account_service, storage=config.storage
+    )
 
     backend_registry = BackendRegistry()
     for b in config.backends:
@@ -123,6 +138,9 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     def _provide_pty_service() -> PtyService:
         return pty_service
 
+    def _provide_scheduler() -> AccountScheduler:
+        return scheduler
+
     dependencies: dict[str, Any] = {
         "config": Provide(_provide_config, sync_to_thread=False),
         "account_service": Provide(_provide_account_service, sync_to_thread=False),
@@ -130,6 +148,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         "backend_registry": Provide(_provide_backend_registry, sync_to_thread=False),
         "chat_service": Provide(_provide_chat_service, sync_to_thread=False),
         "pty_service": Provide(_provide_pty_service, sync_to_thread=False),
+        "scheduler": Provide(_provide_scheduler, sync_to_thread=False),
     }
 
     cors_config = (
@@ -141,6 +160,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     async def _startup(_app: Litestar) -> None:
         await config.storage.migrate()
         sweep_task_holder.append(asyncio.create_task(_sweep_loop(login_registry)))
+        sweep_task_holder.append(asyncio.create_task(_usage_poll_loop(scheduler)))
 
     async def _shutdown(_app: Litestar) -> None:
         for task in sweep_task_holder:
@@ -160,6 +180,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
             OnboardingController,
             PtyController,
             pty_websocket,
+            SchedulerController,
         ],
         dependencies=dependencies,
         cors_config=cors_config,
