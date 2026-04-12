@@ -103,6 +103,9 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     async def _startup(_app: Litestar) -> None:
         await config.storage.migrate()
 
+    async def _shutdown(_app: Litestar) -> None:
+        await login_registry.close()
+
     return Litestar(
         route_handlers=[
             health,
@@ -117,5 +120,6 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         cors_config=cors_config,
         exception_handlers={ServiceError: service_error_handler},
         on_startup=[_startup],
+        on_shutdown=[_shutdown],
         debug=config.env == "development",
     )

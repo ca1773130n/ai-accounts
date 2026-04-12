@@ -45,6 +45,20 @@ class LoginSessionRegistry:
         async with self._lock:
             self._entries.pop(session_id, None)
 
+    async def close(self) -> None:
+        """Cancel all active sessions and await pending cancel tasks."""
+        async with self._lock:
+            for entry in list(self._entries.values()):
+                if not entry.session.done:
+                    try:
+                        await entry.session.cancel()
+                    except Exception:
+                        pass
+            self._entries.clear()
+        if self._pending_cancels:
+            await asyncio.gather(*self._pending_cancels, return_exceptions=True)
+        self._pending_cancels.clear()
+
     async def sweep(self) -> int:
         now = time.monotonic()
         purged = 0
