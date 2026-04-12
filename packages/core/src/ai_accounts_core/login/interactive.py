@@ -155,9 +155,10 @@ async def run_interactive_cli_login(
             login_success_seen = True
             login_success_time = now
 
-        # Menu detection — only before action has been sent. Post-action
-        # menus are likely tool confirmations the user shouldn't see.
-        if not action_sent and not pending_menu:
+        # Menu detection — check both pre- and post-action menus.
+        # Pre-action: first-run TUI (theme picker, permissions).
+        # Post-action: login method selection, account chooser, etc.
+        if not pending_menu:
             options = parse_menu_options(recent_lines)
             if options:
                 # Wait briefly for full menu render (more options may arrive).
