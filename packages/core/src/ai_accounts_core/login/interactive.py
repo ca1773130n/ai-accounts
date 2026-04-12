@@ -110,6 +110,15 @@ async def run_interactive_cli_login(
             # Idle tick — TUI has stopped outputting.
             idle_since_last_output = now - last_output_time
 
+            # Check for OAuth URLs captured by the fake browser script.
+            # The CLI tried to open a browser on the server; the fake
+            # browser wrote the URL to a temp file instead.
+            if not url_already_emitted:
+                captured = orchestrator.poll_captured_oauth_url()
+                if captured:
+                    url_already_emitted = True
+                    yield UrlPrompt(prompt_id="auth", url=captured)
+
             # Menu detection during idle — like Agented, we only parse
             # menus after the TUI has gone quiet, ensuring all option
             # lines have arrived across multiple PTY read chunks.

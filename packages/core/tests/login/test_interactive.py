@@ -52,6 +52,9 @@ class MockOrchestrator:
     async def write(self, data: bytes) -> None:
         self._writes.append(data)
 
+    def poll_captured_oauth_url(self) -> str | None:
+        return None
+
     async def send_menu_selection(self, zero_based_index: int) -> None:
         self._menu_selections.append(zero_based_index)
         for _ in range(zero_based_index):

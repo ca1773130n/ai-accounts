@@ -16,6 +16,7 @@ import os
 import pty
 import re
 import signal
+import tempfile
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -162,11 +163,26 @@ class CliOrchestrator:
         self._reader_task: asyncio.Task[None] | None = None
         self._started = False
         self._ansi_leftover: str = ""
+        self._oauth_url_file: Path | None = None
+        self._fake_browser_path: Path | None = None
 
     async def start(self) -> None:
         if self._started:
             return
         self._started = True
+
+        # Create a fake browser script that captures OAuth URLs to a temp
+        # file instead of opening a real browser on the server. The
+        # interactive loop reads this file and emits a UrlPrompt for the
+        # frontend to open in the user's actual browser.
+        self._oauth_url_file = Path(tempfile.mktemp(suffix=".oauth-url"))
+        fake_browser = Path(tempfile.mktemp(suffix="-fake-browser"))
+        fake_browser.write_text(
+            f"#!/bin/sh\necho \"$1\" > {self._oauth_url_file}\n"
+        )
+        fake_browser.chmod(0o755)
+        self._fake_browser_path = fake_browser
+
         pid, master_fd = pty.fork()
         if pid == 0:
             # child
@@ -174,6 +190,8 @@ class CliOrchestrator:
             env.update(self._env)
             for k in _CHILD_ENV_CLEAR:
                 env.pop(k, None)
+            # Override BROWSER so OAuth URLs are captured, not opened
+            env["BROWSER"] = str(fake_browser)
             try:
                 os.chdir(self._cwd)
                 os.execvpe(self._argv[0], self._argv, env)
@@ -229,6 +247,18 @@ class CliOrchestrator:
             await self.write(b"\x1b[B")
             await asyncio.sleep(0.05)
         await self.write(b"\r")
+
+    def poll_captured_oauth_url(self) -> str | None:
+        """Check if the fake browser captured an OAuth URL.
+
+        Returns the URL string if found, None otherwise. Deletes the file
+        after reading so each URL is only returned once.
+        """
+        if self._oauth_url_file and self._oauth_url_file.exists():
+            url = self._oauth_url_file.read_text().strip()
+            self._oauth_url_file.unlink(missing_ok=True)
+            return url if url else None
+        return None
 
     async def read_output(self) -> AsyncIterator[str]:
         """Yield ANSI-stripped output chunks until EOF."""
@@ -289,6 +319,11 @@ class CliOrchestrator:
             with contextlib.suppress(OSError):
                 os.close(self._master_fd)
             self._master_fd = None
+        # Clean up fake browser temp files
+        if self._fake_browser_path:
+            self._fake_browser_path.unlink(missing_ok=True)
+        if self._oauth_url_file:
+            self._oauth_url_file.unlink(missing_ok=True)
         return self._exit_code
 
     @property
