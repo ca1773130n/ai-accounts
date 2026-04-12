@@ -183,11 +183,9 @@ const hasSubscription = ref<'yes' | 'no' | ''>('');
 const accountName = ref('');
 const email = ref('');
 
-const subscriptionValid = computed(() => {
-  if (hasSubscription.value === 'no') return true;
-  if (hasSubscription.value === 'yes') return accountName.value.trim().length > 0;
-  return false;
-});
+// Account name is OPTIONAL — if left blank, we derive a default at save time
+// from the backend metadata's display_name. Do NOT gate goNext on name.
+const subscriptionValid = computed(() => hasSubscription.value !== '');
 
 function handleSubscriptionNext() {
   if (hasSubscription.value === 'no') {
@@ -724,7 +722,7 @@ function skipWizard() {
         <Transition name="slide-down">
           <div v-if="hasSubscription === 'yes'" class="account-fields">
             <div class="form-group">
-              <label for="wiz-name">{{ t('accountWizard.accountName') }} <span class="required">*</span></label>
+              <label for="wiz-name">{{ t('accountWizard.accountName') }} <span class="optional">(optional)</span></label>
               <input
                 id="wiz-name"
                 v-model="accountName"
