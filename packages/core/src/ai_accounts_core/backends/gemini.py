@@ -11,7 +11,10 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
+
 from ai_accounts_core.domain.backend import DetectResult
+from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -515,7 +518,61 @@ class GeminiBackend:
         *,
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
-        raise NotImplementedError("chat lands in Phase 3")
+        api_key = credential.decode("utf-8").strip()
+        contents = []
+        for m in request.messages:
+            if m.role == ChatRole.SYSTEM:
+                continue
+            role = "model" if m.role == ChatRole.ASSISTANT else "user"
+            contents.append({"role": role, "parts": [{"text": m.content}]})
+        body: dict[str, object] = {"contents": contents}
+        system_msgs = [
+            m.content for m in request.messages if m.role == ChatRole.SYSTEM
+        ]
+        if system_msgs:
+            body["system_instruction"] = {"parts": [{"text": system_msgs[0]}]}
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{request.model}:streamGenerateContent?alt=sse&key={api_key}"
+        )
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                url,
+                json=body,
+                headers={"Content-Type": "application/json"},
+                timeout=120.0,
+            ) as resp:
+                if resp.status_code != 200:
+                    yield ChatStreamEvent(
+                        kind="error",
+                        payload=f"API error {resp.status_code}",
+                    )
+                    return
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = json.loads(line[6:])
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        continue
+                    candidate = candidates[0]
+                    parts = candidate.get("content", {}).get("parts", [])
+                    if parts:
+                        text = parts[0].get("text", "")
+                        if text:
+                            yield ChatStreamEvent(
+                                kind="token", payload=text
+                            )
+                    finish_reason = candidate.get("finishReason")
+                    if finish_reason:
+                        yield ChatStreamEvent(
+                            kind="done",
+                            payload={
+                                "finish_reason": finish_reason,
+                                "model": request.model,
+                            },
+                        )
 
     async def pty(
         self,

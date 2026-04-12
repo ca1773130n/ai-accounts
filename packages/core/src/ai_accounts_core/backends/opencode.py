@@ -11,7 +11,10 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
+
 from ai_accounts_core.domain.backend import DetectResult
+from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -287,7 +290,56 @@ class OpenCodeBackend:
         *,
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
-        raise NotImplementedError("chat lands in Phase 3")
+        api_key = credential.decode("utf-8").strip()
+        messages_payload = [
+            {"role": m.role.value, "content": m.content}
+            for m in request.messages
+        ]
+        body: dict[str, object] = {
+            "model": request.model,
+            "messages": messages_payload,
+            "stream": True,
+        }
+        if "max_tokens" in request.params:
+            body["max_tokens"] = request.params["max_tokens"]
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                "https://openrouter.ai/api/v1/chat/completions",
+                json=body,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=120.0,
+            ) as resp:
+                if resp.status_code != 200:
+                    yield ChatStreamEvent(
+                        kind="error",
+                        payload=f"API error {resp.status_code}",
+                    )
+                    return
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:].strip()
+                    if payload == "[DONE]":
+                        break
+                    data = json.loads(payload)
+                    choice = data.get("choices", [{}])[0]
+                    delta = choice.get("delta", {})
+                    text = delta.get("content")
+                    if text:
+                        yield ChatStreamEvent(kind="token", payload=text)
+                    finish_reason = choice.get("finish_reason")
+                    if finish_reason:
+                        yield ChatStreamEvent(
+                            kind="done",
+                            payload={
+                                "finish_reason": finish_reason,
+                                "model": data.get("model", request.model),
+                            },
+                        )
 
     async def pty(
         self,

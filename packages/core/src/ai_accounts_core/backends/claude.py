@@ -11,7 +11,10 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
+
 from ai_accounts_core.domain.backend import DetectResult
+from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -287,7 +290,63 @@ class ClaudeBackend:
         *,
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
-        raise NotImplementedError("chat lands in Phase 3")
+        api_key = credential.decode("utf-8").strip()
+        messages_payload = [
+            {"role": m.role.value, "content": m.content}
+            for m in request.messages
+            if m.role != ChatRole.SYSTEM
+        ]
+        system_msgs = [
+            m.content for m in request.messages if m.role == ChatRole.SYSTEM
+        ]
+        body: dict[str, object] = {
+            "model": request.model,
+            "messages": messages_payload,
+            "max_tokens": request.params.get("max_tokens", 4096),
+            "stream": True,
+        }
+        if system_msgs:
+            body["system"] = system_msgs[0]
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+                json=body,
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                timeout=120.0,
+            ) as resp:
+                if resp.status_code != 200:
+                    yield ChatStreamEvent(
+                        kind="error",
+                        payload=f"API error {resp.status_code}",
+                    )
+                    return
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = json.loads(line[6:])
+                    if data.get("type") == "content_block_delta":
+                        text = data.get("delta", {}).get("text", "")
+                        if text:
+                            yield ChatStreamEvent(
+                                kind="token", payload=text
+                            )
+                    elif data.get("type") == "message_delta":
+                        usage = data.get("usage", {})
+                        yield ChatStreamEvent(
+                            kind="done",
+                            payload={
+                                "finish_reason": data.get("delta", {}).get(
+                                    "stop_reason", "stop"
+                                ),
+                                "tokens_out": usage.get("output_tokens"),
+                                "model": request.model,
+                            },
+                        )
 
     async def pty(
         self,
