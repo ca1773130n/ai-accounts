@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+import asyncio
+import fcntl
+import os
+import pty
+import signal
+import struct
+import termios
+from collections.abc import AsyncIterator
+
+
+class AsyncPtyHandle:
+    """Async wrapper around a PTY subprocess.
+
+    Implements the PtyHandle protocol from protocols/backend.py.
+    """
+
+    def __init__(self, master_fd: int, pid: int) -> None:
+        self._master_fd = master_fd
+        self._pid = pid
+        self._closed = False
+
+    @classmethod
+    async def spawn(
+        cls,
+        *,
+        command: tuple[str, ...],
+        cols: int = 80,
+        rows: int = 24,
+        env: dict[str, str] | None = None,
+    ) -> AsyncPtyHandle:
+        merged_env = {**os.environ, **(env or {})}
+        merged_env["TERM"] = merged_env.get("TERM", "xterm-256color")
+        master_fd, slave_fd = os.openpty()
+        child_pid = os.fork()
+        if child_pid == 0:
+            # Child process
+            os.close(master_fd)
+            os.setsid()
+            os.dup2(slave_fd, 0)
+            os.dup2(slave_fd, 1)
+            os.dup2(slave_fd, 2)
+            if slave_fd > 2:
+                os.close(slave_fd)
+            os.execvpe(command[0], list(command), merged_env)
+        else:
+            os.close(slave_fd)
+            handle = cls(master_fd, child_pid)
+            await handle.resize(cols, rows)
+            return handle
+
+    async def write(self, data: bytes) -> None:
+        if self._closed:
+            raise RuntimeError("handle is closed")
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, os.write, self._master_fd, data)
+
+    async def resize(self, cols: int, rows: int) -> None:
+        if self._closed:
+            return
+        winsize = struct.pack("HHHH", rows, cols, 0, 0)
+        fcntl.ioctl(self._master_fd, termios.TIOCSWINSZ, winsize)
+
+    async def read(self) -> AsyncIterator[bytes]:
+        loop = asyncio.get_event_loop()
+        while not self._closed:
+            try:
+                data = await loop.run_in_executor(None, self._read_once)
+                if not data:
+                    break
+                yield data
+            except OSError:
+                break
+
+    def _read_once(self) -> bytes:
+        try:
+            return os.read(self._master_fd, 4096)
+        except OSError:
+            return b""
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            os.kill(self._pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            os.close(self._master_fd)
+        except OSError:
+            pass
+        try:
+            os.waitpid(self._pid, os.WNOHANG)
+        except ChildProcessError:
+            pass
