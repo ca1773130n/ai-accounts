@@ -250,6 +250,11 @@ class _FakeLoginSession(LoginSession):
         self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
         self._done = False
         self._sid = f"sess-fake-{uuid.uuid4().hex[:8]}"
+        self._credential: bytes | None = None
+
+    @property
+    def credential(self) -> bytes | None:
+        return self._credential
 
     @property
     def session_id(self) -> str:
@@ -270,7 +275,8 @@ class _FakeLoginSession(LoginSession):
     async def events(self) -> AsyncIterator[LoginEvent]:
         if self._flow_kind == "api_key":
             yield TextPrompt(prompt_id="key", prompt="API key:", hidden=True)
-            await self._answers.get()
+            ans = await self._answers.get()
+            self._credential = ans.answer.encode("utf-8")
         yield LoginComplete(account_id="bkd-fake", backend_status="validating")
         self._done = True
 

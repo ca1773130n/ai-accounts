@@ -34,6 +34,17 @@ class LoginSession(ABC):
     @abstractmethod
     def done(self) -> bool: ...
 
+    @property
+    def credential(self) -> bytes | None:
+        """Credential obtained during login, if any.
+
+        For API key flows, this is the key bytes.
+        For CLI-browser/OAuth flows, this is None (the CLI wrote the
+        token to its config directory — validate() uses the config dir).
+        Read after LoginComplete is emitted.
+        """
+        return None
+
     @abstractmethod
     async def events(self) -> AsyncIterator[LoginEvent]:
         """Yield login events until the flow completes or fails."""

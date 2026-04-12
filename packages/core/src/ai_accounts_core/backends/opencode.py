@@ -143,6 +143,11 @@ class _OpenCodeApiKeySession(LoginSession):
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
         self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
         self._done = False
+        self._credential: bytes | None = None
+
+    @property
+    def credential(self) -> bytes | None:
+        return self._credential
 
     @property
     def session_id(self) -> str:
@@ -176,6 +181,7 @@ class _OpenCodeApiKeySession(LoginSession):
             self._done = True
             yield LoginFailed(code="invalid_key", message="API key cannot be empty")
             return
+        self._credential = ans.answer.encode("utf-8")
         self._done = True
         yield LoginComplete(account_id="", backend_status="validating")
 
