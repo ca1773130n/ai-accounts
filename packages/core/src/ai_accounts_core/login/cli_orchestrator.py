@@ -16,7 +16,9 @@ import os
 import pty
 import re
 import signal
+import time
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from pathlib import Path
 
 _CURSOR_POS_RE = re.compile(r"\x1b\[\d*(?:;\d*)*[HfGC]")
@@ -33,6 +35,80 @@ _ANSI_RE = re.compile(
 )
 
 _CHILD_ENV_CLEAR = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+
+# Numbered menu: "❯ 1. Dark mode ✔" / "  2. Light mode" / "● 3 Option · description"
+#
+# Match either:
+#   (a) an optional ❯/●/○/◉ bullet followed by ``N. label``  (``.`` required)
+#   (b) a ●/○/◉ bullet followed by ``N label · description``  (bullet required)
+#
+# Matching plain ``N word`` without either bullet or dot false-positives on
+# diff lines like ``2 -  console.log("Hello")`` and ``1  function foo``.
+_NUMBERED_OPTION_RE = re.compile(
+    r"^\s*(?:"
+    r"[❯●○◉]?\s*(?P<num>\d+)\.\s+(?P<label>.+?)(?:\s*·\s*(?P<desc>.+))?"
+    r"|"
+    r"[●○◉]\s*(?P<num2>\d+)\s+(?P<label2>.+?)(?:\s*·\s*(?P<desc2>.+))?"
+    r")\s*$"
+)
+
+# Login success markers — fires force-complete path when seen in stdout.
+_LOGIN_SUCCESS_RE = re.compile(
+    r"(?:"
+    r"successfully\s+(?:logged|authenticated|signed)"
+    r"|(?:now\s+)?logged\s+in\s+as\b"
+    r"|signed\s+in\s+with\b"
+    r"|authentication\s+(?:successful|complete)"
+    r"|login\s+(?:successful|complete)"
+    r"|you\s+are\s+(?:now\s+)?logged\s+in"
+    r"|account\s+(?:added|connected|linked)"
+    r")",
+    re.IGNORECASE,
+)
+
+# Permissive URL matcher for OAuth flows printed in CLI output.
+_URL_IN_OUTPUT_RE = re.compile(r"https?://[^\s\"'<>]+")
+
+
+@dataclass
+class MenuOption:
+    """A single numbered option parsed from a CLI menu."""
+
+    number: int
+    label: str
+    description: str | None = None
+
+
+def parse_menu_options(recent_lines: list[str]) -> list[MenuOption]:
+    """Scan ``recent_lines`` for numbered menu options in display order.
+
+    Dedupes by option number: menus that redraw on terminal repaint will
+    emit the same option multiple times — keep the first occurrence.
+    """
+    options: list[MenuOption] = []
+    seen_numbers: set[int] = set()
+    for line in recent_lines:
+        m = _NUMBERED_OPTION_RE.match(line)
+        if not m:
+            continue
+        num_str = m.group("num") or m.group("num2")
+        label = m.group("label") or m.group("label2")
+        desc = m.group("desc") or m.group("desc2")
+        if num_str is None or label is None:
+            continue
+        num = int(num_str)
+        if num in seen_numbers:
+            continue
+        seen_numbers.add(num)
+        options.append(
+            MenuOption(
+                number=num,
+                label=label.strip(),
+                description=desc.strip() if desc else None,
+            )
+        )
+    return options
+
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +180,29 @@ class CliOrchestrator:
             return os.read(self._master_fd, 4096)
         except OSError:
             return b""
+
+    async def poll_output(self, timeout: float = 1.0) -> tuple[float, str | None]:
+        """Wait up to ``timeout`` for the next ANSI-stripped output chunk.
+
+        Returns ``(idle_elapsed_seconds, chunk_or_None)``. On timeout the
+        chunk is ``None`` and ``idle_elapsed_seconds`` is roughly ``timeout``.
+        Raises :class:`StopAsyncIteration` when the reader has hit EOF.
+        """
+        start = time.monotonic()
+        try:
+            item = await asyncio.wait_for(self._reader_queue.get(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return (time.monotonic() - start, None)
+        if item is None:
+            raise StopAsyncIteration
+        return (time.monotonic() - start, strip_ansi(item.decode(errors="replace")))
+
+    async def send_menu_selection(self, zero_based_index: int) -> None:
+        """Send arrow-down * N + Enter to pick option at ``zero_based_index``."""
+        for _ in range(zero_based_index):
+            await self.write(b"\x1b[B")
+            await asyncio.sleep(0.05)
+        await self.write(b"\r")
 
     async def read_output(self) -> AsyncIterator[str]:
         """Yield ANSI-stripped output chunks until EOF."""
