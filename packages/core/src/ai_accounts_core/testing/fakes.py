@@ -334,6 +334,12 @@ class FakeBackend:
         self.calls.append(("list_models", credential))
         return [Model(id="fake-1", display_name="Fake Model 1")]
 
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+        from ai_accounts_core.domain.usage import UsageWindow
+
+        self.calls.append(("get_usage", credential))
+        return [UsageWindow(window_type="five_hour", usage_percent=25.0, resets_at=None)]
+
     async def chat(  # type: ignore[override]
         self, request: Any, credential: bytes, *, isolation_dir: Path,
     ) -> AsyncIterator[Any]:
