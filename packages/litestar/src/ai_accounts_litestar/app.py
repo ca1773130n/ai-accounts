@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from typing import Any
 
 from litestar import Litestar, get
@@ -20,6 +22,21 @@ from .routes.install import InstallController
 from .routes.login import LoginController
 from .routes.meta import MetaController
 from .routes.onboarding import OnboardingController
+
+
+logger = logging.getLogger(__name__)
+
+
+async def _sweep_loop(registry: LoginSessionRegistry) -> None:
+    """Periodically sweep expired login sessions."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            purged = await registry.sweep()
+            if purged:
+                logger.info("periodic sweep: removed %d expired sessions", purged)
+        except Exception:
+            logger.exception("periodic sweep failed")
 
 
 @get("/health", sync_to_thread=False)
@@ -100,10 +117,15 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         CORSConfig(allow_origins=list(config.cors_origins)) if config.cors_origins else None
     )
 
+    sweep_task_holder: list[asyncio.Task[None]] = []
+
     async def _startup(_app: Litestar) -> None:
         await config.storage.migrate()
+        sweep_task_holder.append(asyncio.create_task(_sweep_loop(login_registry)))
 
     async def _shutdown(_app: Litestar) -> None:
+        for task in sweep_task_holder:
+            task.cancel()
         await login_registry.close()
 
     return Litestar(
