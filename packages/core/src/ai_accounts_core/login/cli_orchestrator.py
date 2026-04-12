@@ -165,33 +165,58 @@ class CliOrchestrator:
         self._ansi_leftover: str = ""
         self._oauth_url_file: Path | None = None
         self._fake_browser_path: Path | None = None
+        self._fake_bin_dir: Path | None = None
 
     async def start(self) -> None:
         if self._started:
             return
         self._started = True
 
-        # Create a fake browser script that captures OAuth URLs to a temp
-        # file instead of opening a real browser on the server. The
-        # interactive loop reads this file and emits a UrlPrompt for the
-        # frontend to open in the user's actual browser.
+        # Create a fake browser/open script that captures OAuth URLs to a
+        # temp file instead of opening a real browser on the server.
+        # On macOS, CLIs use `open` (ignores BROWSER env var), so we also
+        # put a fake `open` at the front of PATH.
         self._oauth_url_file = Path(tempfile.mktemp(suffix=".oauth-url"))
-        fake_browser = Path(tempfile.mktemp(suffix="-fake-browser"))
-        fake_browser.write_text(
-            f"#!/bin/sh\necho \"$1\" > {self._oauth_url_file}\n"
+        self._fake_bin_dir = Path(tempfile.mkdtemp(suffix="-fake-bin"))
+        url_file = str(self._oauth_url_file)
+
+        # Fake script: capture the last URL-like argument to file
+        script = (
+            "#!/bin/sh\n"
+            "for arg in \"$@\"; do\n"
+            "  case \"$arg\" in\n"
+            f"    http://*|https://*) echo \"$arg\" > {url_file} ;;\n"
+            "  esac\n"
+            "done\n"
         )
-        fake_browser.chmod(0o755)
-        self._fake_browser_path = fake_browser
+        for name in ("open", "xdg-open"):
+            p = self._fake_bin_dir / name
+            p.write_text(script)
+            p.chmod(0o755)
+        self._fake_browser_path = self._fake_bin_dir
 
         pid, master_fd = pty.fork()
         if pid == 0:
             # child
+            import fcntl
+            import struct
+            import termios
+
+            # Set wide terminal (500 cols) so OAuth URLs don't wrap
+            winsize = struct.pack("HHHH", 50, 500, 0, 0)
+            try:
+                fcntl.ioctl(1, termios.TIOCSWINSZ, winsize)
+            except OSError:
+                pass
+
             env = dict(os.environ)
             env.update(self._env)
             for k in _CHILD_ENV_CLEAR:
                 env.pop(k, None)
-            # Override BROWSER so OAuth URLs are captured, not opened
-            env["BROWSER"] = str(fake_browser)
+            # Prepend fake bin dir so our fake `open`/`xdg-open` is found
+            # first. Also set BROWSER for tools that respect it.
+            env["PATH"] = str(self._fake_bin_dir) + ":" + env.get("PATH", "")
+            env["BROWSER"] = str(self._fake_bin_dir / "open")
             try:
                 os.chdir(self._cwd)
                 os.execvpe(self._argv[0], self._argv, env)
@@ -199,6 +224,13 @@ class CliOrchestrator:
                 os._exit(127)
         self._pid = pid
         self._master_fd = master_fd
+        # Also set wide terminal from parent side
+        import fcntl
+        import struct
+        import termios
+        winsize = struct.pack("HHHH", 50, 500, 0, 0)
+        with contextlib.suppress(OSError):
+            fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
         self._reader_task = asyncio.create_task(self._reader_loop())
 
     async def _reader_loop(self) -> None:
@@ -320,8 +352,9 @@ class CliOrchestrator:
                 os.close(self._master_fd)
             self._master_fd = None
         # Clean up fake browser temp files
-        if self._fake_browser_path:
-            self._fake_browser_path.unlink(missing_ok=True)
+        if self._fake_bin_dir and self._fake_bin_dir.exists():
+            import shutil
+            shutil.rmtree(self._fake_bin_dir, ignore_errors=True)
         if self._oauth_url_file:
             self._oauth_url_file.unlink(missing_ok=True)
         return self._exit_code
