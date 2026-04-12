@@ -36,6 +36,19 @@ from ai_accounts_core.protocols.backend import (
     PtyRequest,
 )
 
+def _validate_config_path(config_path: str | None, isolation_dir: Path) -> Path:
+    """Validate config_path is safe. Returns the resolved gemini config dir."""
+    if not config_path:
+        return Path.home() / ".gemini"
+    expanded = Path(os.path.expanduser(str(config_path)))
+    resolved = expanded.resolve()
+    # Must not escape outside home or isolation directory
+    allowed_roots = (Path.home().resolve(), isolation_dir.resolve())
+    if not any(str(resolved).startswith(str(root)) for root in allowed_roots):
+        raise ValueError(f"config_path '{config_path}' resolves outside allowed directories")
+    return resolved / ".gemini"
+
+
 _GEMINI_URL_RE = re.compile(r"https://accounts\.google\.com/o/oauth2/device/\S+")
 _GEMINI_USER_CODE_RE = re.compile(r"([A-Z0-9]{4}-[A-Z0-9]{4})")
 _GEMINI_SUCCESS_MARKERS = ("Login successful", "Authenticated")
@@ -225,11 +238,10 @@ class _GeminiDirectOAuthSession(LoginSession):
 
         email = str(self._config.get("email", ""))
 
-        config_path_raw = self._config.get("config_path")
-        if config_path_raw:
-            gemini_dir = Path(os.path.expanduser(str(config_path_raw))) / ".gemini"
-        else:
-            gemini_dir = Path.home() / ".gemini"
+        gemini_dir = _validate_config_path(
+            self._config.get("config_path"),
+            self._isolation_dir,
+        )
         gemini_dir.mkdir(parents=True, exist_ok=True)
 
         expiry_ms = int(time.time() * 1000) + int(tokens.get("expires_in", 3600)) * 1000
@@ -242,12 +254,16 @@ class _GeminiDirectOAuthSession(LoginSession):
             "id_token": tokens.get("id_token", ""),
             "expiry_date": expiry_ms,
         }
-        (gemini_dir / "oauth_creds.json").write_text(json.dumps(creds, indent=2))
+        creds_file = gemini_dir / "oauth_creds.json"
+        creds_file.write_text(json.dumps(creds, indent=2))
+        os.chmod(creds_file, 0o600)
 
         cliproxy_dir = Path.home() / ".cli-proxy-api"
         if cliproxy_dir.exists() and email:
-            safe_email = email.replace("/", "_").replace("\\", "_")
-            (cliproxy_dir / f"gemini-{safe_email}.json").write_text(json.dumps(creds, indent=2))
+            safe_email = email.replace("/", "_").replace("\\", "_").replace("..", "_")
+            proxy_file = cliproxy_dir / f"gemini-{safe_email}.json"
+            proxy_file.write_text(json.dumps(creds, indent=2))
+            os.chmod(proxy_file, 0o600)
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         try:
