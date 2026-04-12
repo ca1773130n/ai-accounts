@@ -12,11 +12,14 @@ from litestar import Controller, get, post
 from ai_accounts_core.cliproxy import (
     CliproxyInstallResult,
     CliproxyLoginInfo,
+    cliproxy_server_status,
     forward_cliproxy_callback,
     get_cliproxy_version,
     install_cliproxy,
     is_cliproxy_installed,
     start_cliproxy_login,
+    start_cliproxy_server,
+    stop_cliproxy_server,
 )
 
 
@@ -36,6 +39,11 @@ class _LoginBeginResponse(msgspec.Struct):
     message: str
     oauth_url: str | None = None
     device_code: str | None = None
+
+
+class _ServerStartRequest(msgspec.Struct, kw_only=True):
+    port: int = 8317
+    api_key: str = "not-needed"
 
 
 class _CallbackForwardRequest(msgspec.Struct):
@@ -125,3 +133,22 @@ class CliproxyController(Controller):
             status=result["status"],
             message=result["message"],
         )
+
+    @post("/server/start", status_code=200)
+    async def server_start(self, data: _ServerStartRequest) -> dict:
+        """Start CLIProxyAPI server with given port and api-key."""
+        result = start_cliproxy_server(
+            port=data.port,
+            api_key=data.api_key,
+        )
+        return result
+
+    @post("/server/stop", status_code=200)
+    async def server_stop(self) -> dict:
+        """Stop running CLIProxyAPI server."""
+        return stop_cliproxy_server()
+
+    @get("/server/status")
+    async def server_status(self) -> dict:
+        """Get CLIProxyAPI server status (installed, running, port)."""
+        return cliproxy_server_status()
