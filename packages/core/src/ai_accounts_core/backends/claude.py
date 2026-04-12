@@ -113,7 +113,7 @@ class _ClaudeCliBrowserSession(LoginSession):
         self._orchestrator = CliOrchestrator(
             argv=["claude"],
             env={"CLAUDE_CONFIG_DIR": str(config_dir)},
-            cwd=config_dir,
+            cwd=self._isolation_dir,
         )
         try:
             await self._orchestrator.start()
