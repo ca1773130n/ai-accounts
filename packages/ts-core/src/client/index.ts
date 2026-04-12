@@ -11,6 +11,7 @@ import type {
   CliproxyCallbackForwardResponse,
 } from '../types/install';
 import type { ChatSessionDTO, ChatSessionDetailDTO, ChatDelta } from '../types/chat';
+import type { AccountHealthDTO, PickResultDTO, FallbackChainEntryDTO } from '../types/scheduler';
 
 export type { paths } from './generated';
 
@@ -401,6 +402,51 @@ export class AiAccountsClient {
     const r = await this._fetch(url, { method: 'POST', headers, body: JSON.stringify({ content }) });
     if (!r.ok) throw await toError(r);
     yield* parseSseChatEvents(r);
+  }
+
+  // --- Scheduler ---
+
+  async getSchedulerHealth(): Promise<{ items: AccountHealthDTO[] }> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/scheduler/health`, { headers: this.headers() });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as { items: AccountHealthDTO[] };
+  }
+
+  async getAccountHealth(id: string): Promise<AccountHealthDTO> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/scheduler/health/${encodeURIComponent(id)}`, { headers: this.headers() });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as AccountHealthDTO;
+  }
+
+  async schedulerPick(kind?: string): Promise<PickResultDTO | null> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/scheduler/pick`, {
+      method: 'POST', headers: this.headers(),
+      body: JSON.stringify(kind ? { kind } : {}),
+    });
+    if (r.status === 204) return null;
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as PickResultDTO;
+  }
+
+  async getChain(): Promise<{ entries: FallbackChainEntryDTO[] }> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/scheduler/chain`, { headers: this.headers() });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as { entries: FallbackChainEntryDTO[] };
+  }
+
+  async setChain(entries: FallbackChainEntryDTO[]): Promise<void> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/scheduler/chain`, {
+      method: 'PUT', headers: this.headers(), body: JSON.stringify({ entries }),
+    });
+    if (!r.ok) throw await toError(r);
+  }
+
+  async markRateLimited(backendId: string, seconds: number, reason: string): Promise<void> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/scheduler/mark-limited`, {
+      method: 'POST', headers: this.headers(),
+      body: JSON.stringify({ backend_id: backendId, cooldown_seconds: seconds, reason }),
+    });
+    if (!r.ok) throw await toError(r);
   }
 
   private async postAction<T>(id: string, action: string, body?: unknown): Promise<T> {
