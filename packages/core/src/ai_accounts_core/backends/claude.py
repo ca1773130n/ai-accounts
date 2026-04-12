@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
+import logging
 import os
+import platform
 import re
 import shutil
+import subprocess
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, ClassVar
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
@@ -45,6 +51,76 @@ _CLAUDE_CONSOLE_URL_RE = re.compile(
 )
 
 
+def _read_claude_oauth_token(config_dir: Path) -> bytes | None:
+    """Read OAuth token from Claude CLI's credential store.
+
+    Priority (matches Agented's CredentialResolver.get_claude_token):
+    1. macOS Keychain with config-path hash suffix (non-default accounts)
+    2. config_dir/.credentials.json → claudeAiOauth.accessToken
+    3. macOS Keychain 'Claude Code-credentials' (default account)
+    4. ~/.claude/.credentials.json (default fallback)
+    """
+    default_config = str(Path.home() / ".claude")
+    config_str = str(config_dir)
+    is_default = config_str == default_config
+
+    # Non-default: try keychain with hash suffix, then file
+    if not is_default and platform.system() == "Darwin":
+        suffix = hashlib.sha256(config_str.encode()).hexdigest()[:8]
+        token = _keychain_read(f"Claude Code-credentials-{suffix}")
+        if token:
+            return token.encode("utf-8")
+
+    # Try credentials file in config dir
+    token = _creds_file_read(config_dir / ".credentials.json")
+    if token:
+        return token.encode("utf-8")
+
+    # Default account: try keychain
+    if platform.system() == "Darwin":
+        token = _keychain_read("Claude Code-credentials")
+        if token:
+            return token.encode("utf-8")
+
+    # Default fallback file
+    if not is_default:
+        token = _creds_file_read(Path.home() / ".claude" / ".credentials.json")
+        if token:
+            return token.encode("utf-8")
+
+    logger.warning("could not read Claude OAuth token from keychain or credentials file")
+    return None
+
+
+def _keychain_read(service: str) -> str | None:
+    """Read Claude OAuth token from macOS Keychain."""
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", service, "-w"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        raw = result.stdout.strip()
+        if not raw:
+            return None
+        data = json.loads(raw)
+        return data.get("claudeAiOauth", {}).get("accessToken")
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        return None
+
+
+def _creds_file_read(path: Path) -> str | None:
+    """Read Claude OAuth token from .credentials.json file."""
+    try:
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data.get("claudeAiOauth", {}).get("accessToken")
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 class _ClaudeCliBrowserSession(LoginSession):
     """Interactive ``claude`` login session.
 
@@ -64,6 +140,11 @@ class _ClaudeCliBrowserSession(LoginSession):
         self._orchestrator: CliOrchestrator | None = None
         self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
         self._cleanup_lock = asyncio.Lock()
+        self._credential: bytes | None = None
+
+    @property
+    def credential(self) -> bytes | None:
+        return self._credential
 
     @property
     def session_id(self) -> str:
@@ -130,6 +211,16 @@ class _ClaudeCliBrowserSession(LoginSession):
                 action_command=self.ACTION_COMMAND,
                 url_regex=_CLAUDE_CONSOLE_URL_RE,
             ):
+                # After LoginComplete, send Enter to dismiss "Press Enter
+                # to continue" and then extract the OAuth token from the
+                # CLI's config directory or macOS Keychain.
+                if isinstance(event, LoginComplete):
+                    if self._orchestrator:
+                        try:
+                            await self._orchestrator.write(b"\r")
+                        except Exception:
+                            pass
+                    self._credential = _read_claude_oauth_token(config_dir)
                 yield event
         finally:
             await self._cleanup()
