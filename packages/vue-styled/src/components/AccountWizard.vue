@@ -1003,11 +1003,11 @@ function skipWizard() {
             </div>
           </div>
 
-          <div v-if="proxyLoginStatus === 'success'" class="proxy-success">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+          <div v-if="proxyLoginStatus === 'success'" class="login-status login-completed">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
-            <strong>{{ proxyLoginMessage || 'Registered successfully' }}</strong>
+            <span>{{ proxyLoginMessage || 'Registered successfully' }}</span>
           </div>
 
           <div v-if="proxyLoginStatus === 'skipped'" class="proxy-skipped">
