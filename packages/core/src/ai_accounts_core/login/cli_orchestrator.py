@@ -116,12 +116,31 @@ def parse_menu_options(recent_lines: list[str]) -> list[MenuOption]:
 logger = logging.getLogger(__name__)
 
 
+# Detect a trailing incomplete escape: ESC followed by chars that look like
+# the start of a CSI/OSC sequence but haven't reached a final byte yet.
+_TRAILING_ESC_RE = re.compile(r"\x1b(?:\[[\x20-\x3f]*|\][^\x07\x1b]*)$")
+
+
 def strip_ansi(text: str) -> str:
     text = _CURSOR_ROW_RE.sub("\n", text)
     text = _CURSOR_COL_RE.sub(" ", text)
     text = _ERASE_SCREEN_RE.sub("\n", text)
     text = _ANSI_RE.sub("", text)
     return text
+
+
+def strip_ansi_buffered(text: str) -> tuple[str, str]:
+    """Strip ANSI escapes, returning (clean_text, leftover).
+
+    ``leftover`` is a trailing incomplete escape sequence that should be
+    prepended to the next chunk before stripping again.
+    """
+    leftover = ""
+    m = _TRAILING_ESC_RE.search(text)
+    if m:
+        leftover = text[m.start():]
+        text = text[:m.start()]
+    return strip_ansi(text), leftover
 
 
 class CliOrchestrator:
@@ -142,6 +161,7 @@ class CliOrchestrator:
         self._reader_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._reader_task: asyncio.Task[None] | None = None
         self._started = False
+        self._ansi_leftover: str = ""
 
     async def start(self) -> None:
         if self._started:
@@ -199,7 +219,9 @@ class CliOrchestrator:
             return (time.monotonic() - start, None)
         if item is None:
             raise StopAsyncIteration
-        return (time.monotonic() - start, strip_ansi(item.decode(errors="replace")))
+        raw = self._ansi_leftover + item.decode(errors="replace")
+        clean, self._ansi_leftover = strip_ansi_buffered(raw)
+        return (time.monotonic() - start, clean)
 
     async def send_menu_selection(self, zero_based_index: int) -> None:
         """Send arrow-down * N + Enter to pick option at ``zero_based_index``."""
