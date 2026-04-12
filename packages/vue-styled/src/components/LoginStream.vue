@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import type { UseLoginSession } from '@ai-accounts/vue-headless';
 
 const props = withDefaults(
@@ -21,6 +21,19 @@ async function submit() {
 async function selectMenuOption(number: number) {
   await props.session.respond(String(number));
 }
+
+// Auto-open OAuth URLs in the user's browser when they arrive
+let lastOpenedUrl = '';
+watch(
+  () => props.session.urlPrompt.value?.url,
+  (url) => {
+    if (url && url !== lastOpenedUrl) {
+      lastOpenedUrl = url;
+      window.open(url, '_blank', 'noopener');
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
