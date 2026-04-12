@@ -107,8 +107,64 @@ async def run_interactive_cli_login(
         now = time.monotonic()
 
         if chunk is None:
-            # Idle tick.
+            # Idle tick — TUI has stopped outputting.
             idle_since_last_output = now - last_output_time
+
+            # Menu detection during idle — like Agented, we only parse
+            # menus after the TUI has gone quiet, ensuring all option
+            # lines have arrived across multiple PTY read chunks.
+            if (
+                not pending_menu
+                and recent_lines
+                and idle_since_last_output >= menu_render_grace_seconds
+            ):
+                options = parse_menu_options(recent_lines)
+                if options:
+                    logger.info(
+                        "menu detected (%d options) after %.1fs idle",
+                        len(options), idle_since_last_output,
+                    )
+                    pending_menu = True
+                    pending_menu_options_count = len(options)
+                    prompt_id = f"menu-{uuid.uuid4().hex[:6]}"
+                    yield MenuPrompt(
+                        prompt_id=prompt_id,
+                        prompt="Choose an option:",
+                        options=tuple(
+                            MenuOption(
+                                number=opt.number,
+                                label=opt.label,
+                                description=opt.description,
+                            )
+                            for opt in options
+                        ),
+                    )
+
+                    # Block until user responds (matches Agented's
+                    # threading.Event pattern — no more output processing
+                    # until the user picks an option).
+                    try:
+                        answer = await asyncio.wait_for(
+                            answers.get(), timeout=menu_response_timeout
+                        )
+                    except asyncio.TimeoutError:
+                        yield LoginFailed(
+                            code="menu_timeout",
+                            message="Menu response timed out",
+                        )
+                        return
+                    try:
+                        chosen = int(answer.answer.strip())
+                    except ValueError:
+                        chosen = 1
+                    chosen_idx = max(
+                        0, min(pending_menu_options_count - 1, chosen - 1)
+                    )
+                    await orchestrator.send_menu_selection(chosen_idx)
+                    pending_menu = False
+                    recent_lines = []
+                    last_output_time = time.monotonic()
+                    continue
 
             # Trigger action command once REPL looks idle.
             if (
@@ -158,55 +214,6 @@ async def run_interactive_cli_login(
         if not login_success_seen and _LOGIN_SUCCESS_RE.search(chunk):
             login_success_seen = True
             login_success_time = now
-
-        # Menu detection — check both pre- and post-action menus.
-        # Pre-action: first-run TUI (theme picker, permissions).
-        # Post-action: login method selection, account chooser, etc.
-        if not pending_menu:
-            options = parse_menu_options(recent_lines)
-            logger.info(
-                "menu check: %d options from %d recent_lines | chunk=%r",
-                len(options), len(recent_lines), chunk[:200],
-            )
-            if options:
-                # Wait briefly for full menu render (more options may arrive).
-                await asyncio.sleep(menu_render_grace_seconds)
-                options = parse_menu_options(recent_lines)
-                if options:
-                    pending_menu = True
-                    pending_menu_options_count = len(options)
-                    prompt_id = f"menu-{uuid.uuid4().hex[:6]}"
-                    yield MenuPrompt(
-                        prompt_id=prompt_id,
-                        prompt="Choose an option:",
-                        options=tuple(
-                            MenuOption(
-                                number=opt.number,
-                                label=opt.label,
-                                description=opt.description,
-                            )
-                            for opt in options
-                        ),
-                    )
-
-                    # Wait for user response, then send menu selection.
-                    try:
-                        answer = await asyncio.wait_for(
-                            answers.get(), timeout=menu_response_timeout
-                        )
-                    except asyncio.TimeoutError:
-                        break
-                    try:
-                        chosen = int(answer.answer.strip())
-                    except ValueError:
-                        chosen = 1
-                    chosen_idx = max(
-                        0, min(pending_menu_options_count - 1, chosen - 1)
-                    )
-                    await orchestrator.send_menu_selection(chosen_idx)
-                    pending_menu = False
-                    recent_lines = []
-                    last_output_time = time.monotonic()
 
     # Loop exit — caller wraps in try/finally to terminate + wait.
     if login_success_seen:
