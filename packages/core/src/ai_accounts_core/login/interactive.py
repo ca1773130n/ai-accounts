@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import re
 import uuid
 from collections.abc import AsyncIterator
 from typing import Pattern
@@ -43,6 +44,18 @@ from ai_accounts_core.login.cli_orchestrator import (
     _URL_IN_OUTPUT_RE,
     parse_menu_options,
 )
+# Text input prompts — lines ending with ">" or ":" that ask for user input.
+# Matches: "Paste code here if prompted >", "Enter the code:", "? Question:"
+_TEXT_PROMPT_RE = re.compile(
+    r"(?:"
+    r"(?:paste|enter|type|input)\s+.+[>:]"
+    r"|.+\?\s*$"
+    r"|\?\s+.+[>:]"
+    r"|.+>\s*$"
+    r")",
+    re.IGNORECASE,
+)
+
 from ai_accounts_core.login.events import (
     LoginComplete,
     LoginEvent,
@@ -171,6 +184,40 @@ async def run_interactive_cli_login(
                     )
                     await orchestrator.send_menu_selection(chosen_idx)
                     pending_menu = False
+                    recent_lines = []
+                    last_output_time = time.monotonic()
+                    continue
+
+            # Text input prompt detection during idle — detect lines like
+            # "Paste code here if prompted >" or "Enter the code:"
+            if (
+                not pending_menu
+                and recent_lines
+                and idle_since_last_output >= menu_render_grace_seconds
+            ):
+                last_line = recent_lines[-1].strip()
+                if last_line and _TEXT_PROMPT_RE.search(last_line):
+                    logger.info("text prompt detected: %r", last_line)
+                    prompt_id = f"text-{uuid.uuid4().hex[:6]}"
+                    yield TextPrompt(
+                        prompt_id=prompt_id,
+                        prompt=last_line,
+                        hidden=False,
+                    )
+                    # Block until user responds
+                    try:
+                        answer = await asyncio.wait_for(
+                            answers.get(), timeout=menu_response_timeout
+                        )
+                    except asyncio.TimeoutError:
+                        yield LoginFailed(
+                            code="prompt_timeout",
+                            message="Text input timed out",
+                        )
+                        return
+                    await orchestrator.write(
+                        (answer.answer.strip() + "\n").encode()
+                    )
                     recent_lines = []
                     last_output_time = time.monotonic()
                     continue
