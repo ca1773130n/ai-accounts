@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -48,6 +49,7 @@ class _CodexOAuthDeviceSession(LoginSession):
         self._isolation_dir = isolation_dir
         self._done = False
         self._orchestrator: CliOrchestrator | None = None
+        self._cleanup_lock = asyncio.Lock()
 
     @property
     def session_id(self) -> str:
@@ -64,6 +66,23 @@ class _CodexOAuthDeviceSession(LoginSession):
     @property
     def done(self) -> bool:
         return self._done
+
+    async def _cleanup(self) -> None:
+        async with self._cleanup_lock:
+            if self._orchestrator is not None:
+                try:
+                    await self._orchestrator.terminate()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+                try:
+                    exit_code = await asyncio.wait_for(
+                        self._orchestrator.wait(), timeout=10
+                    )
+                except asyncio.TimeoutError:
+                    await self._orchestrator.kill()
+                    await self._orchestrator.wait()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         self._orchestrator = CliOrchestrator(
@@ -82,46 +101,46 @@ class _CodexOAuthDeviceSession(LoginSession):
         user_code: str | None = None
         emitted_url_prompt = False
         success = False
-        async for chunk in self._orchestrator.read_output():
-            if chunk.strip():
-                yield StdoutChunk(text=chunk)
-            if url is None:
-                m = _CODEX_URL_RE.search(chunk)
-                if m:
-                    url = m.group(0)
-            if user_code is None:
-                m = _CODEX_USER_CODE_RE.search(chunk)
-                if m:
-                    user_code = m.group(1)
-            if not emitted_url_prompt and url and user_code:
-                emitted_url_prompt = True
-                yield UrlPrompt(prompt_id="device", url=url, user_code=user_code)
-            if any(mk in chunk for mk in _CODEX_SUCCESS_MARKERS):
-                success = True
-                break
-            lower = chunk.lower()
-            if "error" in lower or "failed" in lower or any(
-                mk in chunk for mk in _CODEX_FAILURE_MARKERS
-            ):
-                break
+        try:
+            async for chunk in self._orchestrator.read_output():
+                if chunk.strip():
+                    yield StdoutChunk(text=chunk)
+                if url is None:
+                    m = _CODEX_URL_RE.search(chunk)
+                    if m:
+                        url = m.group(0)
+                if user_code is None:
+                    m = _CODEX_USER_CODE_RE.search(chunk)
+                    if m:
+                        user_code = m.group(1)
+                if not emitted_url_prompt and url and user_code:
+                    emitted_url_prompt = True
+                    yield UrlPrompt(prompt_id="device", url=url, user_code=user_code)
+                if any(mk in chunk for mk in _CODEX_SUCCESS_MARKERS):
+                    success = True
+                    break
+                lower = chunk.lower()
+                if "error" in lower or "failed" in lower or any(
+                    mk in chunk for mk in _CODEX_FAILURE_MARKERS
+                ):
+                    break
+        finally:
+            await self._cleanup()
+            self._done = True
 
-        exit_code = await self._orchestrator.wait()
-        self._done = True
-        if success and exit_code == 0:
+        if success:
             yield LoginComplete(account_id="", backend_status="validating")
         else:
             yield LoginFailed(
                 code="oauth_device_failed",
-                message=f"codex login exited with {exit_code}",
+                message="codex login failed",
             )
 
     async def respond(self, answer: PromptAnswer) -> None:
         pass
 
     async def cancel(self) -> None:
-        if self._orchestrator is not None and not self._done:
-            await self._orchestrator.terminate()
-            await self._orchestrator.wait()
+        await self._cleanup()
         self._done = True
 
 
@@ -131,6 +150,7 @@ class _CodexCliBrowserSession(LoginSession):
         self._isolation_dir = isolation_dir
         self._done = False
         self._orchestrator: CliOrchestrator | None = None
+        self._cleanup_lock = asyncio.Lock()
 
     @property
     def session_id(self) -> str:
@@ -148,6 +168,23 @@ class _CodexCliBrowserSession(LoginSession):
     def done(self) -> bool:
         return self._done
 
+    async def _cleanup(self) -> None:
+        async with self._cleanup_lock:
+            if self._orchestrator is not None:
+                try:
+                    await self._orchestrator.terminate()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+                try:
+                    exit_code = await asyncio.wait_for(
+                        self._orchestrator.wait(), timeout=10
+                    )
+                except asyncio.TimeoutError:
+                    await self._orchestrator.kill()
+                    await self._orchestrator.wait()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+
     async def events(self) -> AsyncIterator[LoginEvent]:
         self._orchestrator = CliOrchestrator(
             argv=["codex", "auth", "--browser"],
@@ -163,47 +200,47 @@ class _CodexCliBrowserSession(LoginSession):
 
         url_seen = False
         success = False
-        async for chunk in self._orchestrator.read_output():
-            if chunk.strip():
-                yield StdoutChunk(text=chunk)
-            if not url_seen:
-                m = _CODEX_URL_RE.search(chunk)
-                if m:
-                    url_seen = True
-                    yield UrlPrompt(prompt_id="auth", url=m.group(0))
-            if any(mk in chunk for mk in _CODEX_SUCCESS_MARKERS):
-                success = True
-                break
-            lower = chunk.lower()
-            if "error" in lower or "failed" in lower or any(
-                mk in chunk for mk in _CODEX_FAILURE_MARKERS
-            ):
-                break
+        try:
+            async for chunk in self._orchestrator.read_output():
+                if chunk.strip():
+                    yield StdoutChunk(text=chunk)
+                if not url_seen:
+                    m = _CODEX_URL_RE.search(chunk)
+                    if m:
+                        url_seen = True
+                        yield UrlPrompt(prompt_id="auth", url=m.group(0))
+                if any(mk in chunk for mk in _CODEX_SUCCESS_MARKERS):
+                    success = True
+                    break
+                lower = chunk.lower()
+                if "error" in lower or "failed" in lower or any(
+                    mk in chunk for mk in _CODEX_FAILURE_MARKERS
+                ):
+                    break
+        finally:
+            await self._cleanup()
+            self._done = True
 
-        exit_code = await self._orchestrator.wait()
-        self._done = True
-        if success and exit_code == 0:
+        if success:
             yield LoginComplete(account_id="", backend_status="validating")
         else:
             yield LoginFailed(
-                code="cli_exit_nonzero" if exit_code != 0 else "auth_failed",
-                message=f"codex auth --browser exited with {exit_code}",
+                code="auth_failed",
+                message="codex auth --browser failed",
             )
 
     async def respond(self, answer: PromptAnswer) -> None:
         pass
 
     async def cancel(self) -> None:
-        if self._orchestrator is not None and not self._done:
-            await self._orchestrator.terminate()
-            await self._orchestrator.wait()
+        await self._cleanup()
         self._done = True
 
 
 class _CodexApiKeySession(LoginSession):
     def __init__(self) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
-        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
         self._done = False
 
     @property
@@ -224,7 +261,16 @@ class _CodexApiKeySession(LoginSession):
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         yield TextPrompt(prompt_id="api_key", prompt="OpenAI API key", hidden=True)
-        ans = await self._answers.get()
+        try:
+            ans = await asyncio.wait_for(self._answers.get(), timeout=300)
+        except asyncio.TimeoutError:
+            self._done = True
+            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            return
+        if ans.prompt_id == "__cancel__":
+            self._done = True
+            yield LoginFailed(code="cancelled", message="Login cancelled")
+            return
         if not ans.answer:
             self._done = True
             yield LoginFailed(code="invalid_key", message="API key cannot be empty")
@@ -233,10 +279,14 @@ class _CodexApiKeySession(LoginSession):
         yield LoginComplete(account_id="", backend_status="validating")
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
         self._done = True
+        with contextlib.suppress(asyncio.QueueFull):
+            self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
 class CodexBackend:

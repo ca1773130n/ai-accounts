@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -61,6 +62,7 @@ class _GeminiOAuthDeviceSession(LoginSession):
         self._isolation_dir = isolation_dir
         self._done = False
         self._orchestrator: CliOrchestrator | None = None
+        self._cleanup_lock = asyncio.Lock()
 
     @property
     def session_id(self) -> str:
@@ -77,6 +79,23 @@ class _GeminiOAuthDeviceSession(LoginSession):
     @property
     def done(self) -> bool:
         return self._done
+
+    async def _cleanup(self) -> None:
+        async with self._cleanup_lock:
+            if self._orchestrator is not None:
+                try:
+                    await self._orchestrator.terminate()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+                try:
+                    exit_code = await asyncio.wait_for(
+                        self._orchestrator.wait(), timeout=10
+                    )
+                except asyncio.TimeoutError:
+                    await self._orchestrator.kill()
+                    await self._orchestrator.wait()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         self._orchestrator = CliOrchestrator(
@@ -95,46 +114,46 @@ class _GeminiOAuthDeviceSession(LoginSession):
         user_code: str | None = None
         emitted_url_prompt = False
         success = False
-        async for chunk in self._orchestrator.read_output():
-            if chunk.strip():
-                yield StdoutChunk(text=chunk)
-            if url is None:
-                m = _GEMINI_URL_RE.search(chunk)
-                if m:
-                    url = m.group(0)
-            if user_code is None:
-                m = _GEMINI_USER_CODE_RE.search(chunk)
-                if m:
-                    user_code = m.group(1)
-            if not emitted_url_prompt and url and user_code:
-                emitted_url_prompt = True
-                yield UrlPrompt(prompt_id="device", url=url, user_code=user_code)
-            if any(mk in chunk for mk in _GEMINI_SUCCESS_MARKERS):
-                success = True
-                break
-            lower = chunk.lower()
-            if "error" in lower or "failed" in lower or any(
-                mk in chunk for mk in _GEMINI_FAILURE_MARKERS
-            ):
-                break
+        try:
+            async for chunk in self._orchestrator.read_output():
+                if chunk.strip():
+                    yield StdoutChunk(text=chunk)
+                if url is None:
+                    m = _GEMINI_URL_RE.search(chunk)
+                    if m:
+                        url = m.group(0)
+                if user_code is None:
+                    m = _GEMINI_USER_CODE_RE.search(chunk)
+                    if m:
+                        user_code = m.group(1)
+                if not emitted_url_prompt and url and user_code:
+                    emitted_url_prompt = True
+                    yield UrlPrompt(prompt_id="device", url=url, user_code=user_code)
+                if any(mk in chunk for mk in _GEMINI_SUCCESS_MARKERS):
+                    success = True
+                    break
+                lower = chunk.lower()
+                if "error" in lower or "failed" in lower or any(
+                    mk in chunk for mk in _GEMINI_FAILURE_MARKERS
+                ):
+                    break
+        finally:
+            await self._cleanup()
+            self._done = True
 
-        exit_code = await self._orchestrator.wait()
-        self._done = True
-        if success and exit_code == 0:
+        if success:
             yield LoginComplete(account_id="", backend_status="validating")
         else:
             yield LoginFailed(
                 code="oauth_device_failed",
-                message=f"gemini auth login exited with {exit_code}",
+                message="gemini auth login failed",
             )
 
     async def respond(self, answer: PromptAnswer) -> None:
         pass
 
     async def cancel(self) -> None:
-        if self._orchestrator is not None and not self._done:
-            await self._orchestrator.terminate()
-            await self._orchestrator.wait()
+        await self._cleanup()
         self._done = True
 
 
@@ -161,7 +180,7 @@ class _GeminiDirectOAuthSession(LoginSession):
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
         self._config = config
         self._isolation_dir = isolation_dir
-        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
         self._done = False
         self._state: str | None = None
         self._code_verifier: str | None = None
@@ -280,7 +299,16 @@ class _GeminiDirectOAuthSession(LoginSession):
             hidden=False,
         )
 
-        answer = await self._answers.get()
+        try:
+            answer = await asyncio.wait_for(self._answers.get(), timeout=300)
+        except asyncio.TimeoutError:
+            self._done = True
+            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            return
+        if answer.prompt_id == "__cancel__":
+            self._done = True
+            yield LoginFailed(code="cancelled", message="Login cancelled")
+            return
         auth_code = answer.answer.strip()
         if not auth_code:
             self._done = True
@@ -305,16 +333,20 @@ class _GeminiDirectOAuthSession(LoginSession):
         yield LoginComplete(account_id="", backend_status="validating")
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
         self._done = True
+        with contextlib.suppress(asyncio.QueueFull):
+            self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
 class _GeminiApiKeySession(LoginSession):
     def __init__(self) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
-        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
         self._done = False
 
     @property
@@ -335,7 +367,16 @@ class _GeminiApiKeySession(LoginSession):
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         yield TextPrompt(prompt_id="api_key", prompt="Google AI Studio API key", hidden=True)
-        ans = await self._answers.get()
+        try:
+            ans = await asyncio.wait_for(self._answers.get(), timeout=300)
+        except asyncio.TimeoutError:
+            self._done = True
+            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            return
+        if ans.prompt_id == "__cancel__":
+            self._done = True
+            yield LoginFailed(code="cancelled", message="Login cancelled")
+            return
         if not ans.answer:
             self._done = True
             yield LoginFailed(code="invalid_key", message="API key cannot be empty")
@@ -344,10 +385,14 @@ class _GeminiApiKeySession(LoginSession):
         yield LoginComplete(account_id="", backend_status="validating")
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
         self._done = True
+        with contextlib.suppress(asyncio.QueueFull):
+            self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
 class GeminiBackend:

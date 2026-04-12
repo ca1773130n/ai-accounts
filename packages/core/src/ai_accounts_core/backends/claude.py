@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -58,6 +59,7 @@ class _ClaudeCliBrowserSession(LoginSession):
         self._done = False
         self._orchestrator: CliOrchestrator | None = None
         self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._cleanup_lock = asyncio.Lock()
 
     @property
     def session_id(self) -> str:
@@ -74,6 +76,18 @@ class _ClaudeCliBrowserSession(LoginSession):
     @property
     def done(self) -> bool:
         return self._done
+
+    async def _cleanup(self) -> None:
+        async with self._cleanup_lock:
+            if self._orchestrator is not None:
+                try:
+                    await self._orchestrator.terminate()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+                try:
+                    await self._orchestrator.wait()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         # claude is launched bare (no /login arg): the first-run TUI runs
@@ -100,33 +114,23 @@ class _ClaudeCliBrowserSession(LoginSession):
             ):
                 yield event
         finally:
-            if self._orchestrator is not None:
-                try:
-                    await self._orchestrator.terminate()
-                except Exception:  # pragma: no cover - best-effort
-                    pass
-                try:
-                    await self._orchestrator.wait()
-                except Exception:  # pragma: no cover - best-effort
-                    pass
+            await self._cleanup()
             self._done = True
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
-        if self._orchestrator is not None and not self._done:
-            try:
-                await self._orchestrator.terminate()
-            except Exception:  # pragma: no cover
-                pass
+        await self._cleanup()
         self._done = True
 
 
 class _ClaudeApiKeySession(LoginSession):
     def __init__(self) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
-        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
         self._done = False
 
     @property
@@ -147,7 +151,16 @@ class _ClaudeApiKeySession(LoginSession):
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         yield TextPrompt(prompt_id="api_key", prompt="Anthropic API key", hidden=True)
-        ans = await self._answers.get()
+        try:
+            ans = await asyncio.wait_for(self._answers.get(), timeout=300)
+        except asyncio.TimeoutError:
+            self._done = True
+            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            return
+        if ans.prompt_id == "__cancel__":
+            self._done = True
+            yield LoginFailed(code="cancelled", message="Login cancelled")
+            return
         if not ans.answer.startswith("sk-ant-"):
             self._done = True
             yield LoginFailed(code="invalid_key", message="API key must start with sk-ant-")
@@ -156,10 +169,14 @@ class _ClaudeApiKeySession(LoginSession):
         yield LoginComplete(account_id="", backend_status="validating")
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
         self._done = True
+        with contextlib.suppress(asyncio.QueueFull):
+            self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
 class ClaudeBackend:

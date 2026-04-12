@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -96,7 +97,12 @@ class _OpenCodeCliBrowserSession(LoginSession):
             ):
                 break
 
-        exit_code = await self._orchestrator.wait()
+        await self._orchestrator.terminate()
+        try:
+            exit_code = await asyncio.wait_for(self._orchestrator.wait(), timeout=10)
+        except asyncio.TimeoutError:
+            await self._orchestrator.kill()
+            exit_code = await self._orchestrator.wait()
         self._done = True
         if success and exit_code == 0:
             yield LoginComplete(account_id="", backend_status="validating")
@@ -119,7 +125,7 @@ class _OpenCodeCliBrowserSession(LoginSession):
 class _OpenCodeApiKeySession(LoginSession):
     def __init__(self) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
-        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
         self._done = False
 
     @property
@@ -140,7 +146,16 @@ class _OpenCodeApiKeySession(LoginSession):
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         yield TextPrompt(prompt_id="api_key", prompt="OpenCode API key", hidden=True)
-        ans = await self._answers.get()
+        try:
+            ans = await asyncio.wait_for(self._answers.get(), timeout=300)
+        except asyncio.TimeoutError:
+            self._done = True
+            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            return
+        if ans.prompt_id == "__cancel__":
+            self._done = True
+            yield LoginFailed(code="cancelled", message="Login cancelled")
+            return
         if not ans.answer:
             self._done = True
             yield LoginFailed(code="invalid_key", message="API key cannot be empty")
@@ -149,10 +164,14 @@ class _OpenCodeApiKeySession(LoginSession):
         yield LoginComplete(account_id="", backend_status="validating")
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
         self._done = True
+        with contextlib.suppress(asyncio.QueueFull):
+            self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
 class OpenCodeBackend:
