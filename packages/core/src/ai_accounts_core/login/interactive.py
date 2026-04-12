@@ -164,9 +164,9 @@ async def run_interactive_cli_login(
         # Post-action: login method selection, account chooser, etc.
         if not pending_menu:
             options = parse_menu_options(recent_lines)
-            logger.debug(
+            logger.info(
                 "menu check: %d options from %d recent_lines | chunk=%r",
-                len(options), len(recent_lines), chunk[:120],
+                len(options), len(recent_lines), chunk[:200],
             )
             if options:
                 # Wait briefly for full menu render (more options may arrive).
