@@ -21,7 +21,10 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 
-_CURSOR_POS_RE = re.compile(r"\x1b\[\d*(?:;\d*)*[HfGC]")
+# Cursor movements that imply a new row (absolute positioning).
+_CURSOR_ROW_RE = re.compile(r"\x1b\[\d*(?:;\d*)*[Hf]")
+# Cursor movements that stay on the same row (column-only).
+_CURSOR_COL_RE = re.compile(r"\x1b\[\d*[GC]")
 _ERASE_SCREEN_RE = re.compile(r"\x1b\[\d*J")
 _ANSI_RE = re.compile(
     r"\x1b"
@@ -114,7 +117,8 @@ logger = logging.getLogger(__name__)
 
 
 def strip_ansi(text: str) -> str:
-    text = _CURSOR_POS_RE.sub(" ", text)
+    text = _CURSOR_ROW_RE.sub("\n", text)
+    text = _CURSOR_COL_RE.sub(" ", text)
     text = _ERASE_SCREEN_RE.sub("\n", text)
     text = _ANSI_RE.sub("", text)
     return text
