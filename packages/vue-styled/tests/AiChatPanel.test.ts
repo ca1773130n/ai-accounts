@@ -1,0 +1,235 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mount } from '@vue/test-utils';
+import ChatBubble from '../src/components/ChatBubble.vue';
+import ChatInput from '../src/components/ChatInput.vue';
+import ChatControls from '../src/components/ChatControls.vue';
+import AllModeResponses from '../src/components/AllModeResponses.vue';
+import CompoundSynthesis from '../src/components/CompoundSynthesis.vue';
+
+// ---------------------------------------------------------------------------
+// ChatBubble
+// ---------------------------------------------------------------------------
+describe('ChatBubble', () => {
+  it('renders user bubble with correct class', () => {
+    const w = mount(ChatBubble, { props: { role: 'user', content: 'Hello' } });
+    expect(w.find('.aia-bubble--user').exists()).toBe(true);
+    expect(w.text()).toContain('Hello');
+  });
+
+  it('renders assistant bubble with markdown', () => {
+    const w = mount(ChatBubble, { props: { role: 'assistant', content: '**bold**' } });
+    expect(w.find('.aia-bubble--assistant').exists()).toBe(true);
+    expect(w.find('.aia-bubble__content').html()).toContain('<strong>bold</strong>');
+  });
+
+  it('shows backend badge when provided', () => {
+    const w = mount(ChatBubble, { props: { role: 'assistant', content: 'hi', backend: 'claude' } });
+    expect(w.find('.aia-bubble__backend').text()).toBe('claude');
+  });
+
+  it('shows streaming cursor class', () => {
+    const w = mount(ChatBubble, { props: { role: 'assistant', content: 'typing...', streaming: true } });
+    expect(w.find('.aia-bubble--streaming').exists()).toBe(true);
+  });
+
+  it('displays formatted timestamp', () => {
+    const w = mount(ChatBubble, {
+      props: { role: 'user', content: 'hi', timestamp: '2025-01-15T10:30:00Z' },
+    });
+    expect(w.find('.aia-bubble__time').exists()).toBe(true);
+    expect(w.find('.aia-bubble__time').text()).not.toBe('');
+  });
+
+  it('renders avatar U for user, AI for assistant', () => {
+    const user = mount(ChatBubble, { props: { role: 'user', content: '' } });
+    expect(user.find('.aia-bubble__avatar').text()).toBe('U');
+    const ai = mount(ChatBubble, { props: { role: 'assistant', content: '' } });
+    expect(ai.find('.aia-bubble__avatar').text()).toBe('AI');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ChatInput
+// ---------------------------------------------------------------------------
+describe('ChatInput', () => {
+  it('emits send on button click', async () => {
+    const w = mount(ChatInput);
+    await w.find('textarea').setValue('Hello world');
+    await w.find('button').trigger('click');
+    expect(w.emitted('send')?.[0]).toEqual(['Hello world']);
+  });
+
+  it('clears input after send', async () => {
+    const w = mount(ChatInput);
+    await w.find('textarea').setValue('test');
+    await w.find('button').trigger('click');
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('does not send empty messages', async () => {
+    const w = mount(ChatInput);
+    await w.find('button').trigger('click');
+    expect(w.emitted('send')).toBeUndefined();
+  });
+
+  it('disables textarea when streaming', () => {
+    const w = mount(ChatInput, { props: { isStreaming: true } });
+    expect(w.find('textarea').attributes('disabled')).toBeDefined();
+  });
+
+  it('sends on Enter key (non-shift)', async () => {
+    const w = mount(ChatInput);
+    await w.find('textarea').setValue('enter-send');
+    await w.find('textarea').trigger('keydown', { key: 'Enter', shiftKey: false });
+    expect(w.emitted('send')?.[0]).toEqual(['enter-send']);
+  });
+
+  it('does not send on Shift+Enter', async () => {
+    const w = mount(ChatInput);
+    await w.find('textarea').setValue('multi-line');
+    await w.find('textarea').trigger('keydown', { key: 'Enter', shiftKey: true });
+    expect(w.emitted('send')).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ChatControls
+// ---------------------------------------------------------------------------
+describe('ChatControls', () => {
+  const defaultProps = {
+    chatMode: 'single' as const,
+    selectedBackend: null,
+    selectedModel: null,
+    backends: [
+      { kind: 'claude', displayName: 'Claude', accounts: ['a@b.com'], models: ['opus'] },
+      { kind: 'gemini', displayName: 'Gemini', accounts: ['g@g.com'], models: ['pro'] },
+    ],
+  };
+
+  it('renders mode buttons', () => {
+    const w = mount(ChatControls, { props: defaultProps });
+    const btns = w.findAll('.aia-controls__mode-btn');
+    expect(btns).toHaveLength(3);
+    expect(btns.map((b) => b.text())).toEqual(['Single', 'All', 'Compound']);
+  });
+
+  it('highlights active mode', () => {
+    const w = mount(ChatControls, { props: { ...defaultProps, chatMode: 'all' as const } });
+    const active = w.find('.aia-controls__mode-btn--active');
+    expect(active.text()).toBe('All');
+  });
+
+  it('emits update:chatMode on mode click', async () => {
+    const w = mount(ChatControls, { props: defaultProps });
+    await w.findAll('.aia-controls__mode-btn')[2].trigger('click');
+    expect(w.emitted('update:chatMode')?.[0]).toEqual(['compound']);
+  });
+
+  it('lists backends in dropdown', () => {
+    const w = mount(ChatControls, { props: defaultProps });
+    const options = w.findAll('.aia-controls__group:first-child option');
+    expect(options).toHaveLength(3); // Auto + 2 backends
+  });
+
+  it('disables account/model selects when auto', () => {
+    const w = mount(ChatControls, { props: defaultProps });
+    const selects = w.findAll('.aia-controls__select');
+    // second and third selects (account, model) should be disabled
+    expect(selects[1].attributes('disabled')).toBeDefined();
+    expect(selects[2].attributes('disabled')).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AllModeResponses
+// ---------------------------------------------------------------------------
+describe('AllModeResponses', () => {
+  function makeResponses() {
+    const map = new Map();
+    map.set('claude', { backend: 'claude', content: 'Claude says hi', status: 'complete' });
+    map.set('gemini', { backend: 'gemini', content: 'Gemini says hello', status: 'streaming' });
+    return map;
+  }
+
+  it('renders a card per backend response', () => {
+    const w = mount(AllModeResponses, { props: { responses: makeResponses() } });
+    const cards = w.findAll('.aia-resp');
+    expect(cards).toHaveLength(2);
+  });
+
+  it('shows backend names', () => {
+    const w = mount(AllModeResponses, { props: { responses: makeResponses() } });
+    expect(w.text()).toContain('Claude');
+    expect(w.text()).toContain('Gemini');
+  });
+
+  it('shows status badges', () => {
+    const w = mount(AllModeResponses, { props: { responses: makeResponses() } });
+    expect(w.text()).toContain('Done');
+    expect(w.text()).toContain('Streaming');
+  });
+
+  it('renders markdown content', () => {
+    const map = new Map();
+    map.set('claude', { backend: 'claude', content: '**bold text**', status: 'complete' });
+    const w = mount(AllModeResponses, { props: { responses: map } });
+    expect(w.find('.aia-resp__body').html()).toContain('<strong>bold text</strong>');
+  });
+
+  it('shows error messages', () => {
+    const map = new Map();
+    map.set('claude', { backend: 'claude', content: '', status: 'error', error: 'Something failed' });
+    const w = mount(AllModeResponses, { props: { responses: map } });
+    expect(w.text()).toContain('Something failed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CompoundSynthesis
+// ---------------------------------------------------------------------------
+describe('CompoundSynthesis', () => {
+  const baseState = {
+    status: 'complete' as const,
+    content: 'Synthesized result here',
+    primaryBackend: 'claude',
+    backendsCollected: ['claude', 'gemini'],
+  };
+
+  it('shows Compound Synthesis label', () => {
+    const w = mount(CompoundSynthesis, { props: { state: baseState } });
+    expect(w.text()).toContain('Compound Synthesis');
+  });
+
+  it('shows primary backend', () => {
+    const w = mount(CompoundSynthesis, { props: { state: baseState } });
+    expect(w.text()).toContain('via claude');
+  });
+
+  it('lists source backends', () => {
+    const w = mount(CompoundSynthesis, { props: { state: baseState } });
+    expect(w.text()).toContain('claude, gemini');
+  });
+
+  it('renders markdown content', () => {
+    const state = { ...baseState, content: '*italic*' };
+    const w = mount(CompoundSynthesis, { props: { state } });
+    expect(w.find('.aia-synth__content').html()).toContain('<em>italic</em>');
+  });
+
+  it('shows streaming class when streaming', () => {
+    const state = { ...baseState, status: 'streaming' as const };
+    const w = mount(CompoundSynthesis, { props: { state } });
+    expect(w.find('.aia-synth--streaming').exists()).toBe(true);
+  });
+
+  it('shows error when present', () => {
+    const state = { ...baseState, status: 'error' as const, error: 'synthesis failed' };
+    const w = mount(CompoundSynthesis, { props: { state } });
+    expect(w.text()).toContain('synthesis failed');
+  });
+
+  it('shows status badge', () => {
+    const w = mount(CompoundSynthesis, { props: { state: baseState } });
+    expect(w.text()).toContain('Complete');
+  });
+});

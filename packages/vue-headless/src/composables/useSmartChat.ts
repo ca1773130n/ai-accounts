@@ -4,6 +4,7 @@ import type {
   ChatMessageDTO,
   SmartChatEvent,
   ChatMode,
+  SendChatRequest,
 } from '@ai-accounts/ts-core';
 import { useAiAccounts } from './useAiAccounts';
 
@@ -86,14 +87,11 @@ export function useSmartChat(): UseSmartChatReturn {
     messages.value = [...messages.value, userMsg];
 
     try {
-      for await (const event of client.sendChat({
-        session_id: sessionId.value,
-        content,
-        mode: chatMode.value,
-        backend_kind: selectedBackend.value ?? undefined,
-        account_id: selectedAccount.value ?? undefined,
-        model: selectedModel.value ?? undefined,
-      })) {
+      const req: SendChatRequest = { session_id: sessionId.value, content, mode: chatMode.value };
+      if (selectedBackend.value) req.backend_kind = selectedBackend.value;
+      if (selectedAccount.value) req.account_id = selectedAccount.value;
+      if (selectedModel.value) req.model = selectedModel.value;
+      for await (const event of client.sendChat(req)) {
         dispatch(event);
       }
       // Stream ended — finalize

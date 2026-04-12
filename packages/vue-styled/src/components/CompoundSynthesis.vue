@@ -1,0 +1,76 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+import { marked } from 'marked';
+import type { SynthesisStateRef } from '@ai-accounts/vue-headless';
+
+const props = defineProps<{
+  state: SynthesisStateRef;
+}>();
+
+const html = computed(() => marked.parse(props.state.content || '') as string);
+const isStreaming = computed(() => props.state.status === 'streaming');
+
+function statusBadge(status: SynthesisStateRef['status']) {
+  switch (status) {
+    case 'waiting': return { text: 'Waiting...', cls: 'aia-synth__badge--waiting' };
+    case 'streaming': return { text: 'Synthesizing', cls: 'aia-synth__badge--streaming' };
+    case 'complete': return { text: 'Complete', cls: 'aia-synth__badge--complete' };
+    case 'error': return { text: 'Error', cls: 'aia-synth__badge--error' };
+    default: return { text: status, cls: '' };
+  }
+}
+</script>
+
+<template>
+  <div class="aia-synth" :class="{ 'aia-synth--streaming': isStreaming }">
+    <div class="aia-synth__header">
+      <span class="aia-synth__label">Compound Synthesis</span>
+      <span v-if="state.primaryBackend" class="aia-synth__via">via {{ state.primaryBackend }}</span>
+      <span class="aia-synth__badge" :class="statusBadge(state.status).cls">
+        {{ statusBadge(state.status).text }}
+      </span>
+    </div>
+    <div v-if="state.backendsCollected.length" class="aia-synth__sources">
+      Sources: {{ state.backendsCollected.join(', ') }}
+    </div>
+    <div class="aia-synth__content" v-html="html" />
+    <div v-if="state.error" class="aia-synth__error">{{ state.error }}</div>
+  </div>
+</template>
+
+<style scoped>
+.aia-synth {
+  border: 1px solid var(--aia-border, #27272a); border-radius: var(--aia-radius, 8px);
+  background: var(--aia-bg-elevated, #141414); overflow: hidden; margin: var(--aia-space-2, 8px) 0;
+  border-left: 3px solid var(--aia-primary, #7c3aed);
+}
+.aia-synth__header {
+  display: flex; align-items: center; gap: var(--aia-space-2, 8px);
+  padding: var(--aia-space-2, 8px) var(--aia-space-3, 12px);
+  background: rgba(124,58,237,0.08);
+}
+.aia-synth__label { font-weight: 700; font-size: var(--aia-text-sm, 14px); color: var(--aia-primary-hover, #8b5cf6); }
+.aia-synth__via { font-size: var(--aia-text-xs, 12px); color: var(--aia-fg-subtle, #71717a); }
+.aia-synth__badge {
+  font-size: var(--aia-text-xs, 12px); padding: 1px 8px;
+  border-radius: var(--aia-radius-sm, 4px); margin-left: auto; font-weight: 500;
+}
+.aia-synth__badge--waiting { background: rgba(161,161,170,0.15); color: #a1a1aa; }
+.aia-synth__badge--streaming { background: rgba(96,165,250,0.15); color: #60a5fa; }
+.aia-synth__badge--complete { background: rgba(16,185,129,0.15); color: #34d399; }
+.aia-synth__badge--error { background: rgba(239,68,68,0.15); color: #ef4444; }
+.aia-synth__sources {
+  padding: var(--aia-space-1, 4px) var(--aia-space-3, 12px);
+  font-size: var(--aia-text-xs, 12px); color: var(--aia-fg-subtle, #71717a);
+}
+.aia-synth__content {
+  padding: var(--aia-space-3, 12px); font-size: var(--aia-text-sm, 14px);
+  line-height: 1.6; color: var(--aia-fg, #fafafa);
+}
+.aia-synth__content :deep(pre) { background: var(--aia-bg, #0a0a0a); border-radius: var(--aia-radius, 8px); padding: 0.75rem; overflow-x: auto; margin: 0.5rem 0; font-size: 0.8rem; }
+.aia-synth__content :deep(code) { font-family: var(--aia-font-mono, monospace); }
+.aia-synth__content :deep(p) { margin: 0.25rem 0; }
+.aia-synth--streaming .aia-synth__content::after { content: '\25AE'; animation: aia-synth-blink 1s step-end infinite; }
+.aia-synth__error { padding: var(--aia-space-2, 8px) var(--aia-space-3, 12px); font-size: var(--aia-text-xs, 12px); color: var(--aia-danger, #ef4444); }
+@keyframes aia-synth-blink { 50% { opacity: 0; } }
+</style>
