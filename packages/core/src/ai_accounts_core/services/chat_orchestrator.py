@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ai_accounts_core.domain.chat import ChatDelta, ChatMessage, ChatRole
-from ai_accounts_core.domain.chat_events import AllModeEvent
+from ai_accounts_core.domain.chat_events import AllModeEvent, CompoundEvent
 from ai_accounts_core.ids import new_id
 from ai_accounts_core.protocols.backend import ChatRequest
 from ai_accounts_core.services.chat import ChatService
@@ -117,3 +117,66 @@ class ChatOrchestrator:
             yield event
 
         await monitor_task
+
+    # ── Compound-mode: fan-out + synthesis ──
+
+    async def send_compound(
+        self,
+        *,
+        session_id: str,
+        content: str,
+        primary_kind: str | None = None,
+    ) -> AsyncIterator[CompoundEvent]:
+        """Fan out to all backends, collect responses, then synthesise via the primary."""
+        # Phase 1: fan out (reuse send_all, collect text)
+        responses: dict[str, str] = {}
+        async for event in self.send_all(session_id=session_id, content=content):
+            yield CompoundEvent(
+                kind=event.kind, backend=event.backend, text=event.text, error=event.error,
+            )
+            if event.kind == "backend_delta" and event.text:
+                responses.setdefault(event.backend, "")
+                responses[event.backend] += event.text
+
+        if not responses:
+            yield CompoundEvent(kind="synthesis_error", error="No backend responses to synthesize")
+            return
+
+        # Phase 2: synthesise via primary backend
+        primary = primary_kind or next(iter(responses))
+        yield CompoundEvent(
+            kind="synthesis_start",
+            primary_backend=primary,
+            backends_collected=tuple(responses.keys()),
+        )
+
+        synthesis_prompt = "Given these responses from multiple AI backends:\n\n"
+        for backend, text in responses.items():
+            synthesis_prompt += f"**{backend}:**\n{text}\n\n"
+        synthesis_prompt += (
+            "Please synthesize a unified, comprehensive response combining the best insights from all."
+        )
+
+        result = await self._scheduler.pick(kind=primary)
+        if not result:
+            yield CompoundEvent(kind="synthesis_error", error=f"No {primary} account for synthesis")
+            return
+
+        impl = self._scheduler._accounts._impl_for(primary)
+        synth_msg = ChatMessage(
+            id=new_id("msg"),
+            session_id=session_id,
+            role=ChatRole.USER,
+            content=synthesis_prompt,
+            created_at=_now(),
+        )
+        synth_request = ChatRequest(messages=(synth_msg,), model="auto")
+        try:
+            async for event in impl.chat(
+                synth_request, result.credential, isolation_dir=Path(result.isolation_dir),
+            ):
+                if event.kind == "token" and isinstance(event.payload, str):
+                    yield CompoundEvent(kind="synthesis_delta", text=event.payload)
+            yield CompoundEvent(kind="synthesis_complete")
+        except Exception as exc:
+            yield CompoundEvent(kind="synthesis_error", error=str(exc))
