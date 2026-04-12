@@ -291,14 +291,22 @@ def detect_cliproxy() -> tuple[str, str] | None:
     if not _CLIPROXY_CONFIG.exists():
         return None
     try:
-        import yaml
-
-        conf = yaml.safe_load(_CLIPROXY_CONFIG.read_text())
+        text = _CLIPROXY_CONFIG.read_text()
+        # Simple YAML parsing — avoid pyyaml dependency
+        port = 8317
+        api_key = "not-needed"
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("port:"):
+                try:
+                    port = int(line.split(":", 1)[1].strip())
+                except ValueError:
+                    pass
+            elif line.startswith("- ") and api_key == "not-needed":
+                # First item under api-keys list
+                api_key = line[2:].strip().strip('"').strip("'")
     except Exception:
         return None
-    port = conf.get("port", 8317)
-    keys = conf.get("api-keys", [])
-    api_key = keys[0] if keys else "not-needed"
     base_url = f"http://127.0.0.1:{port}/v1"
     try:
         resp = httpx.get(
