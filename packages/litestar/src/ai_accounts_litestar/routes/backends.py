@@ -18,7 +18,12 @@ class BackendsController(Controller):
     @get("/")
     async def list_backends(self, account_service: AccountService) -> BackendListDTO:
         items = await account_service.list()
-        return BackendListDTO(items=[BackendDTO.from_domain(b) for b in items])
+        return BackendListDTO(
+            items=[
+                BackendDTO.from_domain(b, config_dir=str(account_service.config_dir(b.id)))
+                for b in items
+            ]
+        )
 
     @post("/", status_code=status_codes.HTTP_201_CREATED)
     async def create_backend(
@@ -27,13 +32,14 @@ class BackendsController(Controller):
         created = await account_service.create(
             data.kind, display_name=data.display_name, config=data.config
         )
-        return BackendDTO.from_domain(created)
+        return BackendDTO.from_domain(created, config_dir=str(account_service.config_dir(created.id)))
 
     @get("/{backend_id:str}")
     async def get_backend(
         self, backend_id: str, account_service: AccountService
     ) -> BackendDTO:
-        return BackendDTO.from_domain(await account_service.get(backend_id))
+        b = await account_service.get(backend_id)
+        return BackendDTO.from_domain(b, config_dir=str(account_service.config_dir(b.id)))
 
     @patch("/{backend_id:str}")
     async def update_backend(
@@ -48,7 +54,7 @@ class BackendsController(Controller):
         if data.config is not None:
             kwargs["config"] = data.config
         updated = await account_service.update(backend_id, **kwargs)  # type: ignore[arg-type]
-        return BackendDTO.from_domain(updated)
+        return BackendDTO.from_domain(updated, config_dir=str(account_service.config_dir(updated.id)))
 
     @delete("/{backend_id:str}")
     async def delete_backend(
@@ -66,4 +72,5 @@ class BackendsController(Controller):
     async def validate(
         self, backend_id: str, account_service: AccountService
     ) -> BackendDTO:
-        return BackendDTO.from_domain(await account_service.validate(backend_id))
+        b = await account_service.validate(backend_id)
+        return BackendDTO.from_domain(b, config_dir=str(account_service.config_dir(b.id)))

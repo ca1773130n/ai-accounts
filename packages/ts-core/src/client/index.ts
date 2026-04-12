@@ -21,6 +21,7 @@ export interface BackendDTO {
   display_name: string;
   status: string;
   config: Record<string, unknown>;
+  config_dir: string | null;
   last_error: string | null;
 }
 

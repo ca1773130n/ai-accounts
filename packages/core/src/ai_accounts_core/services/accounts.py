@@ -69,6 +69,13 @@ class AccountService:
     def _isolation_dir(self, backend_id: str) -> Path:
         return self._isolation_base_dir / backend_id
 
+    def config_dir(self, backend_id: str) -> Path:
+        """Public accessor for a backend's config/isolation directory.
+
+        Package consumers use this to find credential files, config, etc.
+        """
+        return self._isolation_base_dir / backend_id
+
     async def create(
         self,
         kind: str,

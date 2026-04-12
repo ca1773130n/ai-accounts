@@ -11,16 +11,20 @@ class BackendDTO(msgspec.Struct, kw_only=True):
     display_name: str
     status: str
     config: dict[str, object]
+    config_dir: str | None = None
     last_error: str | None = None
 
     @classmethod
-    def from_domain(cls, backend: Backend) -> "BackendDTO":
+    def from_domain(
+        cls, backend: Backend, config_dir: str | None = None
+    ) -> "BackendDTO":
         return cls(
             id=backend.id,
             kind=backend.kind,
             display_name=backend.display_name,
             status=backend.status.value,
             config=backend.config,
+            config_dir=config_dir,
             last_error=backend.last_error,
         )
 
