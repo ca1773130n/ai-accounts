@@ -278,3 +278,36 @@ async def forward_cliproxy_callback(callback_url: str) -> dict:
         }
     except Exception as exc:
         return {"status": "error", "message": f"Failed to reach callback server: {exc}"}
+
+
+_CLIPROXY_CONFIG = Path.home() / ".cli-proxy-api" / "config.yaml"
+
+
+def detect_cliproxy() -> tuple[str, str] | None:
+    """Auto-detect a running CLIProxyAPI from ~/.cli-proxy-api/config.yaml.
+
+    Returns (base_url, api_key) if reachable, else None.
+    """
+    if not _CLIPROXY_CONFIG.exists():
+        return None
+    try:
+        import yaml
+
+        conf = yaml.safe_load(_CLIPROXY_CONFIG.read_text())
+    except Exception:
+        return None
+    port = conf.get("port", 8317)
+    keys = conf.get("api-keys", [])
+    api_key = keys[0] if keys else "not-needed"
+    base_url = f"http://127.0.0.1:{port}/v1"
+    try:
+        resp = httpx.get(
+            f"{base_url}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=2,
+        )
+        if resp.status_code == 200:
+            return base_url, api_key
+    except Exception:
+        pass
+    return None

@@ -13,6 +13,7 @@ from typing import Any, ClassVar
 
 import httpx
 
+from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
@@ -559,6 +560,10 @@ class GeminiBackend:
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
         api_key = credential.decode("utf-8").strip()
+        if not api_key:
+            async for event in _chat_via_cliproxy(request):
+                yield event
+            return
         contents = []
         for m in request.messages:
             if m.role == ChatRole.SYSTEM:
