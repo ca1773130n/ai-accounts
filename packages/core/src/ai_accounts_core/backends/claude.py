@@ -2,14 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import hashlib
 import json
 import logging
 import os
-import platform
 import re
 import shutil
-import subprocess
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -52,72 +49,24 @@ _CLAUDE_CONSOLE_URL_RE = re.compile(
 
 
 def _read_claude_oauth_token(config_dir: Path) -> bytes | None:
-    """Read OAuth token from Claude CLI's credential store.
+    """Read OAuth token from the config dir's .credentials.json.
 
-    Priority (matches Agented's CredentialResolver.get_claude_token):
-    1. macOS Keychain with config-path hash suffix (non-default accounts)
-    2. config_dir/.credentials.json → claudeAiOauth.accessToken
-    3. macOS Keychain 'Claude Code-credentials' (default account)
-    4. ~/.claude/.credentials.json (default fallback)
+    Claude CLI writes credentials to CLAUDE_CONFIG_DIR/.credentials.json
+    after a successful login. We just read it from the dir we control.
     """
-    default_config = str(Path.home() / ".claude")
-    config_str = str(config_dir)
-    is_default = config_str == default_config
-
-    # Non-default: try keychain with hash suffix, then file
-    if not is_default and platform.system() == "Darwin":
-        suffix = hashlib.sha256(config_str.encode()).hexdigest()[:8]
-        token = _keychain_read(f"Claude Code-credentials-{suffix}")
-        if token:
-            return token.encode("utf-8")
-
-    # Try credentials file in config dir
-    token = _creds_file_read(config_dir / ".credentials.json")
-    if token:
-        return token.encode("utf-8")
-
-    # Default account: try keychain
-    if platform.system() == "Darwin":
-        token = _keychain_read("Claude Code-credentials")
-        if token:
-            return token.encode("utf-8")
-
-    # Default fallback file
-    if not is_default:
-        token = _creds_file_read(Path.home() / ".claude" / ".credentials.json")
-        if token:
-            return token.encode("utf-8")
-
-    logger.warning("could not read Claude OAuth token from keychain or credentials file")
-    return None
-
-
-def _keychain_read(service: str) -> str | None:
-    """Read Claude OAuth token from macOS Keychain."""
+    cred_path = config_dir / ".credentials.json"
     try:
-        result = subprocess.run(
-            ["security", "find-generic-password", "-s", service, "-w"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode != 0:
+        if not cred_path.exists():
+            logger.warning("no .credentials.json in %s after login", config_dir)
             return None
-        raw = result.stdout.strip()
-        if not raw:
-            return None
-        data = json.loads(raw)
-        return data.get("claudeAiOauth", {}).get("accessToken")
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        data = json.loads(cred_path.read_text(encoding="utf-8"))
+        token = data.get("claudeAiOauth", {}).get("accessToken")
+        if token:
+            return token.encode("utf-8")
+        logger.warning(".credentials.json exists but no accessToken in %s", config_dir)
         return None
-
-
-def _creds_file_read(path: Path) -> str | None:
-    """Read Claude OAuth token from .credentials.json file."""
-    try:
-        if not path.exists():
-            return None
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data.get("claudeAiOauth", {}).get("accessToken")
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("failed to read .credentials.json: %s", exc)
         return None
 
 
