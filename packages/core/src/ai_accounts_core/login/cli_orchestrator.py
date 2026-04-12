@@ -61,11 +61,12 @@ _LOGIN_SUCCESS_RE = re.compile(
     r"(?:"
     r"successfully\s+(?:logged|authenticated|signed)"
     r"|(?:now\s+)?logged\s+in\s+as\b"
-    r"|signed\s+in\s+with\b"
+    r"|signed\s+in\s+(?:as|with)\b"
     r"|authentication\s+(?:successful|complete)"
     r"|login\s+(?:successful|complete)"
     r"|you\s+are\s+(?:now\s+)?logged\s+in"
     r"|account\s+(?:added|connected|linked)"
+    r"|✓\s*(?:signed|logged|authenticated)"
     r")",
     re.IGNORECASE,
 )
