@@ -233,7 +233,9 @@ async def run_interactive_cli_login(
                 yield UrlPrompt(prompt_id="auth", url=m.group(0))
 
         # Login success detection.
+        logger.info("chunk after code: %r", chunk[:300])
         if not login_success_seen and _LOGIN_SUCCESS_RE.search(chunk):
+            logger.info("LOGIN SUCCESS DETECTED in chunk: %r", chunk[:200])
             login_success_seen = True
             login_success_time = now
 
