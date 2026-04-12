@@ -2,6 +2,22 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.0-alpha.2 — 2026-04-11
+
+### Fixed
+- **`_ClaudeCliBrowserSession` stuck at "Starting login session..."** — port of `claude /login` did not handle Claude Code's interactive first-run TUI (theme picker, menu prompts, REPL idle detection). Ported Agented's interactive loop: emits a `ProgressUpdate` immediately, detects numbered menu options (`❯ 1. Dark mode`) and emits as `TextPrompt`, navigates via arrow keys on respond, detects REPL idle + re-sends `/login`, parses the OAuth URL. Shared impl in `ai_accounts_core/login/interactive.py`. End-to-end verified against real `claude 2.1.101`.
+- **`AccountWizard` account name was required** — `subscriptionValid` gated `goNext` on non-empty name. Now genuinely optional; falls back to backend metadata `display_name` at save time. Label changed from "Name *" to "Name (optional)".
+
+### Added
+- `CliOrchestrator.poll_output()` — timeout-based output polling for interactive loops
+- `parse_menu_options`, `send_menu_selection`, `MenuOption` helpers
+- `run_interactive_cli_login()` shared state machine in `login/interactive.py`
+- `_NUMBERED_OPTION_RE`, `_LOGIN_SUCCESS_RE`, `_URL_IN_OUTPUT_RE` module-level patterns
+
+### Test coverage
+- 14 new unit tests for menu parsing + regexes + diff-line false-positive regression
+- Rewritten Claude cli_browser login test with faked `time.monotonic` for deterministic timing
+
 ## 0.3.0-alpha.1 — 2026-04-11
 
 ### Added
