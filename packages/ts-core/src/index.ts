@@ -21,6 +21,8 @@ export type {
   LoginComplete,
   LoginFailed,
   PromptAnswer,
+  MenuPrompt,
+  MenuOptionDTO,
   LoginFlowKind,
 } from './types/login';
 export type {

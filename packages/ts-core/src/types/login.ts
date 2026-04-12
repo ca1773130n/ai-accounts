@@ -12,6 +12,19 @@ export type TextPrompt = {
   hidden: boolean;
 };
 
+export type MenuOptionDTO = {
+  number: number;
+  label: string;
+  description?: string | null;
+};
+
+export type MenuPrompt = {
+  type: 'menu_prompt';
+  prompt_id: string;
+  prompt: string;
+  options: MenuOptionDTO[];
+};
+
 export type StdoutChunk = {
   type: 'stdout';
   text: string;
@@ -38,6 +51,7 @@ export type LoginFailed = {
 export type LoginEvent =
   | UrlPrompt
   | TextPrompt
+  | MenuPrompt
   | StdoutChunk
   | ProgressUpdate
   | LoginComplete
