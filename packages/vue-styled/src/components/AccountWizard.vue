@@ -971,25 +971,34 @@ function skipWizard() {
           </div>
 
           <div v-if="proxyLoginStatus === 'device_auth'" class="proxy-device-auth">
-            <p>{{ proxyLoginMessage }}</p>
+            <div class="proxy-url-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+              <span>{{ proxyLoginMessage }}</span>
+            </div>
             <a v-if="proxyOauthUrl" :href="proxyOauthUrl" target="_blank" rel="noopener" class="proxy-oauth-link">
               {{ proxyOauthUrl }}
             </a>
-            <p v-if="proxyDeviceCode" class="proxy-code">
-              Code: <code>{{ proxyDeviceCode }}</code>
-            </p>
-            <div class="callback-paste">
-              <label class="callback-label">
-                If the redirect to localhost fails, paste the callback URL:
+            <div v-if="proxyDeviceCode" class="proxy-device-code-card">
+              <span class="proxy-device-code-label">Your device code:</span>
+              <code class="proxy-device-code-value">{{ proxyDeviceCode }}</code>
+            </div>
+            <div class="proxy-callback-section">
+              <p class="proxy-callback-hint">If the redirect to localhost fails, paste the callback URL:</p>
+              <div class="proxy-callback-row">
                 <input
                   v-model="proxyCallbackUrl"
+                  class="proxy-callback-input"
                   type="url"
-                  placeholder="http://localhost:8085/callback?code=..."
+                  placeholder="http://localhost:54545/callback?code=..."
                 />
-              </label>
-              <button class="btn btn-outline btn-sm" @click="submitProxyCallback">
-                Submit callback
-              </button>
+                <button class="btn btn-primary btn-sm" @click="submitProxyCallback" :disabled="!proxyCallbackUrl.trim()">
+                  Submit
+                </button>
+              </div>
               <p v-if="proxyCallbackError" class="error-text">{{ proxyCallbackError }}</p>
             </div>
           </div>
@@ -1869,36 +1878,64 @@ code.review-value {
 .proxy-device-auth {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 0.75rem;
 }
 
-.proxy-device-msg {
-  margin: 0;
+.proxy-url-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  background: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--accent-cyan, #60a5fa);
+}
+
+.proxy-oauth-link {
+  display: block;
+  padding: 0.625rem 0.875rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-default, #27272a);
+  border-radius: 8px;
+  font-family: 'SF Mono', 'Monaco', monospace;
+  font-size: 0.75rem;
+  color: var(--accent-cyan, #60a5fa);
+  word-break: break-all;
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+
+.proxy-oauth-link:hover {
+  border-color: var(--accent-cyan, #60a5fa);
+}
+
+.proxy-device-code-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-default, #27272a);
+  border-radius: 8px;
+}
+
+.proxy-device-code-label {
   font-size: 0.8125rem;
   color: var(--text-secondary);
 }
 
-.proxy-device-code {
-  padding: 0.5rem 1.5rem;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-}
-
-.proxy-device-code code {
+.proxy-device-code-value {
   font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
   font-size: 1.25rem;
   font-weight: 700;
   color: #e4e4e7;
   letter-spacing: 2px;
-}
-
-.proxy-open-link {
-  font-size: 0.75rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
+  padding: 0.375rem 1rem;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.4));
+  border-radius: 6px;
 }
 
 .proxy-callback-section {
@@ -1913,20 +1950,31 @@ code.review-value {
   line-height: 1.4;
 }
 
-.proxy-callback-input {
+.proxy-callback-row {
   display: flex;
-  gap: 0.375rem;
+  gap: 0.5rem;
+  align-items: center;
 }
 
-.proxy-callback-input input {
+.proxy-callback-input {
   flex: 1;
   font-size: 0.75rem;
-  padding: 0.375rem 0.5rem;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--border-subtle);
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-default, #27272a);
   border-radius: 6px;
   color: var(--text-primary);
   font-family: 'SF Mono', monospace;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.proxy-callback-input:focus {
+  border-color: var(--accent-cyan, #60a5fa);
+}
+
+.proxy-callback-input::placeholder {
+  color: var(--text-tertiary, #52525b);
 }
 
 .proxy-skipped {
