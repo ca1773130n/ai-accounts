@@ -51,13 +51,31 @@ export function useLoginSession(): UseLoginSession {
     errorCode.value = null;
     errorMessage.value = null;
 
-    const { session_id } = await client.beginLogin(id, flow, inputs);
-    sessionId.value = session_id;
-    emit({ type: 'login.started', sessionId: session_id, backendKind: '', flow });
+    try {
+      const { session_id } = await client.beginLogin(id, flow, inputs);
+      sessionId.value = session_id;
+      emit({ type: 'login.started', sessionId: session_id, backendKind: '', flow });
 
-    for await (const event of client.streamLogin(id, session_id)) {
-      dispatch(event);
-      if (status.value !== 'running') return;
+      for await (const event of client.streamLogin(id, session_id)) {
+        dispatch(event);
+        if (status.value !== 'running') return;
+      }
+      // Stream ended without a complete/failed event — treat as failure
+      if (status.value === 'running') {
+        status.value = 'failed';
+        errorCode.value = 'stream_ended';
+        errorMessage.value = 'Login stream ended unexpectedly';
+      }
+    } catch (err) {
+      status.value = 'failed';
+      errorCode.value = 'network_error';
+      errorMessage.value = err instanceof Error ? err.message : String(err);
+      emit({
+        type: 'login.failed',
+        sessionId: sessionId.value ?? '',
+        code: 'network_error',
+        message: errorMessage.value!,
+      });
     }
   }
 
