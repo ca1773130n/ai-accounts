@@ -21,6 +21,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_accounts_core"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/ai_accounts_core/adapters/storage_sqlite/schema.sql" = "ai_accounts_core/adapters/storage_sqlite/schema.sql"
+# Ship schema.sql inside the built wheel via a normal include pattern
+# rather than `force-include`. force-include materializes a physical
+# directory in site-packages during editable installs which shadows the
+# editable .pth file and breaks imports (see HypePaper PR #117 for the
+# failure mode). `storage.py` loads the schema relative to `__file__`
+# at runtime, so in editable mode the file is already next to the
+# source — no copy is needed.
+include = [
+    "src/ai_accounts_core/**/*.sql",
+    "src/ai_accounts_core/py.typed",
+]
