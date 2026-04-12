@@ -13,7 +13,6 @@ from ai_accounts_core.login.events import (
     LoginEvent,
     ProgressUpdate,
     StdoutChunk,
-    TextPrompt,
     UrlPrompt,
 )
 from ai_accounts_core.login.interactive import run_interactive_cli_login

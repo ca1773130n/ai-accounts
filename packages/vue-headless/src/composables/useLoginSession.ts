@@ -50,6 +50,7 @@ export function useLoginSession(): UseLoginSession {
     status.value = 'running';
     urlPrompt.value = null;
     textPrompt.value = null;
+    menuPrompt.value = null;
     stdoutLines.value = [];
     errorCode.value = null;
     errorMessage.value = null;

@@ -99,7 +99,14 @@ class _ClaudeCliBrowserSession(LoginSession):
         # Use user-supplied config_path if provided, falling back to isolation_dir.
         config_path = self._config.get("config_path")
         if config_path:
-            config_dir = Path(os.path.expanduser(str(config_path)))
+            expanded = Path(os.path.expanduser(str(config_path)))
+            resolved = expanded.resolve()
+            allowed_roots = (Path.home().resolve(), self._isolation_dir.resolve())
+            if not any(resolved.is_relative_to(root) for root in allowed_roots):
+                raise ValueError(
+                    f"config_path '{config_path}' resolves outside allowed directories"
+                )
+            config_dir = resolved
             config_dir.mkdir(parents=True, exist_ok=True)
         else:
             config_dir = self._isolation_dir
