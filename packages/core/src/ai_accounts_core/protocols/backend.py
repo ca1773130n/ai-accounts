@@ -6,6 +6,7 @@ import msgspec
 
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatMessage
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import LoginSession
 from ai_accounts_core.metadata import BackendMetadata
 
@@ -66,6 +67,9 @@ class BackendProtocol(Protocol):
         *,
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]: ...
+    async def get_usage(
+        self, credential: bytes, *, isolation_dir: Path,
+    ) -> list[UsageWindow]: ...
     async def pty(
         self,
         request: PtyRequest,

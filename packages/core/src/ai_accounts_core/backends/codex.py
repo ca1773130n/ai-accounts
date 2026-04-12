@@ -406,6 +406,43 @@ class CodexBackend:
             for item in raw
         ]
 
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+        from ai_accounts_core.domain.usage import UsageWindow
+
+        api_key = credential.decode("utf-8").strip()
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://chatgpt.com/backend-api/wham/usage",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=15.0,
+                )
+                if resp.status_code != 200:
+                    return []
+                data = resp.json()
+                windows = []
+                for rl in data.get("rate_limits", []):
+                    for key in ("primary_window", "secondary_window"):
+                        w = rl.get(key)
+                        if w:
+                            resets_at = None
+                            if w.get("reset_at"):
+                                from datetime import UTC, datetime
+
+                                resets_at = datetime.fromtimestamp(
+                                    w["reset_at"], tz=UTC
+                                )
+                            windows.append(
+                                UsageWindow(
+                                    window_type=key,
+                                    usage_percent=w.get("used_percent", 0.0),
+                                    resets_at=resets_at,
+                                )
+                            )
+                return windows
+        except Exception:
+            return []
+
     async def chat(
         self,
         request: ChatRequest,

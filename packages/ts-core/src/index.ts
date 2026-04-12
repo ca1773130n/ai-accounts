@@ -49,6 +49,7 @@ export type {
   ChatMessageDTO,
   ChatDelta,
 } from './types/chat';
+export type { UsageWindowDTO, AccountHealthDTO, PickResultDTO, FallbackChainEntryDTO } from './types/scheduler';
 export { createAccountWizard } from './machines/accountWizard';
 export type {
   AccountWizard,

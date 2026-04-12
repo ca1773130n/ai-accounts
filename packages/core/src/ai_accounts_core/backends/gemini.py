@@ -511,6 +511,40 @@ class GeminiBackend:
             for item in raw
         ]
 
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+        from ai_accounts_core.domain.usage import UsageWindow
+
+        api_key = credential.decode("utf-8").strip()
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
+                    json={"project": "cloud-code-assist"},
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=15.0,
+                )
+                if resp.status_code != 200:
+                    return []
+                data = resp.json()
+                windows = []
+                for bucket in data.get("buckets", []):
+                    remaining = bucket.get("remainingFraction", 1.0)
+                    resets_at = None
+                    if bucket.get("resetTime"):
+                        from datetime import datetime
+
+                        resets_at = datetime.fromisoformat(bucket["resetTime"])
+                    windows.append(
+                        UsageWindow(
+                            window_type=bucket.get("modelId", "unknown"),
+                            usage_percent=(1.0 - remaining) * 100.0,
+                            resets_at=resets_at,
+                        )
+                    )
+                return windows
+        except Exception:
+            return []
+
     async def chat(
         self,
         request: ChatRequest,

@@ -298,6 +298,43 @@ class ClaudeBackend:
             for item in raw
         ]
 
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+        from ai_accounts_core.domain.usage import UsageWindow
+
+        api_key = credential.decode("utf-8").strip()
+        if api_key.startswith("sk-ant-"):
+            return []  # API keys can't access usage endpoint
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://api.anthropic.com/api/oauth/usage",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "anthropic-beta": "oauth-2025-04-20",
+                    },
+                    timeout=15.0,
+                )
+                if resp.status_code != 200:
+                    return []
+                data = resp.json()
+                windows = []
+                for w in data.get("windows", []):
+                    resets_at = None
+                    if w.get("resets_at"):
+                        from datetime import datetime
+
+                        resets_at = datetime.fromisoformat(w["resets_at"])
+                    windows.append(
+                        UsageWindow(
+                            window_type=w.get("window_type", "unknown"),
+                            usage_percent=w.get("utilization", 0.0),
+                            resets_at=resets_at,
+                        )
+                    )
+                return windows
+        except Exception:
+            return []
+
     async def chat(
         self,
         request: ChatRequest,

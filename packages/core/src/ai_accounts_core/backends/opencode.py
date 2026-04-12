@@ -283,6 +283,9 @@ class OpenCodeBackend:
             for item in raw
         ]
 
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+        return []  # OpenRouter has no usage API
+
     async def chat(
         self,
         request: ChatRequest,
