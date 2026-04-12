@@ -415,7 +415,7 @@ onUnmounted(() => {
 const loginStatus = computed<'idle' | 'connecting' | 'streaming' | 'completed' | 'error'>(() => {
   switch (loginSession.status.value) {
     case 'running':
-      return loginSession.urlPrompt.value || loginSession.menuPrompt.value || loginSession.stdoutLines.value.length > 0
+      return loginSession.urlPrompt.value || loginSession.stdoutLines.value.length > 0
         ? 'streaming'
         : 'connecting';
     case 'complete':

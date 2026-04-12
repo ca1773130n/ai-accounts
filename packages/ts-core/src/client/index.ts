@@ -1,5 +1,6 @@
 import type { paths } from './generated';
 import { parseSseLoginEvents } from './login-stream';
+import { parseSseChatEvents } from './chat-stream';
 import type { LoginEvent, LoginFlowKind } from '../types/login';
 import type { BackendMetadata } from '../types/metadata';
 import type {
@@ -9,7 +10,7 @@ import type {
   CliproxyLoginBeginResponse,
   CliproxyCallbackForwardResponse,
 } from '../types/install';
-import type { PtySessionDTO, PtySpawnRequest } from '../types/pty';
+import type { ChatSessionDTO, ChatSessionDetailDTO, ChatDelta } from '../types/chat';
 
 export type { paths } from './generated';
 
@@ -371,41 +372,35 @@ export class AiAccountsClient {
     return (await r.json()) as CliproxyCallbackForwardResponse;
   }
 
-  // --- PTY Sessions ---
+  // --- Conversations / Chat ---
 
-  async spawnPty(input: PtySpawnRequest): Promise<PtySessionDTO> {
-    const r = await this._fetch(`${this.baseUrl}/api/v1/pty/spawn`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify(input),
+  async createConversation(input: { backend_id: string; model: string; title?: string }): Promise<ChatSessionDTO> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/conversations/`, {
+      method: 'POST', headers: this.headers(), body: JSON.stringify(input),
     });
     if (!r.ok) throw await toError(r);
-    return (await r.json()) as PtySessionDTO;
+    return (await r.json()) as ChatSessionDTO;
   }
 
-  async killPty(sessionId: string): Promise<void> {
-    const r = await this._fetch(
-      `${this.baseUrl}/api/v1/pty/${encodeURIComponent(sessionId)}/kill`,
-      { method: 'POST', headers: this.headers() },
-    );
+  async listConversations(backendId?: string): Promise<{ items: ChatSessionDTO[] }> {
+    const qs = backendId ? `?backend_id=${encodeURIComponent(backendId)}` : '';
+    const r = await this._fetch(`${this.baseUrl}/api/v1/conversations/${qs}`, { headers: this.headers() });
     if (!r.ok) throw await toError(r);
+    return (await r.json()) as { items: ChatSessionDTO[] };
   }
 
-  async resizePty(sessionId: string, cols: number, rows: number): Promise<void> {
-    const r = await this._fetch(
-      `${this.baseUrl}/api/v1/pty/${encodeURIComponent(sessionId)}/resize`,
-      {
-        method: 'POST',
-        headers: this.headers(),
-        body: JSON.stringify({ cols, rows }),
-      },
-    );
+  async getConversation(id: string): Promise<ChatSessionDetailDTO> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/conversations/${encodeURIComponent(id)}`, { headers: this.headers() });
     if (!r.ok) throw await toError(r);
+    return (await r.json()) as ChatSessionDetailDTO;
   }
 
-  ptyWebSocketUrl(sessionId: string): string {
-    const wsBase = this.baseUrl.replace(/^http/, 'ws');
-    return `${wsBase}/ws/pty/${encodeURIComponent(sessionId)}`;
+  async *streamChat(sessionId: string, content: string): AsyncIterable<ChatDelta> {
+    const url = `${this.baseUrl}/api/v1/conversations/${encodeURIComponent(sessionId)}/messages`;
+    const headers: Record<string, string> = { ...this.headers(), Accept: 'text/event-stream' };
+    const r = await this._fetch(url, { method: 'POST', headers, body: JSON.stringify({ content }) });
+    if (!r.ok) throw await toError(r);
+    yield* parseSseChatEvents(r);
   }
 
   private async postAction<T>(id: string, action: string, body?: unknown): Promise<T> {
