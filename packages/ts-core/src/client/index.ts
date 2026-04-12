@@ -376,6 +376,33 @@ export class AiAccountsClient {
     return (await r.json()) as CliproxyCallbackForwardResponse;
   }
 
+  // --- CLIProxyAPI Server Lifecycle ---
+
+  async cliproxyServerStart(port: number = 8317, apiKey: string = 'not-needed'): Promise<{ status: string; port: number; pid: number | null; message: string }> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/cliproxy/server/start`, {
+      method: 'POST', headers: this.headers(),
+      body: JSON.stringify({ port, api_key: apiKey }),
+    });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as any;
+  }
+
+  async cliproxyServerStop(): Promise<{ status: string; message: string }> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/cliproxy/server/stop`, {
+      method: 'POST', headers: this.headers(),
+    });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as any;
+  }
+
+  async cliproxyServerStatus(): Promise<{ installed: boolean; running: boolean; port: number; version: string | null }> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/cliproxy/server/status`, {
+      headers: this.headers(),
+    });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as any;
+  }
+
   // --- Conversations / Chat ---
 
   async createConversation(input: { backend_id: string; model: string; title?: string }): Promise<ChatSessionDTO> {
