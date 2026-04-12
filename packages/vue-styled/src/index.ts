@@ -5,8 +5,18 @@ export { default as OnboardingFlow } from './components/OnboardingFlow.vue';
 export { default as LoginStream } from './components/LoginStream.vue';
 export { default as BackendPicker } from './components/BackendPicker.vue';
 export { default as AccountEditForm } from './components/AccountEditForm.vue';
+
+// Legacy — kept for backward compat; prefer AiChatPanel
 export { default as ChatPanel } from './components/ChatPanel.vue';
 export { default as ChatMessage } from './components/ChatMessage.vue';
 
-export const version = '0.2.0';
+// Smart AI Chat Panel (v0.3)
+export { default as AiChatPanel } from './components/AiChatPanel.vue';
+export { default as ChatBubble } from './components/ChatBubble.vue';
+export { default as ChatControls } from './components/ChatControls.vue';
+export { default as ChatInput } from './components/ChatInput.vue';
+export { default as AllModeResponses } from './components/AllModeResponses.vue';
+export { default as CompoundSynthesis } from './components/CompoundSynthesis.vue';
+
+export const version = '0.3.0-alpha.2';
 

@@ -1,21 +1,29 @@
 from ai_accounts_core.cliproxy.manager import (
     CliproxyInstallResult,
     CliproxyLoginInfo,
+    cliproxy_server_status,
     detect_cliproxy,
     forward_cliproxy_callback,
     get_cliproxy_version,
     install_cliproxy,
     is_cliproxy_installed,
     start_cliproxy_login,
+    start_cliproxy_server,
+    stop_cliproxy_server,
+    write_cliproxy_config,
 )
 
 __all__ = [
     "CliproxyInstallResult",
     "CliproxyLoginInfo",
+    "cliproxy_server_status",
     "detect_cliproxy",
     "forward_cliproxy_callback",
     "get_cliproxy_version",
     "install_cliproxy",
     "is_cliproxy_installed",
     "start_cliproxy_login",
+    "start_cliproxy_server",
+    "stop_cliproxy_server",
+    "write_cliproxy_config",
 ]

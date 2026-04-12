@@ -15,11 +15,13 @@ from ai_accounts_core.services.errors import ServiceError
 from ai_accounts_core.services.chat import ChatService
 from ai_accounts_core.services.onboarding import OnboardingService
 from ai_accounts_core.services.pty import PtyService
+from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
 from ai_accounts_core.services.scheduler import AccountScheduler
 
 from .config import AiAccountsConfig
 from .errors import service_error_handler
 from .routes.backends import BackendsController
+from .routes.chat_send import ChatSendController
 from .routes.cliproxy import CliproxyController
 from .routes.conversations import ConversationsController
 from .routes.install import InstallController
@@ -115,6 +117,9 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     scheduler = AccountScheduler(
         account_service=account_service, storage=config.storage
     )
+    orchestrator = ChatOrchestrator(
+        chat_service=chat_service, scheduler=scheduler
+    )
 
     backend_registry = BackendRegistry()
     for b in config.backends:
@@ -141,6 +146,9 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     def _provide_scheduler() -> AccountScheduler:
         return scheduler
 
+    def _provide_orchestrator() -> ChatOrchestrator:
+        return orchestrator
+
     dependencies: dict[str, Any] = {
         "config": Provide(_provide_config, sync_to_thread=False),
         "account_service": Provide(_provide_account_service, sync_to_thread=False),
@@ -149,6 +157,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         "chat_service": Provide(_provide_chat_service, sync_to_thread=False),
         "pty_service": Provide(_provide_pty_service, sync_to_thread=False),
         "scheduler": Provide(_provide_scheduler, sync_to_thread=False),
+        "orchestrator": Provide(_provide_orchestrator, sync_to_thread=False),
     }
 
     cors_config = (
@@ -171,6 +180,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         route_handlers=[
             health,
             BackendsController,
+            ChatSendController,
             CliproxyController,
             ConversationsController,
             InstallController,

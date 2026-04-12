@@ -319,3 +319,139 @@ def detect_cliproxy() -> tuple[str, str] | None:
     except Exception:
         pass
     return None
+
+
+def _parse_config() -> tuple[int, str]:
+    """Read port and api-key from ~/.cli-proxy-api/config.yaml."""
+    port = 8317
+    api_key = "not-needed"
+    if _CLIPROXY_CONFIG.exists():
+        for line in _CLIPROXY_CONFIG.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("port:"):
+                try:
+                    port = int(line.split(":", 1)[1].strip())
+                except ValueError:
+                    pass
+            elif line.startswith("- ") and api_key == "not-needed":
+                api_key = line[2:].strip().strip('"').strip("'")
+    return port, api_key
+
+
+def _check_healthy(port: int, api_key: str) -> bool:
+    """Check if CLIProxyAPI responds on the given port."""
+    try:
+        resp = httpx.get(
+            f"http://127.0.0.1:{port}/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=2,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def write_cliproxy_config(port: int = 8317, api_key: str = "not-needed") -> Path:
+    """Write ~/.cli-proxy-api/config.yaml with the given port and api-key.
+
+    Creates the directory if needed. Returns the config path.
+    """
+    _CLIPROXY_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    _CLIPROXY_CONFIG.write_text(
+        f"port: {port}\n"
+        f"api-keys:\n"
+        f'  - "{api_key}"\n'
+    )
+    return _CLIPROXY_CONFIG
+
+
+def start_cliproxy_server(
+    port: int = 8317,
+    api_key: str = "not-needed",
+) -> dict:
+    """Start CLIProxyAPI as a background process.
+
+    Writes config, checks if already running, starts the binary,
+    waits up to 10s for readiness.
+
+    Returns:
+        {"status": "ok"|"error", "port": int, "pid": int|None, "message": str}
+    """
+    import signal as _signal
+    import time as _time
+
+    if not is_cliproxy_installed():
+        return {"status": "error", "port": port, "pid": None, "message": "cliproxyapi not installed"}
+
+    write_cliproxy_config(port, api_key)
+
+    if _check_healthy(port, api_key):
+        return {"status": "ok", "port": port, "pid": None, "message": "already running"}
+
+    config_path = str(_CLIPROXY_CONFIG)
+    stderr_path = Path(tempfile.mktemp(suffix="-cliproxy-stderr.log"))
+    try:
+        stderr_file = open(stderr_path, "w")
+        proc = subprocess.Popen(
+            [_CLIPROXY_BINARY, "--config", config_path],
+            stdout=subprocess.DEVNULL,
+            stderr=stderr_file,
+            start_new_session=True,
+        )
+    except FileNotFoundError:
+        return {"status": "error", "port": port, "pid": None, "message": "cliproxyapi binary not found"}
+    except Exception as exc:
+        return {"status": "error", "port": port, "pid": None, "message": str(exc)}
+
+    deadline = _time.monotonic() + 10
+    while _time.monotonic() < deadline:
+        if _check_healthy(port, api_key):
+            stderr_file.close()
+            stderr_path.unlink(missing_ok=True)
+            return {"status": "ok", "port": port, "pid": proc.pid, "message": f"started on port {port}"}
+        _time.sleep(0.5)
+
+    # Timeout — capture stderr for diagnostics
+    stderr_file.close()
+    stderr_content = ""
+    try:
+        stderr_content = stderr_path.read_text(errors="replace")[-500:]
+    except Exception:
+        pass
+    stderr_path.unlink(missing_ok=True)
+
+    try:
+        os.killpg(os.getpgid(proc.pid), _signal.SIGTERM)
+        proc.wait(timeout=3)
+    except Exception:
+        pass
+    msg = "did not become ready within 10s"
+    if stderr_content.strip():
+        msg += f". stderr: {stderr_content.strip()}"
+    return {"status": "error", "port": port, "pid": None, "message": msg}
+
+
+def stop_cliproxy_server() -> dict:
+    """Stop any running CLIProxyAPI process.
+
+    Returns {"status": "ok"|"error", "message": str}
+    """
+    try:
+        subprocess.run(["pkill", "-f", _CLIPROXY_BINARY], capture_output=True, timeout=5)
+        return {"status": "ok", "message": "stopped"}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+
+def cliproxy_server_status() -> dict:
+    """Check CLIProxyAPI server status.
+
+    Returns {"installed": bool, "running": bool, "port": int, "version": str|None}
+    """
+    port, api_key = _parse_config()
+    return {
+        "installed": is_cliproxy_installed(),
+        "running": _check_healthy(port, api_key),
+        "port": port,
+        "version": get_cliproxy_version(),
+    }
