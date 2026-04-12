@@ -166,7 +166,7 @@ class _ClaudeApiKeySession(LoginSession):
             return
         if not ans.answer.startswith("sk-ant-"):
             self._done = True
-            yield LoginFailed(code="invalid_key", message="API key must start with sk-ant-")
+            yield LoginFailed(code="invalid_key", message="Invalid API key format")
             return
         self._done = True
         yield LoginComplete(account_id="", backend_status="validating")

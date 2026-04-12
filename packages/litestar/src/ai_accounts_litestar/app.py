@@ -24,6 +24,7 @@ from .routes.conversations import ConversationsController
 from .routes.install import InstallController
 from .routes.login import LoginController
 from .routes.meta import MetaController
+from .routes.models import ModelsController
 from .routes.onboarding import OnboardingController
 from .routes.pty_ws import PtyController, pty_websocket
 
@@ -155,6 +156,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
             InstallController,
             LoginController,
             MetaController,
+            ModelsController,
             OnboardingController,
             PtyController,
             pty_websocket,

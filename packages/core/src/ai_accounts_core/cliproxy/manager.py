@@ -255,8 +255,9 @@ async def forward_cliproxy_callback(callback_url: str) -> dict:
         return {"status": "error", "message": "callback URL must use http or https"}
     if parsed.hostname not in _CLIPROXY_ALLOWED_HOSTS:
         return {"status": "error", "message": "callback URL must target localhost"}
-    if parsed.port and parsed.port not in _CLIPROXY_ALLOWED_PORTS:
-        return {"status": "error", "message": f"callback port {parsed.port} not allowed"}
+    effective_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if effective_port not in _CLIPROXY_ALLOWED_PORTS:
+        return {"status": "error", "message": f"callback port {effective_port} not allowed"}
     if not any(parsed.path.startswith(p) for p in _CLIPROXY_ALLOWED_PATH_PREFIXES):
         return {"status": "error", "message": "callback path not allowed"}
 

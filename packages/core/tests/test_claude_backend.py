@@ -119,21 +119,5 @@ async def test_list_models_missing_cli_returns_empty(tmp_path: Path):
     assert models == []
 
 
-@pytest.mark.asyncio
-async def test_chat_not_implemented(tmp_path: Path):
-    backend = ClaudeBackend()
-    with pytest.raises(NotImplementedError, match="Phase 3"):
-        await backend.chat(
-            ChatRequest(messages=(), model="x"), b"cred", isolation_dir=tmp_path / "claude"
-        )
 
-
-@pytest.mark.asyncio
-async def test_pty_not_implemented(tmp_path: Path):
-    backend = ClaudeBackend()
-    with pytest.raises(NotImplementedError, match="Phase 4"):
-        await backend.pty(
-            PtyRequest(command=("claude",), cols=80, rows=24),
-            b"cred",
-            isolation_dir=tmp_path / "claude",
-        )
+# chat() and pty() are now implemented — see test_claude_chat.py and test_pty_spawn.py

@@ -48,7 +48,7 @@ def _validate_config_path(config_path: str | None, isolation_dir: Path) -> Path:
     resolved = expanded.resolve()
     # Must not escape outside home or isolation directory
     allowed_roots = (Path.home().resolve(), isolation_dir.resolve())
-    if not any(str(resolved).startswith(str(root)) for root in allowed_roots):
+    if not any(resolved.is_relative_to(root) for root in allowed_roots):
         raise ValueError(f"config_path '{config_path}' resolves outside allowed directories")
     return resolved / ".gemini"
 
