@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import logging
+import os
 import shutil
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -69,10 +70,28 @@ class AccountService:
     def _isolation_dir(self, backend_id: str) -> Path:
         return self._isolation_base_dir / backend_id
 
-    def config_dir(self, backend_id: str) -> Path:
-        """Public accessor for a backend's config/isolation directory.
+    async def _resolve_config_dir(self, backend_id: str) -> Path:
+        """Resolve the CLI config directory for a backend.
 
-        Package consumers use this to find credential files, config, etc.
+        If the backend's config has a config_path, use that (it's where
+        the CLI stored credentials during login). Otherwise fall back to
+        the isolation dir.
+        """
+        backend = await self.get(backend_id)
+        config_path = backend.config.get("config_path")
+        if config_path:
+            resolved = Path(os.path.expanduser(str(config_path)))
+            resolved.mkdir(parents=True, exist_ok=True)
+            return resolved
+        base = self._isolation_base_dir / backend_id
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+
+    def config_dir(self, backend_id: str) -> Path:
+        """Public accessor for a backend's base isolation directory.
+
+        For the resolved config dir (respecting config_path), use
+        _resolve_config_dir() which is async.
         """
         return self._isolation_base_dir / backend_id
 
@@ -219,8 +238,8 @@ class AccountService:
         plaintext = await self._vault.decrypt(
             stored.ciphertext, context={"backend_id": backend_id}
         )
-        isolation_dir = self._isolation_dir(backend_id)
-        ok = await impl.validate(plaintext, isolation_dir=isolation_dir)
+        config_dir = await self._resolve_config_dir(backend_id)
+        ok = await impl.validate(plaintext, isolation_dir=config_dir)
         if not ok:
             await self._update_status(
                 backend, BackendStatus.ERROR, last_error="validation failed"
@@ -240,7 +259,7 @@ class AccountService:
         plaintext = await self._vault.decrypt(
             stored.ciphertext, context={"backend_id": backend_id}
         )
-        isolation_dir = self._isolation_dir(backend_id)
+        isolation_dir = await self._resolve_config_dir(backend_id)
         return await impl.list_models(plaintext, isolation_dir=isolation_dir)
 
     async def _update_status(
