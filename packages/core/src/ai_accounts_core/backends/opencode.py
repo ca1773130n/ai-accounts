@@ -348,7 +348,13 @@ class OpenCodeBackend:
         *,
         isolation_dir: Path,
     ) -> PtyHandle:
-        raise NotImplementedError("pty lands in Phase 4")
+        from ai_accounts_core.pty.handle import AsyncPtyHandle
+
+        env = dict(request.env)
+        env.update(self._env(credential, isolation_dir))
+        return await AsyncPtyHandle.spawn(
+            command=request.command, cols=request.cols, rows=request.rows, env=env,
+        )
 
     def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:
         isolation_dir.mkdir(parents=True, exist_ok=True)

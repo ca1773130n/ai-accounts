@@ -14,6 +14,7 @@ from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.errors import ServiceError
 from ai_accounts_core.services.chat import ChatService
 from ai_accounts_core.services.onboarding import OnboardingService
+from ai_accounts_core.services.pty import PtyService
 
 from .config import AiAccountsConfig
 from .errors import service_error_handler
@@ -24,6 +25,7 @@ from .routes.install import InstallController
 from .routes.login import LoginController
 from .routes.meta import MetaController
 from .routes.onboarding import OnboardingController
+from .routes.pty_ws import PtyController, pty_websocket
 
 
 logger = logging.getLogger(__name__)
@@ -94,6 +96,9 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     chat_service = ChatService(
         account_service=account_service, storage=config.storage
     )
+    pty_service = PtyService(
+        account_service=account_service, storage=config.storage
+    )
 
     backend_registry = BackendRegistry()
     for b in config.backends:
@@ -114,12 +119,16 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     def _provide_chat_service() -> ChatService:
         return chat_service
 
+    def _provide_pty_service() -> PtyService:
+        return pty_service
+
     dependencies: dict[str, Any] = {
         "config": Provide(_provide_config, sync_to_thread=False),
         "account_service": Provide(_provide_account_service, sync_to_thread=False),
         "onboarding_service": Provide(_provide_onboarding_service, sync_to_thread=False),
         "backend_registry": Provide(_provide_backend_registry, sync_to_thread=False),
         "chat_service": Provide(_provide_chat_service, sync_to_thread=False),
+        "pty_service": Provide(_provide_pty_service, sync_to_thread=False),
     }
 
     cors_config = (
@@ -147,6 +156,8 @@ def create_app(config: AiAccountsConfig) -> Litestar:
             LoginController,
             MetaController,
             OnboardingController,
+            PtyController,
+            pty_websocket,
         ],
         dependencies=dependencies,
         cors_config=cors_config,
