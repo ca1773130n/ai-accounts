@@ -92,6 +92,28 @@ async def test_cancel_unknown_session_is_idempotent(client: AsyncTestClient):
 
 
 @pytest.mark.asyncio
+async def test_begin_then_cancel_returns_204(client: AsyncTestClient):
+    """Begin a login session and immediately cancel it without responding."""
+    r = await client.post(
+        "/api/v1/backends/", json={"kind": "fake", "display_name": "t"}
+    )
+    backend_id = r.json()["id"]
+
+    begin = await client.post(
+        f"/api/v1/backends/{backend_id}/login/begin",
+        json={"flow_kind": "api_key", "inputs": {}},
+    )
+    assert begin.status_code == 201
+    session_id = begin.json()["session_id"]
+
+    cancel = await client.post(
+        f"/api/v1/backends/{backend_id}/login/cancel",
+        json={"session_id": session_id},
+    )
+    assert cancel.status_code == 204
+
+
+@pytest.mark.asyncio
 async def test_begin_then_respond_drives_session(client: AsyncTestClient):
     """Smoke test: /begin registers a session, /respond reaches it.
 

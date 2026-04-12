@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -10,7 +11,10 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
+
 from ai_accounts_core.domain.backend import DetectResult
+from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -47,6 +51,7 @@ class _OpenCodeCliBrowserSession(LoginSession):
         self._isolation_dir = isolation_dir
         self._done = False
         self._orchestrator: CliOrchestrator | None = None
+        self._cleanup_lock = asyncio.Lock()
 
     @property
     def session_id(self) -> str:
@@ -64,6 +69,23 @@ class _OpenCodeCliBrowserSession(LoginSession):
     def done(self) -> bool:
         return self._done
 
+    async def _cleanup(self) -> None:
+        async with self._cleanup_lock:
+            if self._orchestrator is not None:
+                try:
+                    await self._orchestrator.terminate()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+                try:
+                    exit_code = await asyncio.wait_for(
+                        self._orchestrator.wait(), timeout=10
+                    )
+                except asyncio.TimeoutError:
+                    await self._orchestrator.kill()
+                    await self._orchestrator.wait()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+
     async def events(self) -> AsyncIterator[LoginEvent]:
         self._orchestrator = CliOrchestrator(
             argv=["opencode", "auth", "login"],
@@ -79,47 +101,47 @@ class _OpenCodeCliBrowserSession(LoginSession):
 
         url_seen = False
         success = False
-        async for chunk in self._orchestrator.read_output():
-            if chunk.strip():
-                yield StdoutChunk(text=chunk)
-            if not url_seen:
-                m = _OPENCODE_URL_RE.search(chunk)
-                if m:
-                    url_seen = True
-                    yield UrlPrompt(prompt_id="auth", url=m.group(0))
-            if any(mk in chunk for mk in _OPENCODE_SUCCESS_MARKERS):
-                success = True
-                break
-            lower = chunk.lower()
-            if "error" in lower or "failed" in lower or any(
-                mk in chunk for mk in _OPENCODE_FAILURE_MARKERS
-            ):
-                break
+        try:
+            async for chunk in self._orchestrator.read_output():
+                if chunk.strip():
+                    yield StdoutChunk(text=chunk)
+                if not url_seen:
+                    m = _OPENCODE_URL_RE.search(chunk)
+                    if m:
+                        url_seen = True
+                        yield UrlPrompt(prompt_id="auth", url=m.group(0))
+                if any(mk in chunk for mk in _OPENCODE_SUCCESS_MARKERS):
+                    success = True
+                    break
+                lower = chunk.lower()
+                if "error" in lower or "failed" in lower or any(
+                    mk in chunk for mk in _OPENCODE_FAILURE_MARKERS
+                ):
+                    break
+        finally:
+            await self._cleanup()
+            self._done = True
 
-        exit_code = await self._orchestrator.wait()
-        self._done = True
-        if success and exit_code == 0:
+        if success:
             yield LoginComplete(account_id="", backend_status="validating")
         else:
             yield LoginFailed(
-                code="cli_exit_nonzero" if exit_code != 0 else "auth_failed",
-                message=f"opencode auth login exited with {exit_code}",
+                code="auth_failed",
+                message="opencode auth login failed",
             )
 
     async def respond(self, answer: PromptAnswer) -> None:
         pass
 
     async def cancel(self) -> None:
-        if self._orchestrator is not None and not self._done:
-            await self._orchestrator.terminate()
-            await self._orchestrator.wait()
+        await self._cleanup()
         self._done = True
 
 
 class _OpenCodeApiKeySession(LoginSession):
     def __init__(self) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
-        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
         self._done = False
 
     @property
@@ -140,7 +162,16 @@ class _OpenCodeApiKeySession(LoginSession):
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         yield TextPrompt(prompt_id="api_key", prompt="OpenCode API key", hidden=True)
-        ans = await self._answers.get()
+        try:
+            ans = await asyncio.wait_for(self._answers.get(), timeout=300)
+        except asyncio.TimeoutError:
+            self._done = True
+            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            return
+        if ans.prompt_id == "__cancel__":
+            self._done = True
+            yield LoginFailed(code="cancelled", message="Login cancelled")
+            return
         if not ans.answer:
             self._done = True
             yield LoginFailed(code="invalid_key", message="API key cannot be empty")
@@ -149,10 +180,14 @@ class _OpenCodeApiKeySession(LoginSession):
         yield LoginComplete(account_id="", backend_status="validating")
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
         self._done = True
+        with contextlib.suppress(asyncio.QueueFull):
+            self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
 class OpenCodeBackend:
@@ -255,7 +290,56 @@ class OpenCodeBackend:
         *,
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
-        raise NotImplementedError("chat lands in Phase 3")
+        api_key = credential.decode("utf-8").strip()
+        messages_payload = [
+            {"role": m.role.value, "content": m.content}
+            for m in request.messages
+        ]
+        body: dict[str, object] = {
+            "model": request.model,
+            "messages": messages_payload,
+            "stream": True,
+        }
+        if "max_tokens" in request.params:
+            body["max_tokens"] = request.params["max_tokens"]
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                "https://openrouter.ai/api/v1/chat/completions",
+                json=body,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=120.0,
+            ) as resp:
+                if resp.status_code != 200:
+                    yield ChatStreamEvent(
+                        kind="error",
+                        payload=f"API error {resp.status_code}",
+                    )
+                    return
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:].strip()
+                    if payload == "[DONE]":
+                        break
+                    data = json.loads(payload)
+                    choice = data.get("choices", [{}])[0]
+                    delta = choice.get("delta", {})
+                    text = delta.get("content")
+                    if text:
+                        yield ChatStreamEvent(kind="token", payload=text)
+                    finish_reason = choice.get("finish_reason")
+                    if finish_reason:
+                        yield ChatStreamEvent(
+                            kind="done",
+                            payload={
+                                "finish_reason": finish_reason,
+                                "model": data.get("model", request.model),
+                            },
+                        )
 
     async def pty(
         self,
@@ -264,7 +348,13 @@ class OpenCodeBackend:
         *,
         isolation_dir: Path,
     ) -> PtyHandle:
-        raise NotImplementedError("pty lands in Phase 4")
+        from ai_accounts_core.pty.handle import AsyncPtyHandle
+
+        env = dict(request.env)
+        env.update(self._env(credential, isolation_dir))
+        return await AsyncPtyHandle.spawn(
+            command=request.command, cols=request.cols, rows=request.rows, env=env,
+        )
 
     def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:
         isolation_dir.mkdir(parents=True, exist_ok=True)

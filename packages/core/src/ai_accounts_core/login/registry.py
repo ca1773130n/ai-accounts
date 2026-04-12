@@ -11,10 +11,13 @@ SSE route handler can safely race with /respond and /cancel.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 
 from ai_accounts_core.login.session import LoginSession
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,6 +38,12 @@ class LoginSessionRegistry:
             if session.session_id in self._entries:
                 raise ValueError(f"session {session.session_id!r} already registered")
             self._entries[session.session_id] = _Entry(session, time.monotonic())
+            logger.info(
+                "login session registered: sid=%s kind=%s flow=%s",
+                session.session_id,
+                session.backend_kind,
+                session.flow_kind,
+            )
 
     async def get(self, session_id: str) -> LoginSession | None:
         async with self._lock:
@@ -44,6 +53,21 @@ class LoginSessionRegistry:
     async def remove(self, session_id: str) -> None:
         async with self._lock:
             self._entries.pop(session_id, None)
+            logger.info("login session removed: sid=%s", session_id)
+
+    async def close(self) -> None:
+        """Cancel all active sessions and await pending cancel tasks."""
+        async with self._lock:
+            for entry in list(self._entries.values()):
+                if not entry.session.done:
+                    try:
+                        await entry.session.cancel()
+                    except Exception:
+                        pass
+            self._entries.clear()
+        if self._pending_cancels:
+            await asyncio.gather(*self._pending_cancels, return_exceptions=True)
+        self._pending_cancels.clear()
 
     async def sweep(self) -> int:
         now = time.monotonic()
@@ -60,4 +84,6 @@ class LoginSessionRegistry:
                     task = asyncio.create_task(entry.session.cancel())
                     self._pending_cancels.add(task)
                     task.add_done_callback(self._pending_cancels.discard)
+        if purged:
+            logger.info("swept %d expired login sessions", purged)
         return purged

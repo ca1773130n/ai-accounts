@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -10,7 +11,10 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
+
 from ai_accounts_core.domain.backend import DetectResult
+from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -58,6 +62,7 @@ class _ClaudeCliBrowserSession(LoginSession):
         self._done = False
         self._orchestrator: CliOrchestrator | None = None
         self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._cleanup_lock = asyncio.Lock()
 
     @property
     def session_id(self) -> str:
@@ -74,6 +79,18 @@ class _ClaudeCliBrowserSession(LoginSession):
     @property
     def done(self) -> bool:
         return self._done
+
+    async def _cleanup(self) -> None:
+        async with self._cleanup_lock:
+            if self._orchestrator is not None:
+                try:
+                    await self._orchestrator.terminate()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+                try:
+                    await self._orchestrator.wait()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         # claude is launched bare (no /login arg): the first-run TUI runs
@@ -100,33 +117,23 @@ class _ClaudeCliBrowserSession(LoginSession):
             ):
                 yield event
         finally:
-            if self._orchestrator is not None:
-                try:
-                    await self._orchestrator.terminate()
-                except Exception:  # pragma: no cover - best-effort
-                    pass
-                try:
-                    await self._orchestrator.wait()
-                except Exception:  # pragma: no cover - best-effort
-                    pass
+            await self._cleanup()
             self._done = True
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
-        if self._orchestrator is not None and not self._done:
-            try:
-                await self._orchestrator.terminate()
-            except Exception:  # pragma: no cover
-                pass
+        await self._cleanup()
         self._done = True
 
 
 class _ClaudeApiKeySession(LoginSession):
     def __init__(self) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
-        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
         self._done = False
 
     @property
@@ -147,19 +154,32 @@ class _ClaudeApiKeySession(LoginSession):
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         yield TextPrompt(prompt_id="api_key", prompt="Anthropic API key", hidden=True)
-        ans = await self._answers.get()
+        try:
+            ans = await asyncio.wait_for(self._answers.get(), timeout=300)
+        except asyncio.TimeoutError:
+            self._done = True
+            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            return
+        if ans.prompt_id == "__cancel__":
+            self._done = True
+            yield LoginFailed(code="cancelled", message="Login cancelled")
+            return
         if not ans.answer.startswith("sk-ant-"):
             self._done = True
-            yield LoginFailed(code="invalid_key", message="API key must start with sk-ant-")
+            yield LoginFailed(code="invalid_key", message="Invalid API key format")
             return
         self._done = True
         yield LoginComplete(account_id="", backend_status="validating")
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
         self._done = True
+        with contextlib.suppress(asyncio.QueueFull):
+            self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
 class ClaudeBackend:
@@ -270,7 +290,63 @@ class ClaudeBackend:
         *,
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
-        raise NotImplementedError("chat lands in Phase 3")
+        api_key = credential.decode("utf-8").strip()
+        messages_payload = [
+            {"role": m.role.value, "content": m.content}
+            for m in request.messages
+            if m.role != ChatRole.SYSTEM
+        ]
+        system_msgs = [
+            m.content for m in request.messages if m.role == ChatRole.SYSTEM
+        ]
+        body: dict[str, object] = {
+            "model": request.model,
+            "messages": messages_payload,
+            "max_tokens": request.params.get("max_tokens", 4096),
+            "stream": True,
+        }
+        if system_msgs:
+            body["system"] = system_msgs[0]
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+                json=body,
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                timeout=120.0,
+            ) as resp:
+                if resp.status_code != 200:
+                    yield ChatStreamEvent(
+                        kind="error",
+                        payload=f"API error {resp.status_code}",
+                    )
+                    return
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = json.loads(line[6:])
+                    if data.get("type") == "content_block_delta":
+                        text = data.get("delta", {}).get("text", "")
+                        if text:
+                            yield ChatStreamEvent(
+                                kind="token", payload=text
+                            )
+                    elif data.get("type") == "message_delta":
+                        usage = data.get("usage", {})
+                        yield ChatStreamEvent(
+                            kind="done",
+                            payload={
+                                "finish_reason": data.get("delta", {}).get(
+                                    "stop_reason", "stop"
+                                ),
+                                "tokens_out": usage.get("output_tokens"),
+                                "model": request.model,
+                            },
+                        )
 
     async def pty(
         self,
@@ -279,7 +355,13 @@ class ClaudeBackend:
         *,
         isolation_dir: Path,
     ) -> PtyHandle:
-        raise NotImplementedError("pty lands in Phase 4")
+        from ai_accounts_core.pty.handle import AsyncPtyHandle
+
+        env = dict(request.env)
+        env.update(self._env(credential, isolation_dir))
+        return await AsyncPtyHandle.spawn(
+            command=request.command, cols=request.cols, rows=request.rows, env=env,
+        )
 
     def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:
         isolation_dir.mkdir(parents=True, exist_ok=True)

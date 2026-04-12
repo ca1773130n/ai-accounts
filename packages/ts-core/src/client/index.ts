@@ -9,6 +9,7 @@ import type {
   CliproxyLoginBeginResponse,
   CliproxyCallbackForwardResponse,
 } from '../types/install';
+import type { PtySessionDTO, PtySpawnRequest } from '../types/pty';
 
 export type { paths } from './generated';
 
@@ -368,6 +369,43 @@ export class AiAccountsClient {
     );
     if (!r.ok) throw await toError(r);
     return (await r.json()) as CliproxyCallbackForwardResponse;
+  }
+
+  // --- PTY Sessions ---
+
+  async spawnPty(input: PtySpawnRequest): Promise<PtySessionDTO> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/pty/spawn`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(input),
+    });
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as PtySessionDTO;
+  }
+
+  async killPty(sessionId: string): Promise<void> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/pty/${encodeURIComponent(sessionId)}/kill`,
+      { method: 'POST', headers: this.headers() },
+    );
+    if (!r.ok) throw await toError(r);
+  }
+
+  async resizePty(sessionId: string, cols: number, rows: number): Promise<void> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/pty/${encodeURIComponent(sessionId)}/resize`,
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ cols, rows }),
+      },
+    );
+    if (!r.ok) throw await toError(r);
+  }
+
+  ptyWebSocketUrl(sessionId: string): string {
+    const wsBase = this.baseUrl.replace(/^http/, 'ws');
+    return `${wsBase}/ws/pty/${encodeURIComponent(sessionId)}`;
   }
 
   private async postAction<T>(id: string, action: string, body?: unknown): Promise<T> {

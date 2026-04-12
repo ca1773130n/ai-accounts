@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import logging
 import shutil
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -27,6 +28,8 @@ from .errors import (
     CredentialMissing,
     LoginFlowUnsupported,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -157,6 +160,7 @@ class AccountService:
         flow_kind: str,
         inputs: dict[str, str],
     ) -> LoginSession:
+        logger.info("begin_login: account=%s flow=%s", backend_id, flow_kind)
         backend = await self.get(backend_id)
         impl = self._backend_impls.get(backend.kind)
         if impl is None:
@@ -175,6 +179,7 @@ class AccountService:
             isolation_dir=isolation_dir,
         )
         await self._login_registry.register(session)
+        logger.info("begin_login: session registered sid=%s", session.session_id)
         return session
 
     async def store_credential(

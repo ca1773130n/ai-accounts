@@ -230,6 +230,11 @@ class CliOrchestrator:
             return
         with contextlib.suppress(ProcessLookupError):
             os.kill(self._pid, signal.SIGTERM)
+        # Close master_fd so the reader thread unblocks
+        if self._master_fd is not None:
+            with contextlib.suppress(OSError):
+                os.close(self._master_fd)
+            self._master_fd = None
 
     async def kill(self) -> None:
         if self._pid is None:
@@ -248,7 +253,10 @@ class CliOrchestrator:
             self._exit_code = -os.WTERMSIG(status)
         else:
             self._exit_code = -1
+        self._pid = None
         if self._reader_task is not None:
+            if not self._reader_task.done():
+                self._reader_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._reader_task
         if self._master_fd is not None:

@@ -38,6 +38,15 @@ export type {
   CliproxyCallbackForwardResponse,
 } from './types/install';
 export type { AiAccountsEvent, AiAccountsEventHandler } from './events';
+export type { PtySessionDTO, PtySpawnRequest } from './types/pty';
+export { PtySocket } from './client/pty-socket';
+export type { PtySocketOptions } from './client/pty-socket';
+export type {
+  ChatSessionDTO,
+  ChatSessionDetailDTO,
+  ChatMessageDTO,
+  ChatDelta,
+} from './types/chat';
 export { createAccountWizard } from './machines/accountWizard';
 export type {
   AccountWizard,

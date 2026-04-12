@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -10,7 +11,10 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
+
 from ai_accounts_core.domain.backend import DetectResult
+from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -44,7 +48,7 @@ def _validate_config_path(config_path: str | None, isolation_dir: Path) -> Path:
     resolved = expanded.resolve()
     # Must not escape outside home or isolation directory
     allowed_roots = (Path.home().resolve(), isolation_dir.resolve())
-    if not any(str(resolved).startswith(str(root)) for root in allowed_roots):
+    if not any(resolved.is_relative_to(root) for root in allowed_roots):
         raise ValueError(f"config_path '{config_path}' resolves outside allowed directories")
     return resolved / ".gemini"
 
@@ -61,6 +65,7 @@ class _GeminiOAuthDeviceSession(LoginSession):
         self._isolation_dir = isolation_dir
         self._done = False
         self._orchestrator: CliOrchestrator | None = None
+        self._cleanup_lock = asyncio.Lock()
 
     @property
     def session_id(self) -> str:
@@ -77,6 +82,23 @@ class _GeminiOAuthDeviceSession(LoginSession):
     @property
     def done(self) -> bool:
         return self._done
+
+    async def _cleanup(self) -> None:
+        async with self._cleanup_lock:
+            if self._orchestrator is not None:
+                try:
+                    await self._orchestrator.terminate()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+                try:
+                    exit_code = await asyncio.wait_for(
+                        self._orchestrator.wait(), timeout=10
+                    )
+                except asyncio.TimeoutError:
+                    await self._orchestrator.kill()
+                    await self._orchestrator.wait()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         self._orchestrator = CliOrchestrator(
@@ -95,46 +117,46 @@ class _GeminiOAuthDeviceSession(LoginSession):
         user_code: str | None = None
         emitted_url_prompt = False
         success = False
-        async for chunk in self._orchestrator.read_output():
-            if chunk.strip():
-                yield StdoutChunk(text=chunk)
-            if url is None:
-                m = _GEMINI_URL_RE.search(chunk)
-                if m:
-                    url = m.group(0)
-            if user_code is None:
-                m = _GEMINI_USER_CODE_RE.search(chunk)
-                if m:
-                    user_code = m.group(1)
-            if not emitted_url_prompt and url and user_code:
-                emitted_url_prompt = True
-                yield UrlPrompt(prompt_id="device", url=url, user_code=user_code)
-            if any(mk in chunk for mk in _GEMINI_SUCCESS_MARKERS):
-                success = True
-                break
-            lower = chunk.lower()
-            if "error" in lower or "failed" in lower or any(
-                mk in chunk for mk in _GEMINI_FAILURE_MARKERS
-            ):
-                break
+        try:
+            async for chunk in self._orchestrator.read_output():
+                if chunk.strip():
+                    yield StdoutChunk(text=chunk)
+                if url is None:
+                    m = _GEMINI_URL_RE.search(chunk)
+                    if m:
+                        url = m.group(0)
+                if user_code is None:
+                    m = _GEMINI_USER_CODE_RE.search(chunk)
+                    if m:
+                        user_code = m.group(1)
+                if not emitted_url_prompt and url and user_code:
+                    emitted_url_prompt = True
+                    yield UrlPrompt(prompt_id="device", url=url, user_code=user_code)
+                if any(mk in chunk for mk in _GEMINI_SUCCESS_MARKERS):
+                    success = True
+                    break
+                lower = chunk.lower()
+                if "error" in lower or "failed" in lower or any(
+                    mk in chunk for mk in _GEMINI_FAILURE_MARKERS
+                ):
+                    break
+        finally:
+            await self._cleanup()
+            self._done = True
 
-        exit_code = await self._orchestrator.wait()
-        self._done = True
-        if success and exit_code == 0:
+        if success:
             yield LoginComplete(account_id="", backend_status="validating")
         else:
             yield LoginFailed(
                 code="oauth_device_failed",
-                message=f"gemini auth login exited with {exit_code}",
+                message="gemini auth login failed",
             )
 
     async def respond(self, answer: PromptAnswer) -> None:
         pass
 
     async def cancel(self) -> None:
-        if self._orchestrator is not None and not self._done:
-            await self._orchestrator.terminate()
-            await self._orchestrator.wait()
+        await self._cleanup()
         self._done = True
 
 
@@ -161,7 +183,7 @@ class _GeminiDirectOAuthSession(LoginSession):
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
         self._config = config
         self._isolation_dir = isolation_dir
-        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
         self._done = False
         self._state: str | None = None
         self._code_verifier: str | None = None
@@ -280,7 +302,16 @@ class _GeminiDirectOAuthSession(LoginSession):
             hidden=False,
         )
 
-        answer = await self._answers.get()
+        try:
+            answer = await asyncio.wait_for(self._answers.get(), timeout=300)
+        except asyncio.TimeoutError:
+            self._done = True
+            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            return
+        if answer.prompt_id == "__cancel__":
+            self._done = True
+            yield LoginFailed(code="cancelled", message="Login cancelled")
+            return
         auth_code = answer.answer.strip()
         if not auth_code:
             self._done = True
@@ -305,16 +336,20 @@ class _GeminiDirectOAuthSession(LoginSession):
         yield LoginComplete(account_id="", backend_status="validating")
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
         self._done = True
+        with contextlib.suppress(asyncio.QueueFull):
+            self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
 class _GeminiApiKeySession(LoginSession):
     def __init__(self) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
-        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
         self._done = False
 
     @property
@@ -335,7 +370,16 @@ class _GeminiApiKeySession(LoginSession):
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         yield TextPrompt(prompt_id="api_key", prompt="Google AI Studio API key", hidden=True)
-        ans = await self._answers.get()
+        try:
+            ans = await asyncio.wait_for(self._answers.get(), timeout=300)
+        except asyncio.TimeoutError:
+            self._done = True
+            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            return
+        if ans.prompt_id == "__cancel__":
+            self._done = True
+            yield LoginFailed(code="cancelled", message="Login cancelled")
+            return
         if not ans.answer:
             self._done = True
             yield LoginFailed(code="invalid_key", message="API key cannot be empty")
@@ -344,10 +388,14 @@ class _GeminiApiKeySession(LoginSession):
         yield LoginComplete(account_id="", backend_status="validating")
 
     async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
         await self._answers.put(answer)
 
     async def cancel(self) -> None:
         self._done = True
+        with contextlib.suppress(asyncio.QueueFull):
+            self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
 class GeminiBackend:
@@ -470,7 +518,61 @@ class GeminiBackend:
         *,
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
-        raise NotImplementedError("chat lands in Phase 3")
+        api_key = credential.decode("utf-8").strip()
+        contents = []
+        for m in request.messages:
+            if m.role == ChatRole.SYSTEM:
+                continue
+            role = "model" if m.role == ChatRole.ASSISTANT else "user"
+            contents.append({"role": role, "parts": [{"text": m.content}]})
+        body: dict[str, object] = {"contents": contents}
+        system_msgs = [
+            m.content for m in request.messages if m.role == ChatRole.SYSTEM
+        ]
+        if system_msgs:
+            body["system_instruction"] = {"parts": [{"text": system_msgs[0]}]}
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{request.model}:streamGenerateContent?alt=sse&key={api_key}"
+        )
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                url,
+                json=body,
+                headers={"Content-Type": "application/json"},
+                timeout=120.0,
+            ) as resp:
+                if resp.status_code != 200:
+                    yield ChatStreamEvent(
+                        kind="error",
+                        payload=f"API error {resp.status_code}",
+                    )
+                    return
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = json.loads(line[6:])
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        continue
+                    candidate = candidates[0]
+                    parts = candidate.get("content", {}).get("parts", [])
+                    if parts:
+                        text = parts[0].get("text", "")
+                        if text:
+                            yield ChatStreamEvent(
+                                kind="token", payload=text
+                            )
+                    finish_reason = candidate.get("finishReason")
+                    if finish_reason:
+                        yield ChatStreamEvent(
+                            kind="done",
+                            payload={
+                                "finish_reason": finish_reason,
+                                "model": request.model,
+                            },
+                        )
 
     async def pty(
         self,
@@ -479,7 +581,13 @@ class GeminiBackend:
         *,
         isolation_dir: Path,
     ) -> PtyHandle:
-        raise NotImplementedError("pty lands in Phase 4")
+        from ai_accounts_core.pty.handle import AsyncPtyHandle
+
+        env = dict(request.env)
+        env.update(self._env(credential, isolation_dir))
+        return await AsyncPtyHandle.spawn(
+            command=request.command, cols=request.cols, rows=request.rows, env=env,
+        )
 
     def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:
         isolation_dir.mkdir(parents=True, exist_ok=True)

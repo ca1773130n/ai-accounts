@@ -13,4 +13,9 @@ export {
   type LoginStatus,
 } from './composables/useLoginSession';
 
+export { useConversation } from './composables/useConversation';
+export type { UseConversationReturn } from './composables/useConversation';
+export { usePtySession } from './composables/usePtySession';
+export type { UsePtySessionReturn } from './composables/usePtySession';
+
 export const version = '0.3.0-alpha.1';

@@ -78,6 +78,7 @@ class LoginController(Controller):
                         "data": msgspec.json.encode(event).decode(),
                     }
             finally:
+                await session.cancel()
                 await registry.remove(session_id)
 
         return ServerSentEvent(gen())
