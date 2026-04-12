@@ -965,7 +965,7 @@ function skipWizard() {
             Start proxy registration
           </button>
 
-          <div v-if="proxyLoginStatus === 'running'" class="proxy-running">
+          <div v-if="proxyLoginStatus === 'running'" class="login-status login-started">
             <div class="spinner-sm"></div>
             <span>{{ proxyLoginMessage }}</span>
           </div>
@@ -977,7 +977,7 @@ function skipWizard() {
                 <polyline points="15 3 21 3 21 9" />
                 <line x1="10" y1="14" x2="21" y2="3" />
               </svg>
-              <span>{{ proxyLoginMessage }}</span>
+              <span>A browser window should have opened. Sign in, then the page will redirect to <code>localhost</code> — that redirect will fail (this is normal). Copy the full URL from the browser address bar and paste it below.</span>
             </div>
             <a v-if="proxyOauthUrl" :href="proxyOauthUrl" target="_blank" rel="noopener" class="proxy-oauth-link">
               {{ proxyOauthUrl }}
