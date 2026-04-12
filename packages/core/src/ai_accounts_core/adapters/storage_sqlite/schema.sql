@@ -10,7 +10,11 @@ CREATE TABLE IF NOT EXISTS backends (
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT,
-    last_error TEXT
+    last_error TEXT,
+    rate_limited_until TEXT,
+    rate_limit_reason TEXT,
+    last_used_at TEXT,
+    last_polled_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS backend_credentials (
@@ -59,4 +63,22 @@ CREATE TABLE IF NOT EXISTS onboarding (
     selected_backend_kind TEXT,
     created_backend_id TEXT,
     error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS usage_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    backend_id TEXT NOT NULL REFERENCES backends(id) ON DELETE CASCADE,
+    window_type TEXT NOT NULL,
+    usage_percent REAL NOT NULL,
+    tokens_used INTEGER,
+    tokens_limit INTEGER,
+    resets_at TEXT,
+    recorded_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_usage_snapshots_backend ON usage_snapshots(backend_id, recorded_at DESC);
+
+CREATE TABLE IF NOT EXISTS fallback_chains (
+    backend_id TEXT NOT NULL REFERENCES backends(id) ON DELETE CASCADE,
+    priority INTEGER NOT NULL,
+    PRIMARY KEY (backend_id)
 );

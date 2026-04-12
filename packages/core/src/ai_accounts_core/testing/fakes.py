@@ -7,11 +7,14 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, ClassVar
 
+from datetime import datetime
+
 from ai_accounts_core.domain.backend import Backend, BackendCredential, DetectResult
 from ai_accounts_core.domain.chat import ChatMessage, ChatSession
 from ai_accounts_core.domain.onboarding import OnboardingState
 from ai_accounts_core.domain.principal import Principal
 from ai_accounts_core.domain.session import LiveSession
+from ai_accounts_core.domain.usage import FallbackChainEntry, UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -33,6 +36,7 @@ from ai_accounts_core.protocols.storage import (
     OnboardingRepository,
     SessionRepository,
     StorageProtocol,
+    UsageRepository,
 )
 from ai_accounts_core.protocols.vault import VaultError, canonicalize_vault_context
 
@@ -121,12 +125,59 @@ class _FakeOnboardingRepo:
         self._states[state.id] = state
 
 
+class _FakeUsageRepo:
+    def __init__(self) -> None:
+        self._snapshots: dict[str, list[UsageWindow]] = defaultdict(list)
+        self._rate_limits: dict[str, tuple[datetime, str]] = {}
+        self._last_used: dict[str, datetime] = {}
+        self._last_polled: dict[str, datetime] = {}
+        self._chain: list[FallbackChainEntry] = []
+
+    async def put_snapshot(self, backend_id: str, windows: list[UsageWindow]) -> None:
+        self._snapshots[backend_id] = list(windows) + self._snapshots[backend_id]
+
+    async def get_latest_snapshots(self, backend_id: str) -> list[UsageWindow]:
+        seen: set[str] = set()
+        result: list[UsageWindow] = []
+        for w in self._snapshots.get(backend_id, []):
+            if w.window_type in seen:
+                continue
+            seen.add(w.window_type)
+            result.append(w)
+        return result
+
+    async def set_rate_limited(self, backend_id: str, until: datetime, reason: str) -> None:
+        self._rate_limits[backend_id] = (until, reason)
+
+    async def clear_rate_limited(self, backend_id: str) -> None:
+        self._rate_limits.pop(backend_id, None)
+
+    async def get_rate_limit_state(self, backend_id: str) -> tuple[datetime | None, str | None]:
+        entry = self._rate_limits.get(backend_id)
+        if entry is None:
+            return (None, None)
+        return entry
+
+    async def set_last_used(self, backend_id: str, at: datetime) -> None:
+        self._last_used[backend_id] = at
+
+    async def set_last_polled(self, backend_id: str, at: datetime) -> None:
+        self._last_polled[backend_id] = at
+
+    async def set_chain(self, entries: list[FallbackChainEntry]) -> None:
+        self._chain = list(entries)
+
+    async def get_chain(self) -> list[FallbackChainEntry]:
+        return sorted(self._chain, key=lambda e: e.priority)
+
+
 class FakeStorage:
     def __init__(self) -> None:
         self._backends = _FakeBackendRepo()
         self._sessions = _FakeSessionRepo()
         self._history = _FakeHistoryRepo()
         self._onboarding = _FakeOnboardingRepo()
+        self._usage = _FakeUsageRepo()
 
     async def backends(self) -> BackendRepository:
         return self._backends
@@ -139,6 +190,9 @@ class FakeStorage:
 
     async def onboarding(self) -> OnboardingRepository:
         return self._onboarding
+
+    async def usage(self) -> UsageRepository:
+        return self._usage
 
     async def migrate(self) -> None:
         return None

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
@@ -14,12 +14,14 @@ from ai_accounts_core.domain.backend import (
 from ai_accounts_core.domain.chat import ChatMessage, ChatRole, ChatSession
 from ai_accounts_core.domain.onboarding import OnboardingState, OnboardingStep
 from ai_accounts_core.domain.session import LiveSession, SessionKind, SessionState
+from ai_accounts_core.domain.usage import FallbackChainEntry, UsageWindow
 from ai_accounts_core.protocols.storage import (
     BackendRepository,
     HistoryRepository,
     OnboardingRepository,
     SessionRepository,
     StorageProtocol,
+    UsageRepository,
 )
 
 _SCHEMA = (Path(__file__).parent / "schema.sql").read_text()
@@ -340,6 +342,111 @@ class _SqliteOnboardingRepo:
         await self._conn.commit()
 
 
+class _SqliteUsageRepo:
+    def __init__(self, conn: aiosqlite.Connection) -> None:
+        self._conn = conn
+
+    async def put_snapshot(self, backend_id: str, windows: list[UsageWindow]) -> None:
+        now = _iso(datetime.now(tz=UTC))
+        for w in windows:
+            await self._conn.execute(
+                "INSERT INTO usage_snapshots "
+                "(backend_id, window_type, usage_percent, tokens_used, tokens_limit, resets_at, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    backend_id,
+                    w.window_type,
+                    w.usage_percent,
+                    w.tokens_used,
+                    w.tokens_limit,
+                    _iso(w.resets_at) if w.resets_at else None,
+                    now,
+                ),
+            )
+        await self._conn.commit()
+
+    async def get_latest_snapshots(self, backend_id: str) -> list[UsageWindow]:
+        async with self._conn.execute(
+            "SELECT window_type, usage_percent, tokens_used, tokens_limit, resets_at, recorded_at "
+            "FROM usage_snapshots WHERE backend_id = ? ORDER BY recorded_at DESC",
+            (backend_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        seen: set[str] = set()
+        result: list[UsageWindow] = []
+        for row in rows:
+            wtype = row[0]
+            if wtype in seen:
+                continue
+            seen.add(wtype)
+            result.append(
+                UsageWindow(
+                    window_type=wtype,
+                    usage_percent=row[1],
+                    tokens_used=row[2],
+                    tokens_limit=row[3],
+                    resets_at=_parse_dt(row[4]),
+                )
+            )
+        return result
+
+    async def set_rate_limited(self, backend_id: str, until: datetime, reason: str) -> None:
+        await self._conn.execute(
+            "UPDATE backends SET rate_limited_until = ?, rate_limit_reason = ? WHERE id = ?",
+            (_iso(until), reason, backend_id),
+        )
+        await self._conn.commit()
+
+    async def clear_rate_limited(self, backend_id: str) -> None:
+        await self._conn.execute(
+            "UPDATE backends SET rate_limited_until = NULL, rate_limit_reason = NULL WHERE id = ?",
+            (backend_id,),
+        )
+        await self._conn.commit()
+
+    async def get_rate_limit_state(self, backend_id: str) -> tuple[datetime | None, str | None]:
+        async with self._conn.execute(
+            "SELECT rate_limited_until, rate_limit_reason FROM backends WHERE id = ?",
+            (backend_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if not row:
+            return (None, None)
+        return (_parse_dt(row[0]), row[1])
+
+    async def set_last_used(self, backend_id: str, at: datetime) -> None:
+        await self._conn.execute(
+            "UPDATE backends SET last_used_at = ? WHERE id = ?",
+            (_iso(at), backend_id),
+        )
+        await self._conn.commit()
+
+    async def set_last_polled(self, backend_id: str, at: datetime) -> None:
+        await self._conn.execute(
+            "UPDATE backends SET last_polled_at = ? WHERE id = ?",
+            (_iso(at), backend_id),
+        )
+        await self._conn.commit()
+
+    async def set_chain(self, entries: list[FallbackChainEntry]) -> None:
+        await self._conn.execute("DELETE FROM fallback_chains")
+        for entry in entries:
+            await self._conn.execute(
+                "INSERT INTO fallback_chains (backend_id, priority) VALUES (?, ?)",
+                (entry.backend_id, entry.priority),
+            )
+        await self._conn.commit()
+
+    async def get_chain(self) -> list[FallbackChainEntry]:
+        async with self._conn.execute(
+            "SELECT backend_id, priority FROM fallback_chains ORDER BY priority"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [
+            FallbackChainEntry(backend_id=row[0], priority=row[1]) for row in rows
+        ]
+
+
 class SqliteStorage:
     def __init__(self, path: str) -> None:
         self._path = path
@@ -375,6 +482,9 @@ class SqliteStorage:
 
     async def onboarding(self) -> OnboardingRepository:
         return _SqliteOnboardingRepo(await self._ensure_conn())
+
+    async def usage(self) -> UsageRepository:
+        return _SqliteUsageRepo(await self._ensure_conn())
 
     async def close(self) -> None:
         if self._conn is not None:
