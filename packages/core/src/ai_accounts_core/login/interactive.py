@@ -188,40 +188,6 @@ async def run_interactive_cli_login(
                     last_output_time = time.monotonic()
                     continue
 
-            # Text input prompt detection during idle — detect lines like
-            # "Paste code here if prompted >" or "Enter the code:"
-            if (
-                not pending_menu
-                and recent_lines
-                and idle_since_last_output >= menu_render_grace_seconds
-            ):
-                last_line = recent_lines[-1].strip()
-                if last_line and _TEXT_PROMPT_RE.search(last_line):
-                    logger.info("text prompt detected: %r", last_line)
-                    prompt_id = f"text-{uuid.uuid4().hex[:6]}"
-                    yield TextPrompt(
-                        prompt_id=prompt_id,
-                        prompt=last_line,
-                        hidden=False,
-                    )
-                    # Block until user responds
-                    try:
-                        answer = await asyncio.wait_for(
-                            answers.get(), timeout=menu_response_timeout
-                        )
-                    except asyncio.TimeoutError:
-                        yield LoginFailed(
-                            code="prompt_timeout",
-                            message="Text input timed out",
-                        )
-                        return
-                    await orchestrator.write(
-                        (answer.answer.strip() + "\n").encode()
-                    )
-                    recent_lines = []
-                    last_output_time = time.monotonic()
-                    continue
-
             # Trigger action command once REPL looks idle.
             if (
                 not action_sent
@@ -270,6 +236,40 @@ async def run_interactive_cli_login(
         if not login_success_seen and _LOGIN_SUCCESS_RE.search(chunk):
             login_success_seen = True
             login_success_time = now
+
+        # Text input prompt detection — check every chunk, not during idle,
+        # because Claude shows a spinner animation while waiting for input
+        # which prevents idle from ever triggering.
+        if not pending_menu:
+            for line in chunk.splitlines():
+                stripped = line.strip()
+                if stripped and _TEXT_PROMPT_RE.search(stripped):
+                    logger.info("text prompt detected: %r", stripped)
+                    prompt_id = f"text-{uuid.uuid4().hex[:6]}"
+                    yield TextPrompt(
+                        prompt_id=prompt_id,
+                        prompt=stripped,
+                        hidden=False,
+                    )
+                    # Block until user responds — spinner output will queue
+                    # up in the reader but we won't process it until the
+                    # user submits their answer.
+                    try:
+                        answer = await asyncio.wait_for(
+                            answers.get(), timeout=menu_response_timeout
+                        )
+                    except asyncio.TimeoutError:
+                        yield LoginFailed(
+                            code="prompt_timeout",
+                            message="Text input timed out",
+                        )
+                        return
+                    await orchestrator.write(
+                        (answer.answer.strip() + "\n").encode()
+                    )
+                    recent_lines = []
+                    last_output_time = time.monotonic()
+                    break  # Only handle one prompt per chunk
 
     # Loop exit — caller wraps in try/finally to terminate + wait.
     if login_success_seen:
