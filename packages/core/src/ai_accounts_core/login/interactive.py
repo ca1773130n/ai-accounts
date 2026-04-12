@@ -33,6 +33,10 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Pattern
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from ai_accounts_core.login.cli_orchestrator import (
     CliOrchestrator,
     _LOGIN_SUCCESS_RE,
@@ -160,6 +164,10 @@ async def run_interactive_cli_login(
         # Post-action: login method selection, account chooser, etc.
         if not pending_menu:
             options = parse_menu_options(recent_lines)
+            logger.debug(
+                "menu check: %d options from %d recent_lines | chunk=%r",
+                len(options), len(recent_lines), chunk[:120],
+            )
             if options:
                 # Wait briefly for full menu render (more options may arrive).
                 await asyncio.sleep(menu_render_grace_seconds)
