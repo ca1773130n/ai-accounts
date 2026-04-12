@@ -56,9 +56,10 @@ class _ClaudeCliBrowserSession(LoginSession):
 
     ACTION_COMMAND = "/login"
 
-    def __init__(self, isolation_dir: Path) -> None:
+    def __init__(self, isolation_dir: Path, config: dict | None = None) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
         self._isolation_dir = isolation_dir
+        self._config = config or {}
         self._done = False
         self._orchestrator: CliOrchestrator | None = None
         self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
@@ -95,10 +96,17 @@ class _ClaudeCliBrowserSession(LoginSession):
     async def events(self) -> AsyncIterator[LoginEvent]:
         # claude is launched bare (no /login arg): the first-run TUI runs
         # through its theme picker, then we send /login into the REPL.
+        # Use user-supplied config_path if provided, falling back to isolation_dir.
+        config_path = self._config.get("config_path")
+        if config_path:
+            config_dir = Path(os.path.expanduser(str(config_path)))
+            config_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            config_dir = self._isolation_dir
         self._orchestrator = CliOrchestrator(
             argv=["claude"],
-            env={"CLAUDE_CONFIG_DIR": str(self._isolation_dir)},
-            cwd=self._isolation_dir,
+            env={"CLAUDE_CONFIG_DIR": str(config_dir)},
+            cwd=config_dir,
         )
         try:
             await self._orchestrator.start()
@@ -235,7 +243,7 @@ class ClaudeBackend:
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "cli_browser":
-            return _ClaudeCliBrowserSession(isolation_dir)
+            return _ClaudeCliBrowserSession(isolation_dir, config=config)
         if flow_kind == "api_key":
             return _ClaudeApiKeySession()
         raise ValueError(f"unsupported flow_kind: {flow_kind}")

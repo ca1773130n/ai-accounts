@@ -21,6 +21,18 @@ class TextPrompt(msgspec.Struct, tag="text_prompt", tag_field="type"):
     hidden: bool = False
 
 
+class MenuOption(msgspec.Struct, frozen=True, kw_only=True):
+    number: int
+    label: str
+    description: str | None = None
+
+
+class MenuPrompt(msgspec.Struct, tag="menu_prompt", tag_field="type"):
+    prompt_id: str
+    prompt: str
+    options: tuple[MenuOption, ...]
+
+
 class StdoutChunk(msgspec.Struct, tag="stdout", tag_field="type"):
     text: str
 
@@ -43,6 +55,7 @@ class LoginFailed(msgspec.Struct, tag="failed", tag_field="type"):
 LoginEvent = (
     UrlPrompt
     | TextPrompt
+    | MenuPrompt
     | StdoutChunk
     | ProgressUpdate
     | LoginComplete

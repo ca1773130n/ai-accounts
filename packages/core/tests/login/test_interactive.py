@@ -101,9 +101,9 @@ async def test_sends_action_after_idle():
     )
 
 
-async def test_detects_menu_and_yields_text_prompt():
-    """Numbered menu lines produce a TextPrompt with parsed options."""
-    from ai_accounts_core.login.events import PromptAnswer
+async def test_detects_menu_and_yields_menu_prompt():
+    """Numbered menu lines produce a MenuPrompt with structured options."""
+    from ai_accounts_core.login.events import MenuPrompt, PromptAnswer
 
     answers: asyncio.Queue = asyncio.Queue()
     # Pre-load an answer so the loop doesn't block
@@ -118,12 +118,14 @@ async def test_detects_menu_and_yields_text_prompt():
         # EOF
     ])
     events = await _collect(orch, answers=answers, action_command="/login")
-    text_prompts = [e for e in events if isinstance(e, TextPrompt)]
-    assert len(text_prompts) >= 1, f"expected TextPrompt, got events: {events}"
-    prompt = text_prompts[0]
-    assert "Dark mode" in prompt.prompt
-    assert "Light mode" in prompt.prompt
-    assert "High contrast" in prompt.prompt
+    menu_prompts = [e for e in events if isinstance(e, MenuPrompt)]
+    assert len(menu_prompts) >= 1, f"expected MenuPrompt, got events: {events}"
+    prompt = menu_prompts[0]
+    assert prompt.prompt == "Choose an option:"
+    assert len(prompt.options) == 3
+    assert prompt.options[0].label == "Dark mode"
+    assert prompt.options[1].label == "Light mode"
+    assert prompt.options[2].label == "High contrast"
 
 
 async def test_navigates_menu_via_arrow_keys():

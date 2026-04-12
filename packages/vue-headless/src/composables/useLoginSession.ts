@@ -2,6 +2,7 @@ import { ref, type Ref } from 'vue';
 import type {
   LoginEvent,
   LoginFlowKind,
+  MenuPrompt,
   TextPrompt,
   UrlPrompt,
 } from '@ai-accounts/ts-core';
@@ -15,6 +16,7 @@ export type UseLoginSession = {
   accountId: Ref<string | null>;
   urlPrompt: Ref<UrlPrompt | null>;
   textPrompt: Ref<TextPrompt | null>;
+  menuPrompt: Ref<MenuPrompt | null>;
   stdoutLines: Ref<string[]>;
   errorCode: Ref<string | null>;
   errorMessage: Ref<string | null>;
@@ -34,6 +36,7 @@ export function useLoginSession(): UseLoginSession {
   const accountId = ref<string | null>(null);
   const urlPrompt = ref<UrlPrompt | null>(null);
   const textPrompt = ref<TextPrompt | null>(null);
+  const menuPrompt = ref<MenuPrompt | null>(null);
   const stdoutLines = ref<string[]>([]);
   const errorCode = ref<string | null>(null);
   const errorMessage = ref<string | null>(null);
@@ -89,6 +92,10 @@ export function useLoginSession(): UseLoginSession {
         textPrompt.value = event;
         emit({ type: 'login.prompt', sessionId: sessionId.value!, promptKind: 'text' });
         break;
+      case 'menu_prompt':
+        menuPrompt.value = event;
+        emit({ type: 'login.prompt', sessionId: sessionId.value!, promptKind: 'menu' });
+        break;
       case 'stdout':
         stdoutLines.value = [...stdoutLines.value, event.text];
         break;
@@ -118,9 +125,12 @@ export function useLoginSession(): UseLoginSession {
   }
 
   async function respond(answer: string): Promise<void> {
-    if (!sessionId.value || !accountId.value || !textPrompt.value) return;
-    const promptId = textPrompt.value.prompt_id;
+    if (!sessionId.value || !accountId.value) return;
+    const activePrompt = textPrompt.value ?? menuPrompt.value;
+    if (!activePrompt) return;
+    const promptId = activePrompt.prompt_id;
     textPrompt.value = null;
+    menuPrompt.value = null;
     await client.respondLogin(accountId.value, sessionId.value, promptId, answer);
   }
 
@@ -136,6 +146,7 @@ export function useLoginSession(): UseLoginSession {
     accountId,
     urlPrompt,
     textPrompt,
+    menuPrompt,
     stdoutLines,
     errorCode,
     errorMessage,

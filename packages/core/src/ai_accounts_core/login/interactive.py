@@ -14,7 +14,7 @@ because the OAuth URL never arrives until the TUI is dismissed.
    :class:`StdoutChunk`, matches against URL + login-success regexes,
    and — before the action command has been sent — parses menu options.
 4. When a menu appears, waits briefly for the menu to finish rendering,
-   then emits a :class:`TextPrompt` listing numbered options and suspends
+   then emits a :class:`MenuPrompt` with structured options and suspends
    until :meth:`LoginSession.respond` is called. The answer (1-based
    number) is converted to arrow-down-presses + Enter.
 5. On idle ticks: if no menu is pending, no action has been sent yet, and
@@ -43,6 +43,8 @@ from ai_accounts_core.login.events import (
     LoginComplete,
     LoginEvent,
     LoginFailed,
+    MenuOption,
+    MenuPrompt,
     ProgressUpdate,
     PromptAnswer,
     StdoutChunk,
@@ -164,16 +166,18 @@ async def run_interactive_cli_login(
                 if options:
                     pending_menu = True
                     pending_menu_options_count = len(options)
-                    menu_text = "\n".join(
-                        f"{opt.number}. {opt.label}"
-                        + (f" ({opt.description})" if opt.description else "")
-                        for opt in options
-                    )
                     prompt_id = f"menu-{uuid.uuid4().hex[:6]}"
-                    yield TextPrompt(
+                    yield MenuPrompt(
                         prompt_id=prompt_id,
-                        prompt=f"Choose an option:\n{menu_text}",
-                        hidden=False,
+                        prompt="Choose an option:",
+                        options=tuple(
+                            MenuOption(
+                                number=opt.number,
+                                label=opt.label,
+                                description=opt.description,
+                            )
+                            for opt in options
+                        ),
                     )
 
                     # Wait for user response, then send menu selection.
