@@ -50,6 +50,14 @@ export type {
   ChatDelta,
 } from './types/chat';
 export type { UsageWindowDTO, AccountHealthDTO, PickResultDTO, FallbackChainEntryDTO } from './types/scheduler';
+export type {
+  BackendResponse,
+  SynthesisState,
+  BackendOption,
+  SmartChatEvent,
+  ChatMode,
+  SendChatRequest,
+} from './types/smart-chat';
 export { createAccountWizard } from './machines/accountWizard';
 export type {
   AccountWizard,

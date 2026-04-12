@@ -1,7 +1,9 @@
 import type { paths } from './generated';
 import { parseSseLoginEvents } from './login-stream';
 import { parseSseChatEvents } from './chat-stream';
+import { parseSseSmartChatEvents } from './smart-chat-stream';
 import type { LoginEvent, LoginFlowKind } from '../types/login';
+import type { SmartChatEvent, SendChatRequest, ChatMode } from '../types/smart-chat';
 import type { BackendMetadata } from '../types/metadata';
 import type {
   InstallResult,
@@ -448,6 +450,27 @@ export class AiAccountsClient {
       body: JSON.stringify({ backend_id: backendId, cooldown_seconds: seconds, reason }),
     });
     if (!r.ok) throw await toError(r);
+  }
+
+  // --- Smart Chat ---
+
+  async *sendChat(request: SendChatRequest): AsyncIterable<SmartChatEvent> {
+    const url = `${this.baseUrl}/api/v1/chat/send`;
+    const r = await this._fetch(url, {
+      method: 'POST',
+      headers: { ...this.headers(), Accept: 'text/event-stream' },
+      body: JSON.stringify(request),
+    });
+    if (!r.ok) throw await toError(r);
+    yield* parseSseSmartChatEvents(r);
+  }
+
+  async createChatSession(backendId: string, model: string): Promise<ChatSessionDTO> {
+    return this.createConversation({ backend_id: backendId, model });
+  }
+
+  async listChatSessions(backendId?: string): Promise<{ items: ChatSessionDTO[] }> {
+    return this.listConversations(backendId);
   }
 
   private async postAction<T>(id: string, action: string, body?: unknown): Promise<T> {
