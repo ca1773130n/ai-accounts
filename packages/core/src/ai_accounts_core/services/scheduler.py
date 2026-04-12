@@ -12,6 +12,7 @@ from ai_accounts_core.domain.usage import (
 )
 from ai_accounts_core.protocols.storage import StorageProtocol
 from ai_accounts_core.services.accounts import AccountService
+from ai_accounts_core.services.errors import BackendNotFound
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class AccountScheduler:
 
     async def pick(self, kind: str | None = None) -> PickResult | None:
         chain = await self.get_chain()
+        has_configured_chain = bool(chain)
 
         if kind:
             filtered = []
@@ -42,12 +44,17 @@ class AccountScheduler:
                     b = await self._accounts.get(e.backend_id)
                     if b.kind == kind:
                         filtered.append(e)
-                except Exception:
-                    pass
+                except BackendNotFound:
+                    logger.info(
+                        "chain entry references missing backend %s, skipping",
+                        e.backend_id,
+                    )
             chain = filtered
 
-        # If no chain configured, use all READY backends
-        if not chain:
+        # Only fall back to all backends if NO chain was ever configured.
+        # If a chain exists but the kind filter emptied it, return None
+        # (the requested kind was intentionally excluded from the chain).
+        if not chain and not has_configured_chain:
             backends = await self._accounts.list()
             chain = [
                 FallbackChainEntry(backend_id=b.id, priority=i)
@@ -66,8 +73,12 @@ class AccountScheduler:
 
             # Skip rate-limited accounts
             if health.rate_limited_until and health.rate_limited_until > now:
-                if earliest_reset is None or health.rate_limited_until < earliest_reset:
+                if (
+                    earliest_reset is None
+                    or health.rate_limited_until < earliest_reset
+                ):
                     earliest_reset = health.rate_limited_until
+                logger.debug("pick: skipping %s (rate-limited)", entry.backend_id)
                 continue
 
             # Skip accounts with any window above threshold
@@ -75,11 +86,15 @@ class AccountScheduler:
                 (w.usage_percent for w in health.windows), default=0.0
             )
             if max_usage >= RATE_LIMIT_THRESHOLD:
-                # Find reset time from the hot window
                 for w in health.windows:
                     if w.usage_percent >= RATE_LIMIT_THRESHOLD and w.resets_at:
                         if earliest_reset is None or w.resets_at < earliest_reset:
                             earliest_reset = w.resets_at
+                logger.debug(
+                    "pick: skipping %s (usage %.1f%% >= threshold)",
+                    entry.backend_id,
+                    max_usage,
+                )
                 continue
 
             if max_usage < best_score:
@@ -87,13 +102,22 @@ class AccountScheduler:
                 best = entry
 
         if best is None:
-            return None  # All exhausted
+            logger.info(
+                "pick(kind=%s): all accounts exhausted, earliest_reset=%s",
+                kind,
+                earliest_reset,
+            )
+            return None
 
         # Resolve credential
         backend = await self._accounts.get(best.backend_id)
         repo = await self._storage.backends()
         stored = await repo.get_credential(backend.id)
         if stored is None:
+            logger.warning(
+                "pick: best backend %s has no credential — needs re-authentication",
+                backend.id,
+            )
             return None
         plaintext = await self._accounts._vault.decrypt(
             stored.ciphertext, context={"backend_id": backend.id}
@@ -107,6 +131,7 @@ class AccountScheduler:
             kind=backend.kind,
             credential=plaintext,
             isolation_dir=str(self._accounts._isolation_dir(backend.id)),
+            retry_after=earliest_reset,
         )
 
     # ── Priority Chain ──
@@ -169,16 +194,29 @@ class AccountScheduler:
         for b in backends:
             if b.status != BackendStatus.READY:
                 continue
+
+            # Infrastructure: credential resolution (vault/storage errors are serious)
             try:
                 impl = self._accounts._impl_for(b.kind)
                 repo = await self._storage.backends()
                 stored = await repo.get_credential(b.id)
                 if stored is None:
+                    logger.info("poll: skipping %s — no stored credential", b.id)
                     continue
                 plaintext = await self._accounts._vault.decrypt(
                     stored.ciphertext, context={"backend_id": b.id}
                 )
                 isolation_dir = self._accounts._isolation_dir(b.id)
+            except Exception:
+                logger.error(
+                    "poll: infrastructure failure for %s",
+                    b.id,
+                    exc_info=True,
+                )
+                continue
+
+            # External API call (network errors are expected/transient)
+            try:
                 windows = await impl.get_usage(
                     plaintext, isolation_dir=isolation_dir
                 )
@@ -187,5 +225,8 @@ class AccountScheduler:
                 await usage_repo.set_last_polled(b.id, datetime.now(UTC))
             except Exception:
                 logger.warning(
-                    "usage poll failed for %s", b.id, exc_info=True
+                    "poll: usage fetch failed for %s (kind=%s)",
+                    b.id,
+                    b.kind,
+                    exc_info=True,
                 )

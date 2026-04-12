@@ -1,9 +1,29 @@
 from __future__ import annotations
 
-from litestar import Controller, get, post, put
+import msgspec
+from litestar import Controller, Response, get, post, put
 
 from ai_accounts_core.domain.usage import FallbackChainEntry
 from ai_accounts_core.services.scheduler import AccountScheduler
+
+
+class _PickRequest(msgspec.Struct, kw_only=True):
+    kind: str | None = None
+
+
+class _ChainEntryInput(msgspec.Struct, kw_only=True):
+    backend_id: str
+    priority: int
+
+
+class _SetChainRequest(msgspec.Struct, kw_only=True):
+    entries: list[_ChainEntryInput]
+
+
+class _MarkLimitedRequest(msgspec.Struct, kw_only=True):
+    backend_id: str
+    cooldown_seconds: int
+    reason: str
 
 
 class SchedulerController(Controller):
@@ -16,21 +36,26 @@ class SchedulerController(Controller):
         return {"items": [_health_to_dict(h) for h in health_list]}
 
     @get("/health/{backend_id:str}")
-    async def get_health(self, scheduler: AccountScheduler, backend_id: str) -> dict:
+    async def get_health(
+        self, scheduler: AccountScheduler, backend_id: str
+    ) -> dict:
         health = await scheduler.get_health(backend_id)
         return _health_to_dict(health)
 
     @post("/pick", status_code=200)
-    async def pick(self, scheduler: AccountScheduler, data: dict) -> dict:
-        kind = data.get("kind")
-        result = await scheduler.pick(kind=kind)
+    async def pick(
+        self, scheduler: AccountScheduler, data: _PickRequest
+    ) -> Response | dict:
+        result = await scheduler.pick(kind=data.kind)
         if result is None:
-            return {"backend_id": None, "kind": None, "retry_after": None}
+            return Response(content=None, status_code=204)
         return {
             "backend_id": result.backend_id,
             "kind": result.kind,
             "isolation_dir": result.isolation_dir,
-            "retry_after": None,
+            "retry_after": (
+                result.retry_after.isoformat() if result.retry_after else None
+            ),
         }
 
     @get("/chain")
@@ -44,20 +69,24 @@ class SchedulerController(Controller):
         }
 
     @put("/chain", status_code=200)
-    async def set_chain(self, scheduler: AccountScheduler, data: dict) -> dict:
+    async def set_chain(
+        self, scheduler: AccountScheduler, data: _SetChainRequest
+    ) -> dict:
         entries = [
-            FallbackChainEntry(backend_id=e["backend_id"], priority=e["priority"])
-            for e in data.get("entries", [])
+            FallbackChainEntry(backend_id=e.backend_id, priority=e.priority)
+            for e in data.entries
         ]
         await scheduler.set_chain(entries)
         return {"status": "ok"}
 
     @post("/mark-limited", status_code=204)
-    async def mark_limited(self, scheduler: AccountScheduler, data: dict) -> None:
+    async def mark_limited(
+        self, scheduler: AccountScheduler, data: _MarkLimitedRequest
+    ) -> None:
         await scheduler.mark_rate_limited(
-            data["backend_id"],
-            data["cooldown_seconds"],
-            data["reason"],
+            data.backend_id,
+            data.cooldown_seconds,
+            data.reason,
         )
 
 
@@ -85,6 +114,8 @@ def _health_to_dict(health) -> dict:
             health.last_used_at.isoformat() if health.last_used_at else None
         ),
         "last_polled_at": (
-            health.last_polled_at.isoformat() if health.last_polled_at else None
+            health.last_polled_at.isoformat()
+            if health.last_polled_at
+            else None
         ),
     }

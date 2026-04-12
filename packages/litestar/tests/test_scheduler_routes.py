@@ -56,8 +56,7 @@ async def test_pick_with_kind(client):
 @pytest.mark.asyncio
 async def test_pick_no_accounts(client):
     r = await client.post("/api/v1/scheduler/pick", json={})
-    assert r.status_code == 200
-    assert r.json()["backend_id"] is None
+    assert r.status_code == 204
 
 
 @pytest.mark.asyncio
@@ -107,6 +106,6 @@ async def test_mark_limited(client):
         json={"backend_id": b1, "cooldown_seconds": 3600, "reason": "test"},
     )
     assert r.status_code == 204
-    # Should skip rate-limited account
+    # Should skip rate-limited account — returns 204
     r = await client.post("/api/v1/scheduler/pick", json={})
-    assert r.json()["backend_id"] is None
+    assert r.status_code == 204
