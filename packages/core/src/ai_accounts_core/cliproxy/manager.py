@@ -389,11 +389,13 @@ def start_cliproxy_server(
         return {"status": "ok", "port": port, "pid": None, "message": "already running"}
 
     config_path = str(_CLIPROXY_CONFIG)
+    stderr_path = Path(tempfile.mktemp(suffix="-cliproxy-stderr.log"))
     try:
+        stderr_file = open(stderr_path, "w")
         proc = subprocess.Popen(
             [_CLIPROXY_BINARY, "--config", config_path],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=stderr_file,
             start_new_session=True,
         )
     except FileNotFoundError:
@@ -404,15 +406,29 @@ def start_cliproxy_server(
     deadline = _time.monotonic() + 10
     while _time.monotonic() < deadline:
         if _check_healthy(port, api_key):
+            stderr_file.close()
+            stderr_path.unlink(missing_ok=True)
             return {"status": "ok", "port": port, "pid": proc.pid, "message": f"started on port {port}"}
         _time.sleep(0.5)
+
+    # Timeout — capture stderr for diagnostics
+    stderr_file.close()
+    stderr_content = ""
+    try:
+        stderr_content = stderr_path.read_text(errors="replace")[-500:]
+    except Exception:
+        pass
+    stderr_path.unlink(missing_ok=True)
 
     try:
         os.killpg(os.getpgid(proc.pid), _signal.SIGTERM)
         proc.wait(timeout=3)
     except Exception:
         pass
-    return {"status": "error", "port": port, "pid": None, "message": "did not become ready within 10s"}
+    msg = "did not become ready within 10s"
+    if stderr_content.strip():
+        msg += f". stderr: {stderr_content.strip()}"
+    return {"status": "error", "port": port, "pid": None, "message": msg}
 
 
 def stop_cliproxy_server() -> dict:

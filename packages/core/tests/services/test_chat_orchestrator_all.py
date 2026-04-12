@@ -78,8 +78,7 @@ async def test_send_all_delta_text_matches(multi_orchestrator):
         if event.kind == "backend_delta" and event.text:
             texts.setdefault(event.backend, "")
             texts[event.backend] += event.text
-    # Both backends are kind="fake" so deltas accumulate under one key.
-    # Each backend run produces "Hello world!" — with two READY backends
-    # of the same kind we get two runs under the same key.
-    assert "fake" in texts
-    assert "Hello world!" in texts["fake"]
+    # Each backend produces its own stream keyed by backend_id (not kind).
+    assert len(texts) >= 1
+    for text in texts.values():
+        assert "Hello world!" in text

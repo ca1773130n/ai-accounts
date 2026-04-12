@@ -137,9 +137,16 @@ class CliproxyController(Controller):
     @post("/server/start", status_code=200)
     async def server_start(self, data: _ServerStartRequest) -> dict:
         """Start CLIProxyAPI server with given port and api-key."""
-        result = start_cliproxy_server(
-            port=data.port,
-            api_key=data.api_key,
+        import asyncio
+        import re
+
+        if not (1024 <= data.port <= 65535):
+            return {"status": "error", "port": data.port, "pid": None, "message": "port must be 1024-65535"}
+        if not re.match(r"^[a-zA-Z0-9_-]+$", data.api_key):
+            return {"status": "error", "port": data.port, "pid": None, "message": "api_key contains invalid characters"}
+        # Run in thread to avoid blocking the event loop (sync polling loop inside)
+        result = await asyncio.to_thread(
+            start_cliproxy_server, port=data.port, api_key=data.api_key,
         )
         return result
 

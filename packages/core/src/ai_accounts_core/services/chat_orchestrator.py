@@ -70,11 +70,14 @@ class ChatOrchestrator:
         tasks: list[asyncio.Task[None]] = []
 
         async def _call_one(health) -> None:  # noqa: ANN001
+            # Use backend_id as key so multiple accounts of the same kind
+            # produce distinct streams (not merged under one kind label).
+            bid = health.backend_id
             try:
                 result = await self._scheduler.pick(kind=health.kind)
                 if not result:
                     await queue.put(
-                        AllModeEvent(kind="backend_error", backend=health.kind, error="no account available"),
+                        AllModeEvent(kind="backend_error", backend=bid, error="no account available"),
                     )
                     return
                 impl = self._scheduler._accounts._impl_for(health.kind)
@@ -83,30 +86,32 @@ class ChatOrchestrator:
                     request, result.credential, isolation_dir=Path(result.isolation_dir),
                 ):
                     if event.kind == "token" and isinstance(event.payload, str):
-                        await queue.put(
-                            AllModeEvent(kind="backend_delta", backend=health.kind, text=event.payload),
-                        )
+                        await queue.put(AllModeEvent(kind="backend_delta", backend=bid, text=event.payload))
                     elif event.kind == "error":
-                        await queue.put(
-                            AllModeEvent(kind="backend_error", backend=health.kind, error=str(event.payload)),
-                        )
-                await queue.put(AllModeEvent(kind="backend_complete", backend=health.kind))
-            except asyncio.TimeoutError:
-                await queue.put(AllModeEvent(kind="backend_timeout", backend=health.kind))
+                        await queue.put(AllModeEvent(kind="backend_error", backend=bid, error=str(event.payload)))
+                await queue.put(AllModeEvent(kind="backend_complete", backend=bid))
             except Exception as exc:
-                await queue.put(AllModeEvent(kind="backend_error", backend=health.kind, error=str(exc)))
+                logger.error("send_all backend %s failed: %s", bid, exc, exc_info=True)
+                await queue.put(AllModeEvent(kind="backend_error", backend=bid, error=f"{type(exc).__name__}: {exc}"))
+
+        async def _call_one_with_timeout(health) -> None:  # noqa: ANN001
+            """Wrap _call_one with timeout — catch TimeoutError at the outer level."""
+            try:
+                await asyncio.wait_for(_call_one(health), timeout=30.0)
+            except asyncio.TimeoutError:
+                await queue.put(AllModeEvent(kind="backend_timeout", backend=health.backend_id))
 
         for h in ready:
-            task = asyncio.create_task(asyncio.wait_for(_call_one(h), timeout=30.0))
+            task = asyncio.create_task(_call_one_with_timeout(h))
             tasks.append(task)
 
         async def _monitor() -> None:
             for t in tasks:
                 try:
                     await t
-                except Exception:
-                    pass  # errors already sent to queue
-            await queue.put(None)  # sentinel
+                except BaseException as exc:
+                    logger.warning("fan-out task error: %s", exc, exc_info=True)
+            await queue.put(None)  # sentinel MUST be sent no matter what
 
         monitor_task = asyncio.create_task(_monitor())
 
@@ -143,7 +148,16 @@ class ChatOrchestrator:
             return
 
         # Phase 2: synthesise via primary backend
-        primary = primary_kind or next(iter(responses))
+        # Resolve primary kind — if not specified, look up the kind of the first responder
+        if primary_kind:
+            primary = primary_kind
+        else:
+            first_bid = next(iter(responses))
+            try:
+                first_backend = await self._scheduler._accounts.get(first_bid)
+                primary = first_backend.kind
+            except Exception:
+                primary = "claude"  # fallback
         yield CompoundEvent(
             kind="synthesis_start",
             primary_backend=primary,
@@ -179,4 +193,5 @@ class ChatOrchestrator:
                     yield CompoundEvent(kind="synthesis_delta", text=event.payload)
             yield CompoundEvent(kind="synthesis_complete")
         except Exception as exc:
-            yield CompoundEvent(kind="synthesis_error", error=str(exc))
+            logger.error("compound synthesis failed for primary=%s: %s", primary, exc, exc_info=True)
+            yield CompoundEvent(kind="synthesis_error", error=f"Synthesis failed: {type(exc).__name__}: {exc}")

@@ -52,10 +52,14 @@ class ChatSendController(Controller):
                 async for event in gen:
                     payload = msgspec.json.encode(event).decode()
                     yield f"event: chat\ndata: {payload}\n\n"
-            except Exception:
-                logger.exception("chat send stream error")
+            except Exception as exc:
+                logger.exception(
+                    "chat send stream error: session=%s mode=%s",
+                    data.session_id, data.mode,
+                )
+                msg = f"{type(exc).__name__}: {exc}" if str(exc) else "Stream error"
                 error_payload = msgspec.json.encode(
-                    {"kind": "error", "payload": "Stream error"}
+                    {"kind": "error", "payload": msg}
                 ).decode()
                 yield f"event: chat\ndata: {error_payload}\n\n"
 
