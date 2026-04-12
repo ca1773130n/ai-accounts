@@ -3,9 +3,10 @@ from __future__ import annotations
 from ai_accounts_core.domain.backend import Backend, DetectResult
 from ai_accounts_core.domain.onboarding import OnboardingState, OnboardingStep
 from ai_accounts_core.ids import new_id
+from ai_accounts_core.login import LoginSession
 from ai_accounts_core.protocols.storage import StorageProtocol
 
-from .accounts import AccountService, LoginResponse
+from .accounts import AccountService
 from .errors import BackendKindUnknown, BackendNotFound, ServiceError
 
 
@@ -85,22 +86,13 @@ class OnboardingService:
         *,
         flow_kind: str,
         inputs: dict[str, str],
-    ) -> LoginResponse:
+    ) -> LoginSession:
+        """Begin a login session for the backend created during this onboarding."""
         state = await self.get(onboarding_id)
         if state.created_backend_id is None:
             raise BackendNotFound("no backend selected in this onboarding session")
-        return await self._accounts.login(
+        return await self._accounts.begin_login(
             state.created_backend_id, flow_kind=flow_kind, inputs=inputs
-        )
-
-    async def poll_login(
-        self, onboarding_id: str, *, handle: str
-    ) -> LoginResponse:
-        state = await self.get(onboarding_id)
-        if state.created_backend_id is None:
-            raise BackendNotFound("no backend selected in this onboarding session")
-        return await self._accounts.poll_login(
-            state.created_backend_id, handle=handle
         )
 
     async def finalize(self, onboarding_id: str) -> OnboardingState:

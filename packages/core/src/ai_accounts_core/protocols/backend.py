@@ -1,12 +1,13 @@
 from collections.abc import AsyncIterator
-from datetime import datetime
 from pathlib import Path
-from typing import ClassVar, Protocol, Union, runtime_checkable
+from typing import ClassVar, Protocol, runtime_checkable
 
 import msgspec
 
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatMessage
+from ai_accounts_core.login import LoginSession
+from ai_accounts_core.metadata import BackendMetadata
 
 
 class Model(msgspec.Struct, frozen=True, kw_only=True):
@@ -15,36 +16,6 @@ class Model(msgspec.Struct, frozen=True, kw_only=True):
     context_window: int | None = None
     input_price_per_mtok: float | None = None
     output_price_per_mtok: float | None = None
-
-
-class LoginFlow(msgspec.Struct, frozen=True, kw_only=True):
-    kind: str  # "api_key" | "oauth_device" | ...
-    inputs: dict[str, str] = {}
-
-
-class CredentialLogin(
-    msgspec.Struct, tag="credential", tag_field="type", frozen=True, kw_only=True
-):
-    credential: bytes
-
-
-class OAuthDeviceLogin(
-    msgspec.Struct, tag="oauth_device", tag_field="type", frozen=True, kw_only=True
-):
-    verification_uri: str
-    user_code: str
-    expires_at: datetime
-    handle: str
-
-
-class LoginError(
-    msgspec.Struct, tag="error", tag_field="type", frozen=True, kw_only=True
-):
-    code: str
-    message: str
-
-
-LoginResult = Union[CredentialLogin, OAuthDeviceLogin, LoginError]
 
 
 class ChatRequest(msgspec.Struct, frozen=True, kw_only=True):
@@ -76,10 +47,16 @@ class PtyHandle(Protocol):
 class BackendProtocol(Protocol):
     kind: ClassVar[str]
     supported_login_flows: ClassVar[frozenset[str]]
+    metadata: ClassVar[BackendMetadata]
 
     async def detect(self) -> DetectResult: ...
-    async def login(self, flow: LoginFlow, *, isolation_dir: Path) -> LoginResult: ...
-    async def poll_login(self, handle: str, *, isolation_dir: Path) -> LoginResult: ...
+    def begin_login(
+        self,
+        flow_kind: str,
+        config: dict,
+        vault_ctx: dict,
+        isolation_dir: Path,
+    ) -> LoginSession: ...
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool: ...
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]: ...
     async def chat(

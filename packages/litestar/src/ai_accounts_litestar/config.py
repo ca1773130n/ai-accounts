@@ -12,3 +12,4 @@ class AiAccountsConfig(msgspec.Struct, kw_only=True):
     backends: tuple[Any, ...] = ()
     cors_origins: tuple[str, ...] = ()
     backend_dirs_path: Path = Path("./backend_dirs")
+    login_session_ttl_seconds: float = 600.0

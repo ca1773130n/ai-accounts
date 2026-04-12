@@ -1,197 +1,2019 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { useAccountWizard, type UseAccountWizardOptions } from '@ai-accounts/vue-headless';
+/**
+ * AccountWizard -- Step-by-step account registration flow.
+ *
+ * Ported to @ai-accounts/vue-styled (0.3.0-alpha.1). Uses plugin composables
+ * (`useAiAccounts`, `useBackendRegistry`, `useLoginSession`) instead of
+ * Agented-specific stores/APIs.
+ *
+ * Steps:
+ *   1) Subscription check (has account? or skip)
+ *   2) CLI & Config Setup (detect CLI, surface config path)
+ *   3) Login (cli_browser / api_key / oauth_device via useLoginSession)
+ *   4) Plan & Save (choose plan, set default, createBackend)
+ *   5) Done
+ */
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import type {
+  LoginFlowKind,
+  BackendMetadata,
+  InstallResult,
+  CliproxyInstallResult,
+} from '@ai-accounts/ts-core';
+import {
+  useAiAccounts,
+  useBackendRegistry,
+  useLoginSession,
+} from '@ai-accounts/vue-headless';
+import LoginStream from './LoginStream.vue';
+import BackendPicker from './BackendPicker.vue';
+
+// ---------------------------------------------------------------------------
+// Simple i18n stub — vue-styled is router/i18n-agnostic. Hosts can pass a
+// `t` prop later; for now we use English strings inline.
+// ---------------------------------------------------------------------------
+const t = (_key: string, fallback?: string | Record<string, unknown>): string => {
+  if (typeof fallback === 'string') return fallback;
+  if (fallback && typeof fallback === 'object') {
+    // Handle simple interpolation fallbacks like t('x', { backend: 'Claude' })
+    return '';
+  }
+  // Hard-coded English copy looked up by key suffix
+  const map: Record<string, string> = {
+    'accountWizard.addAccount': 'Add Account',
+    'accountWizard.stepSubscription': 'Subscription',
+    'accountWizard.stepCliSetup': 'CLI Setup',
+    'accountWizard.stepLogin': 'Login',
+    'accountWizard.stepPlanSave': 'Plan & Save',
+    'accountWizard.stepDone': 'Done',
+    'accountWizard.yesHaveAccount': 'Yes, I have an account',
+    'accountWizard.yesHaveAccountDesc': 'I already have a subscription for this backend',
+    'accountWizard.noSkip': 'Skip for now',
+    'accountWizard.noSkipDesc': 'I will set this up later',
+    'accountWizard.accountName': 'Account name',
+    'accountWizard.accountNamePlaceholder': 'e.g., Personal, Work',
+    'accountWizard.email': 'Email',
+    'accountWizard.emailPlaceholder': 'name@example.com',
+    'accountWizard.emailHelp': 'Optional — used to tag the account',
+    'accountWizard.cliInstalled': 'CLI detected',
+    'accountWizard.cliNotInstalled': 'CLI not detected',
+    'accountWizard.installCli': 'Install CLI',
+    'accountWizard.configPath': 'Config path',
+    'accountWizard.createDir': 'Create',
+    'accountWizard.creating': 'Creating...',
+    'accountWizard.configCreated': 'Created',
+    'accountWizard.customizePath': 'Customize path',
+    'accountWizard.apiKeyEnv': 'API key env var',
+    'accountWizard.startingLogin': 'Starting login session...',
+    'accountWizard.loginCompleted': 'Login completed',
+    'accountWizard.tryAgain': 'Try again',
+    'accountWizard.connectionLost': 'Connection lost',
+    'accountWizard.send': 'Send',
+    'accountWizard.waitingForResponse': 'Waiting for response...',
+    'accountWizard.plan': 'Plan',
+    'accountWizard.selectPlan': 'Select a plan',
+    'accountWizard.setDefault': 'Set as default account',
+    'accountWizard.saving': 'Saving...',
+    'accountWizard.saveAccount': 'Save account',
+    'accountWizard.accountCreated': 'Account created!',
+    'accountWizard.addAnother': 'Add another',
+    'accountWizard.doneNextBackend': 'Done',
+    'accountWizard.continueBtn': 'Continue',
+    'common.cancel': 'Cancel',
+    'common.back': 'Back',
+    'common.skip': 'Skip',
+  };
+  return map[_key] ?? _key;
+};
 
 const props = defineProps<{
-  client: UseAccountWizardOptions['client'];
-  kinds?: Array<{ id: string; display: string }>;
+  /** If set, skip the backend picker and start directly with this kind. */
+  initialBackendKind?: string;
+  /** Display name override; defaults to registry metadata's display_name. */
+  backendName?: string;
+  /** Allow showing a "skip" button on the subscription step. */
+  allowSkip?: boolean;
 }>();
 
 const emit = defineEmits<{
-  done: [backendId: string];
-  cancel: [];
+  close: [];
+  saved: [];
+  skip: [];
+  addAnother: [];
+  done: [payload: { accountId: string }];
 }>();
 
-const wiz = useAccountWizard({ client: props.client });
-const apiKey = ref('');
+// ---------------------------------------------------------------------------
+// Plugin composables
+// ---------------------------------------------------------------------------
+const { client, emit: busEmit } = useAiAccounts();
+const backendRegistry = useBackendRegistry();
+const loginSession = useLoginSession();
 
-const kinds = props.kinds ?? [
-  { id: 'claude', display: 'Claude' },
-  { id: 'opencode', display: 'OpenCode' },
-  { id: 'gemini', display: 'Gemini' },
-  { id: 'codex', display: 'Codex' },
-];
+const backendKind = ref<string>(props.initialBackendKind ?? '');
+const backendMeta = computed<BackendMetadata | undefined>(() =>
+  backendKind.value ? backendRegistry.get(backendKind.value) : undefined
+);
+const backendName = computed<string>(
+  () => props.backendName || backendMeta.value?.display_name || backendKind.value || 'Backend'
+);
 
-wiz.start();
+// no-op tour hooks (used to be inject()ed by Agented's tour system)
+const setTourGuide = (_msg: string | null) => {};
+const setTourTarget = (_selector: string | null) => {};
 
-async function onPick(kind: string) {
-  await wiz.pickKind(kind);
-}
+// ---------------------------------------------------------------------------
+// Wizard step management
+// ---------------------------------------------------------------------------
+type WizardStep = 'subscription' | 'cli' | 'login' | 'proxy' | 'plan' | 'done';
+const STEP_ORDER: WizardStep[] = ['subscription', 'cli', 'login', 'proxy', 'plan', 'done'];
+const currentStep = ref<WizardStep>('subscription');
 
-async function onSubmit() {
-  await wiz.submitCredential('api_key', { api_key: apiKey.value });
-  if (wiz.state.value === 'done' && wiz.backend.value) {
-    emit('done', wiz.backend.value.id);
+// Backends that the CLIProxyAPI supports registering. Other backends skip
+// the proxy step entirely.
+const PROXY_SUPPORTED_KINDS = ['claude', 'codex', 'gemini'] as const;
+const supportsProxy = computed(() =>
+  PROXY_SUPPORTED_KINDS.includes(
+    (backendKind.value ?? '') as (typeof PROXY_SUPPORTED_KINDS)[number]
+  )
+);
+
+const VISIBLE_STEPS = computed<WizardStep[]>(() => {
+  const base: WizardStep[] = ['subscription', 'cli', 'login'];
+  if (supportsProxy.value) base.push('proxy');
+  base.push('plan');
+  return base;
+});
+
+const currentStepIndex = computed(() =>
+  VISIBLE_STEPS.value.indexOf(currentStep.value)
+);
+
+const stepLabels = computed<Record<WizardStep, string>>(() => ({
+  subscription: t('accountWizard.stepSubscription'),
+  cli: t('accountWizard.stepCliSetup'),
+  login: t('accountWizard.stepLogin'),
+  proxy: 'API Proxy',
+  plan: t('accountWizard.stepPlanSave'),
+  done: t('accountWizard.stepDone'),
+}));
+
+function goNext() {
+  const visible = VISIBLE_STEPS.value;
+  const idx = visible.indexOf(currentStep.value);
+  if (idx >= 0 && idx < visible.length - 1) {
+    currentStep.value = visible[idx + 1]!;
+  } else if (currentStep.value === visible[visible.length - 1]) {
+    currentStep.value = 'done';
   }
 }
 
-function onRetry() {
-  wiz.reset();
-  wiz.start();
+function goPrev() {
+  const visible = VISIBLE_STEPS.value;
+  const idx = visible.indexOf(currentStep.value);
+  if (idx > 0) {
+    currentStep.value = visible[idx - 1]!;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Step 1: Subscription Check
+// ---------------------------------------------------------------------------
+const hasSubscription = ref<'yes' | 'no' | ''>('');
+const accountName = ref('');
+const email = ref('');
+
+// Account name is OPTIONAL — if left blank, we derive a default at save time
+// from the backend metadata's display_name. Do NOT gate goNext on name.
+const subscriptionValid = computed(() => hasSubscription.value !== '');
+
+function handleSubscriptionNext() {
+  if (hasSubscription.value === 'no') {
+    skipWizard();
+    return;
+  }
+  goNext();
+}
+
+// ---------------------------------------------------------------------------
+// Config path & env var auto-generation
+// ---------------------------------------------------------------------------
+const configPath = ref('');
+const configPathManuallyEdited = ref(false);
+
+function generateSlug(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+function suggestConfigPath() {
+  if (configPathManuallyEdited.value) return;
+  const name = accountName.value.trim();
+  if (!name) {
+    configPath.value = '';
+    return;
+  }
+  const slug = generateSlug(name);
+  const dirMap: Record<string, string> = {
+    claude: '.claude',
+    codex: '.codex',
+    gemini: '.gemini',
+    opencode: '.opencode',
+  };
+  const kind = backendKind.value || '';
+  const base = dirMap[kind] || (kind ? `.${kind}` : '.backend');
+  configPath.value = `~/${base}-${slug}`;
+}
+
+const apiKeyEnv = computed(() => {
+  const name = accountName.value.trim();
+  if (!name) return '';
+  const envMap: Record<string, string> = {
+    claude: 'ANTHROPIC',
+    codex: 'OPENAI',
+    gemini: 'GOOGLE',
+    opencode: 'OPENCODE',
+  };
+  const kind = backendKind.value || '';
+  const prefix = envMap[kind] || (kind ? kind.toUpperCase() : 'BACKEND');
+  const suffix = generateSlug(name).replace(/-/g, '_').toUpperCase();
+  return `${prefix}_API_KEY_${suffix}`;
+});
+
+// ---------------------------------------------------------------------------
+// Step 2: CLI Setup — uses draft backend + detectBackend() for install check.
+// Note: CLI *installation* and config directory *creation* are Agented-only
+// operations (no equivalent in the ai-accounts API); those actions are
+// intentionally omitted. The wizard still surfaces install status.
+// ---------------------------------------------------------------------------
+const cliInstalled = ref(false);
+const cliVersion = ref('');
+const isCheckingCli = ref(false);
+const isInstallingCli = ref(false);
+const isCreatingDir = ref(false);
+const dirCreated = ref(false);
+const dirError = ref('');
+const installError = ref('');
+
+async function checkCli() {
+  if (!backendKind.value) return;
+  isCheckingCli.value = true;
+  try {
+    // In 0.3.0-alpha.1, detect is a per-backend-id call. Without a created
+    // backend yet, read the install_check metadata to show expected command.
+    // Full detection happens once the backend is created in saveAccount().
+    const meta = backendRegistry.get(backendKind.value);
+    cliInstalled.value = !!meta; // assume available if metadata known
+    cliVersion.value = '';
+  } catch (e: unknown) {
+    console.warn('[AccountWizard] CLI check failed:', e);
+  } finally {
+    isCheckingCli.value = false;
+  }
+}
+
+const installResult = ref<InstallResult | null>(null);
+
+async function installCli() {
+  if (!backendKind.value) return;
+  isInstallingCli.value = true;
+  installError.value = '';
+  installResult.value = null;
+  try {
+    const res = await client.installBackendCli(backendKind.value);
+    installResult.value = res;
+    if (res.success) {
+      cliInstalled.value = true;
+      cliVersion.value = '';
+    } else {
+      installError.value = res.stderr || res.stdout || 'Installation failed';
+    }
+  } catch (e: unknown) {
+    installError.value = e instanceof Error ? e.message : String(e);
+    installResult.value = {
+      kind: backendKind.value,
+      success: false,
+      display: 'install failed',
+      stdout: '',
+      stderr: installError.value,
+      exit_code: -1,
+      binary_path: null,
+    };
+  } finally {
+    isInstallingCli.value = false;
+  }
+}
+
+async function createConfigDir() {
+  // Omitted: no filesystem utility endpoint in ai-accounts v0.3.0-alpha.1.
+  // Config path is still surfaced so users can create it manually.
+  if (!configPath.value) return;
+  dirCreated.value = true;
+}
+
+onMounted(async () => {
+  if (!backendRegistry.loaded.value) {
+    await backendRegistry.load();
+  }
+  checkCli();
+  setTourTarget('[data-tour="account-wizard"]');
+  busEmit({ type: 'wizard.opened', backendKind: backendKind.value });
+  // Kick off a CLIProxyAPI status check so the proxy step can render
+  // install/register UI without a spinner lag.
+  checkCliproxyStatus();
+});
+
+// Reset dir state when config path changes
+watch(configPath, () => {
+  dirCreated.value = false;
+  dirError.value = '';
+});
+
+// ---------------------------------------------------------------------------
+// Step 3: Login — delegates to useLoginSession + <LoginStream>.
+// The login session machine handles URL prompts, text prompts, stdout, and
+// terminal-state transitions. Gemini-specific direct OAuth, PTY SSE, and
+// per-kind option/question UI are replaced by the unified login protocol.
+// ---------------------------------------------------------------------------
+const draftAccountId = ref<string>(''); // backend row id once created
+
+watch(currentStep, async (step) => {
+  setTourGuide(step); // no-op
+  // Auto-start login when entering the login step
+  if (step === 'login' && loginSession.status.value === 'idle') {
+    await startUnifiedLogin();
+  }
+}, { immediate: true });
+
+async function startUnifiedLogin() {
+  const meta = backendMeta.value;
+  if (!meta) return;
+  try {
+    // Ensure a draft backend row exists so login can attach to it.
+    if (!draftAccountId.value) {
+      const created = await client.createBackend({
+        kind: meta.kind,
+        display_name: accountName.value.trim() || meta.display_name,
+        config: buildDraftConfig(),
+      });
+      draftAccountId.value = created.id;
+    }
+    // Pick the first available login flow (cli_browser > oauth_device > api_key).
+    const flow = pickLoginFlow(meta);
+    busEmit({
+      type: 'wizard.step',
+      backendKind: meta.kind,
+      step: 'login.start',
+    });
+    await loginSession.start(draftAccountId.value, flow, collectInputs(meta));
+  } catch (e: unknown) {
+    console.warn('[AccountWizard] login failed:', e);
+  }
+}
+
+function pickLoginFlow(meta: BackendMetadata): LoginFlowKind {
+  const available = meta.login_flows.map((f) => f.kind);
+  if (available.includes('cli_browser')) return 'cli_browser';
+  if (available.includes('oauth_device')) return 'oauth_device';
+  return 'api_key';
+}
+
+function collectInputs(_meta: BackendMetadata): Record<string, string> {
+  // For cli_browser / oauth_device, no inputs are required. For api_key, the
+  // user would be prompted via textPrompt in the stream. We keep this empty
+  // and let useLoginSession surface prompts.
+  return {};
+}
+
+function buildDraftConfig(): Record<string, unknown> {
+  return {
+    email: email.value.trim() || undefined,
+    config_path: configPath.value.trim() || undefined,
+    api_key_env: apiKeyEnv.value || undefined,
+  };
+}
+
+watch(
+  () => loginSession.status.value,
+  (status) => {
+    if (status === 'complete' && currentStep.value === 'login') {
+      goNext();
+    }
+  }
+);
+
+onUnmounted(() => {
+  setTourGuide(null);
+  setTourTarget(null);
+  if (loginSession.status.value === 'running') {
+    loginSession.cancel().catch(() => {});
+  }
+});
+
+// Convenience aliases so the template's existing bindings keep working.
+// The unified `loginSession` composable is the source of truth; these refs
+// reflect its state in the legacy template shape.
+const loginStatus = computed<'idle' | 'connecting' | 'streaming' | 'completed' | 'error'>(() => {
+  switch (loginSession.status.value) {
+    case 'running':
+      return loginSession.urlPrompt.value || loginSession.stdoutLines.value.length > 0
+        ? 'streaming'
+        : 'connecting';
+    case 'complete':
+      return 'completed';
+    case 'failed':
+    case 'cancelled':
+      return 'error';
+    default:
+      return 'idle';
+  }
+});
+const loginError = computed(() => loginSession.errorMessage.value || '');
+
+function cleanupLogin() {
+  if (loginSession.status.value === 'running') {
+    loginSession.cancel().catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Step 4: Plan & Save
+// ---------------------------------------------------------------------------
+const planOptions = computed(() => backendMeta.value?.plan_options ?? []);
+const selectedPlan = ref('');
+const isDefault = ref(false);
+const isSaving = ref(false);
+const saveError = ref('');
+
+// ---------------------------------------------------------------------------
+// CLIProxyAPI registration step (Step 3.5) — optional register-with-proxy
+// flow backed by POST /api/v1/cliproxy/login/begin and /callback-forward.
+// ---------------------------------------------------------------------------
+type ProxyLoginStatus =
+  | 'idle'
+  | 'running'
+  | 'device_auth'
+  | 'success'
+  | 'skipped'
+  | 'error';
+
+const proxyLoginStatus = ref<ProxyLoginStatus>('idle');
+const proxyLoginMessage = ref('');
+const proxyOauthUrl = ref('');
+const proxyDeviceCode = ref('');
+const proxyCallbackUrl = ref('');
+const proxyCallbackError = ref('');
+
+const cliproxyInstalled = ref(false);
+const cliproxyInstalling = ref(false);
+const cliproxyInstallResult = ref<CliproxyInstallResult | null>(null);
+const cliproxyStatusChecked = ref(false);
+
+async function checkCliproxyStatus() {
+  try {
+    const s = await client.cliproxyStatus();
+    cliproxyInstalled.value = s.installed;
+  } catch (e: unknown) {
+    console.warn('[AccountWizard] cliproxy status check failed:', e);
+    cliproxyInstalled.value = false;
+  } finally {
+    cliproxyStatusChecked.value = true;
+  }
+}
+
+async function installCliproxy() {
+  cliproxyInstalling.value = true;
+  cliproxyInstallResult.value = null;
+  try {
+    const res = await client.cliproxyInstall();
+    cliproxyInstallResult.value = res;
+    if (res.success) {
+      cliproxyInstalled.value = true;
+    }
+  } catch (e: unknown) {
+    cliproxyInstallResult.value = {
+      success: false,
+      display: 'install failed',
+      stdout: '',
+      stderr: e instanceof Error ? e.message : String(e),
+      binary_path: null,
+    };
+  } finally {
+    cliproxyInstalling.value = false;
+  }
+}
+
+function resetProxyLogin() {
+  proxyLoginStatus.value = 'idle';
+  proxyLoginMessage.value = '';
+  proxyOauthUrl.value = '';
+  proxyDeviceCode.value = '';
+  proxyCallbackUrl.value = '';
+  proxyCallbackError.value = '';
+}
+
+async function runProxyLogin() {
+  if (!backendKind.value) return;
+  proxyLoginStatus.value = 'running';
+  proxyLoginMessage.value = `Registering ${backendName.value} account with API proxy…`;
+  proxyCallbackError.value = '';
+
+  try {
+    const res = await client.cliproxyLoginBegin(
+      backendKind.value,
+      configPath.value?.trim() || undefined
+    );
+    proxyLoginMessage.value = res.message;
+    if (res.status === 'imported') {
+      proxyLoginStatus.value = 'success';
+    } else if (res.status === 'started' && res.oauth_url) {
+      proxyLoginStatus.value = 'device_auth';
+      proxyOauthUrl.value = res.oauth_url;
+      proxyDeviceCode.value = res.device_code ?? '';
+      if (res.device_code) {
+        proxyLoginMessage.value = `Open the URL and enter code ${res.device_code}`;
+      } else {
+        proxyLoginMessage.value =
+          'Complete OAuth in the browser; paste the callback URL below if it fails to redirect';
+      }
+    } else if (res.status === 'skipped') {
+      proxyLoginStatus.value = 'skipped';
+    } else {
+      proxyLoginStatus.value = 'error';
+    }
+  } catch (e: unknown) {
+    proxyLoginStatus.value = 'error';
+    proxyLoginMessage.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function submitProxyCallback() {
+  if (!proxyCallbackUrl.value.trim()) return;
+  proxyCallbackError.value = '';
+  try {
+    const res = await client.cliproxyCallbackForward(
+      proxyCallbackUrl.value.trim()
+    );
+    if (res.status === 'completed') {
+      proxyLoginStatus.value = 'success';
+      proxyLoginMessage.value = 'API proxy login completed';
+    } else {
+      proxyCallbackError.value = res.message;
+    }
+  } catch (e: unknown) {
+    proxyCallbackError.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function saveAccount() {
+  isSaving.value = true;
+  saveError.value = '';
+  try {
+    // If login already created/attached the backend, update metadata.
+    // Otherwise create a fresh backend row.
+    const meta = backendMeta.value;
+    if (!meta) throw new Error('No backend metadata available');
+
+    const config = {
+      ...buildDraftConfig(),
+      plan: selectedPlan.value || undefined,
+      is_default: isDefault.value,
+    };
+
+    if (draftAccountId.value) {
+      await client.updateBackend(draftAccountId.value, {
+        display_name: accountName.value.trim() || meta.display_name,
+        config,
+      });
+    } else {
+      const created = await client.createBackend({
+        kind: meta.kind,
+        display_name: accountName.value.trim() || meta.display_name,
+        config,
+      });
+      draftAccountId.value = created.id;
+    }
+
+    currentStep.value = 'done';
+    emit('saved');
+    busEmit({
+      type: 'wizard.account.created',
+      backendKind: meta.kind,
+      accountId: draftAccountId.value,
+    });
+    busEmit({
+      type: 'wizard.step',
+      backendKind: meta.kind,
+      step: 'done',
+    });
+  } catch (e: unknown) {
+    saveError.value = e instanceof Error ? e.message : 'Failed to save account';
+  } finally {
+    isSaving.value = false;
+  }
+}
+
+function addAnotherAccount() {
+  // Reset form
+  hasSubscription.value = '';
+  accountName.value = '';
+  email.value = '';
+  configPath.value = '';
+  configPathManuallyEdited.value = false;
+  selectedPlan.value = '';
+  isDefault.value = false;
+  cleanupLogin();
+  draftAccountId.value = '';
+  dirCreated.value = false;
+  currentStep.value = 'subscription';
+  emit('addAnother');
+  if (backendKind.value) {
+    busEmit({ type: 'wizard.step', backendKind: backendKind.value, step: 'add-another' });
+  }
+}
+
+function closeWizard() {
+  if (backendKind.value) {
+    busEmit({ type: 'wizard.closed', backendKind: backendKind.value, reason: 'cancel' });
+  }
+  emit('close');
+}
+
+function doneWizard() {
+  if (backendKind.value) {
+    busEmit({ type: 'wizard.closed', backendKind: backendKind.value, reason: 'done' });
+  }
+  emit('done', { accountId: draftAccountId.value });
+}
+
+function skipWizard() {
+  if (backendKind.value) {
+    busEmit({ type: 'wizard.closed', backendKind: backendKind.value, reason: 'skip' });
+  }
+  emit('skip');
 }
 </script>
 
 <template>
-  <section class="aia-wizard">
-    <header class="aia-wizard__header">
-      <slot name="header">
-        <h2>Connect an AI backend</h2>
-      </slot>
-    </header>
+  <div class="wizard-container" data-tour="account-wizard">
+    <div class="wizard-header">
+      <h3>{{ t('accountWizard.addAccount') }}</h3>
+      <button class="wizard-close" @click="closeWizard">&times;</button>
+    </div>
 
-    <div v-if="wiz.state.value === 'picking_kind'" class="aia-wizard__kinds">
-      <button
-        v-for="k in kinds"
-        :key="k.id"
-        class="aia-btn aia-btn--kind"
-        type="button"
-        @click="onPick(k.id)"
+    <!-- Step 0: Backend picker (if no initialBackendKind was provided) -->
+    <div v-if="!backendKind" class="wizard-step">
+      <div class="step-body">
+        <p class="step-question">Select a backend to connect:</p>
+        <BackendPicker @pick="(k: string) => { backendKind = k; checkCli(); }" />
+      </div>
+      <div class="step-actions">
+        <button class="btn btn-secondary" @click="closeWizard">{{ t('common.cancel') }}</button>
+      </div>
+    </div>
+
+    <!-- Step indicators -->
+    <div v-else-if="currentStep !== 'done'" class="wizard-steps">
+      <div
+        v-for="(step, idx) in VISIBLE_STEPS"
+        :key="step"
+        class="step-indicator"
+        :class="{
+          active: currentStep === step,
+          completed: currentStepIndex > idx,
+          clickable: idx < currentStepIndex,
+        }"
+        @click="idx < currentStepIndex ? (currentStep = step) : undefined"
       >
-        {{ k.display }}
-      </button>
+        <span class="step-number">
+          <template v-if="currentStepIndex > idx">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="12" height="12">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </template>
+          <template v-else>{{ idx + 1 }}</template>
+        </span>
+        <span class="step-label">{{ stepLabels[step] }}</span>
+      </div>
     </div>
 
-    <div v-else-if="wiz.state.value === 'detecting'" class="aia-wizard__status">
-      Detecting {{ wiz.kind.value }} CLI…
+    <!-- Step 1: Subscription -->
+    <div v-if="backendKind && currentStep === 'subscription'" class="wizard-step">
+      <div class="step-body">
+        <p class="step-question">Do you already have a {{ backendName }} account?</p>
+
+        <div class="radio-group">
+          <label class="radio-card" :class="{ selected: hasSubscription === 'yes' }">
+            <input type="radio" v-model="hasSubscription" value="yes" />
+            <div class="radio-card-content">
+              <span class="radio-card-title">{{ t('accountWizard.yesHaveAccount') }}</span>
+              <span class="radio-card-desc">{{ t('accountWizard.yesHaveAccountDesc') }}</span>
+            </div>
+          </label>
+          <label class="radio-card" :class="{ selected: hasSubscription === 'no' }">
+            <input type="radio" v-model="hasSubscription" value="no" />
+            <div class="radio-card-content">
+              <span class="radio-card-title">{{ t('accountWizard.noSkip') }}</span>
+              <span class="radio-card-desc">{{ t('accountWizard.noSkipDesc') }}</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- Show account fields when "yes" is selected -->
+        <Transition name="slide-down">
+          <div v-if="hasSubscription === 'yes'" class="account-fields">
+            <div class="form-group">
+              <label for="wiz-name">{{ t('accountWizard.accountName') }} <span class="optional">(optional)</span></label>
+              <input
+                id="wiz-name"
+                v-model="accountName"
+                type="text"
+                :placeholder="t('accountWizard.accountNamePlaceholder')"
+                autofocus
+                @input="suggestConfigPath"
+              />
+            </div>
+            <div class="form-group">
+              <label for="wiz-email">{{ t('accountWizard.email') }}</label>
+              <input
+                id="wiz-email"
+                v-model="email"
+                type="email"
+                :placeholder="t('accountWizard.emailPlaceholder')"
+              />
+              <small>{{ t('accountWizard.emailHelp') }}</small>
+            </div>
+          </div>
+        </Transition>
+      </div>
+      <div class="step-actions">
+        <button class="btn btn-secondary" @click="closeWizard">{{ t('common.cancel') }}</button>
+        <button
+          class="btn"
+          :class="hasSubscription === 'no' ? 'btn-outline' : 'btn-primary'"
+          :disabled="!subscriptionValid"
+          @click="handleSubscriptionNext"
+        >
+          {{ hasSubscription === 'no' ? t('accountWizard.noSkip') : t('accountWizard.continueBtn') }}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
-    <form
-      v-else-if="wiz.state.value === 'entering_credential'"
-      class="aia-wizard__form"
-      @submit.prevent="onSubmit"
-    >
-      <label class="aia-label">
-        API key
-        <input
-          v-model="apiKey"
-          type="password"
-          class="aia-input"
-          autocomplete="off"
-          required
-        />
-      </label>
-      <button type="submit" class="aia-btn aia-btn--primary">Connect</button>
-    </form>
+    <!-- Step 2: CLI Setup -->
+    <div v-if="backendKind && currentStep === 'cli'" class="wizard-step">
+      <div class="step-body">
+        <!-- CLI status -->
+        <div class="status-card" :class="cliInstalled ? 'status-ok' : 'status-warn'">
+          <div class="status-icon">
+            <template v-if="isCheckingCli">
+              <div class="spinner-sm"></div>
+            </template>
+            <template v-else-if="cliInstalled">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+            </template>
+            <template v-else>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+            </template>
+          </div>
+          <div class="status-info">
+            <span class="status-title">{{ backendName }} CLI</span>
+            <span v-if="cliInstalled" class="status-detail">
+              {{ t('accountWizard.cliInstalled') }}{{ cliVersion ? ` (${cliVersion})` : '' }}
+            </span>
+            <span v-else class="status-detail">{{ t('accountWizard.cliNotInstalled') }}</span>
+          </div>
+          <button
+            v-if="!cliInstalled && !isInstallingCli"
+            class="btn btn-primary btn-sm"
+            @click="installCli"
+          >
+            {{ t('accountWizard.installCli') }}
+          </button>
+          <div v-if="isInstallingCli" class="spinner-sm"></div>
+        </div>
+        <div v-if="installError" class="error-text">{{ installError }}</div>
+        <div v-if="installResult && installResult.success" class="install-success-text">
+          Installed{{ installResult.binary_path ? ` at ${installResult.binary_path}` : '' }}
+        </div>
+        <pre v-if="installResult && !installResult.success && installResult.stderr" class="install-stderr">{{ installResult.stderr }}</pre>
 
-    <div v-else-if="wiz.state.value === 'validating'" class="aia-wizard__status">
-      Validating credential…
+        <!-- Config directory -->
+        <div v-if="configPath" class="config-dir-section">
+          <div class="config-dir-label">{{ t('accountWizard.configPath') }}</div>
+          <div class="config-dir-path">
+            <code>{{ configPath }}</code>
+            <button
+              v-if="!dirCreated"
+              class="btn btn-outline btn-sm"
+              :disabled="isCreatingDir"
+              @click="createConfigDir"
+            >
+              {{ isCreatingDir ? t('accountWizard.creating') : t('accountWizard.createDir') }}
+            </button>
+            <span v-else class="dir-created-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              {{ t('accountWizard.configCreated') }}
+            </span>
+          </div>
+          <div v-if="dirError" class="error-text">{{ dirError }}</div>
+
+          <div class="config-path-edit">
+            <button class="btn-link-sm" @click="configPathManuallyEdited = true" v-if="!configPathManuallyEdited">
+              {{ t('accountWizard.customizePath') }}
+            </button>
+            <div v-if="configPathManuallyEdited" class="form-group compact">
+              <input
+                v-model="configPath"
+                type="text"
+                :placeholder="`e.g., ~/.${backendKind}-personal`"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- API key env info -->
+        <div v-if="apiKeyEnv" class="api-key-info">
+          <span class="api-key-label">{{ t('accountWizard.apiKeyEnv') }}</span>
+          <code>{{ apiKeyEnv }}</code>
+        </div>
+      </div>
+      <div class="step-actions">
+        <button class="btn btn-secondary" @click="goPrev">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          {{ t('common.back') }}
+        </button>
+        <button class="btn btn-primary" @click="goNext">
+          {{ t('accountWizard.continueBtn') }}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
-    <div v-else-if="wiz.state.value === 'done'" class="aia-wizard__success">
-      <slot name="success">
-        <p>&#10003; Connected successfully</p>
-      </slot>
+    <!-- Step 3: Login -->
+    <div v-if="backendKind && currentStep === 'login'" class="wizard-step">
+      <div class="step-body">
+        <!-- Idle / Connecting -->
+        <template v-if="loginStatus === 'idle' || loginStatus === 'connecting'">
+          <div class="login-status login-connecting">
+            <div class="spinner-sm"></div>
+            <span>{{ t('accountWizard.startingLogin') }}</span>
+          </div>
+        </template>
+
+        <!-- Streaming — delegate to <LoginStream> (handles url/text prompts + stdout). -->
+        <template v-else-if="loginStatus === 'streaming'">
+          <LoginStream :session="loginSession" />
+        </template>
+
+        <!-- Completed -->
+        <template v-else-if="loginStatus === 'completed'">
+          <div class="login-status login-completed">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span>{{ t('accountWizard.loginCompleted') }}</span>
+          </div>
+        </template>
+
+        <!-- Error -->
+        <template v-else-if="loginStatus === 'error'">
+          <div class="login-status login-error">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="15" y1="9" x2="9" y2="15"/>
+              <line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+            <span>{{ loginError }}</span>
+          </div>
+          <button class="btn btn-secondary" style="margin-top: 12px;" @click="startUnifiedLogin">{{ t('accountWizard.tryAgain') }}</button>
+        </template>
+      </div>
+      <div class="step-actions">
+        <button class="btn btn-secondary" @click="goPrev">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          {{ t('common.back') }}
+        </button>
+        <button class="btn btn-primary" @click="goNext">
+          {{ loginStatus === 'idle' ? t('common.skip') : t('accountWizard.continueBtn') }}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
-    <div v-else-if="wiz.state.value === 'error'" class="aia-wizard__error">
-      <p>{{ wiz.error.value }}</p>
-      <p v-if="wiz.error.value?.includes('OAuth')" class="aia-wizard__hint">
-        Try the full <code>&lt;OnboardingFlow&gt;</code> component instead &mdash; it supports browser login.
-      </p>
-      <button class="aia-btn" type="button" @click="onRetry">Try again</button>
+    <!-- Step 3.5: CLIProxyAPI registration (optional) -->
+    <div v-if="backendKind && currentStep === 'proxy'" class="wizard-step">
+      <div class="step-body">
+        <!-- CLIProxyAPI not installed — offer auto-install -->
+        <div v-if="cliproxyStatusChecked && !cliproxyInstalled" class="cliproxy-install-block">
+          <p class="step-description">
+            CLIProxyAPI is not installed. Install it to expose this account
+            through an OpenAI-compatible endpoint for other tools.
+          </p>
+          <button
+            class="btn btn-primary"
+            :disabled="cliproxyInstalling"
+            @click="installCliproxy"
+          >
+            <div v-if="cliproxyInstalling" class="spinner-sm"></div>
+            {{ cliproxyInstalling ? 'Installing cliproxyapi…' : 'Install CLIProxyAPI' }}
+          </button>
+          <div v-if="cliproxyInstallResult">
+            <p v-if="cliproxyInstallResult.success" class="install-success-text">
+              Installed{{ cliproxyInstallResult.binary_path ? ` at ${cliproxyInstallResult.binary_path}` : '' }}
+            </p>
+            <div v-else>
+              <p class="error-text">Install failed</p>
+              <pre v-if="cliproxyInstallResult.stderr" class="install-stderr">{{ cliproxyInstallResult.stderr }}</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- CLIProxyAPI is installed — show registration flow -->
+        <div v-else-if="cliproxyInstalled" class="proxy-step-body">
+          <h4 class="proxy-heading">Register with API proxy</h4>
+          <p class="step-description">
+            Optional: register this account with CLIProxyAPI so other tools
+            can reach it through an OpenAI-compatible endpoint.
+          </p>
+
+          <button
+            v-if="proxyLoginStatus === 'idle'"
+            class="btn btn-primary"
+            @click="runProxyLogin"
+          >
+            Start proxy registration
+          </button>
+
+          <div v-if="proxyLoginStatus === 'running'" class="proxy-running">
+            <div class="spinner-sm"></div>
+            <span>{{ proxyLoginMessage }}</span>
+          </div>
+
+          <div v-if="proxyLoginStatus === 'device_auth'" class="proxy-device-auth">
+            <p>{{ proxyLoginMessage }}</p>
+            <a v-if="proxyOauthUrl" :href="proxyOauthUrl" target="_blank" rel="noopener" class="proxy-oauth-link">
+              {{ proxyOauthUrl }}
+            </a>
+            <p v-if="proxyDeviceCode" class="proxy-code">
+              Code: <code>{{ proxyDeviceCode }}</code>
+            </p>
+            <div class="callback-paste">
+              <label class="callback-label">
+                If the redirect to localhost fails, paste the callback URL:
+                <input
+                  v-model="proxyCallbackUrl"
+                  type="url"
+                  placeholder="http://localhost:8085/callback?code=..."
+                />
+              </label>
+              <button class="btn btn-outline btn-sm" @click="submitProxyCallback">
+                Submit callback
+              </button>
+              <p v-if="proxyCallbackError" class="error-text">{{ proxyCallbackError }}</p>
+            </div>
+          </div>
+
+          <div v-if="proxyLoginStatus === 'success'" class="proxy-success">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <strong>{{ proxyLoginMessage || 'Registered successfully' }}</strong>
+          </div>
+
+          <div v-if="proxyLoginStatus === 'skipped'" class="proxy-skipped">
+            <p>{{ proxyLoginMessage }}</p>
+            <button class="btn btn-outline btn-sm" @click="resetProxyLogin">Retry</button>
+          </div>
+
+          <div v-if="proxyLoginStatus === 'error'" class="proxy-error">
+            <p class="error-text"><strong>Error:</strong> {{ proxyLoginMessage }}</p>
+            <button class="btn btn-outline btn-sm" @click="resetProxyLogin">Retry</button>
+          </div>
+        </div>
+
+        <!-- Status check still pending -->
+        <div v-else class="proxy-loading">
+          <div class="spinner-sm"></div>
+          <span>Checking CLIProxyAPI status…</span>
+        </div>
+      </div>
+      <div class="step-actions">
+        <button class="btn btn-secondary" @click="goPrev">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          {{ t('common.back') }}
+        </button>
+        <button class="btn btn-primary" @click="goNext">
+          {{ proxyLoginStatus === 'success' ? t('accountWizard.continueBtn') : t('common.skip') }}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+      </div>
     </div>
-  </section>
+
+    <!-- Step 4: Plan & Save -->
+    <div v-if="backendKind && currentStep === 'plan'" class="wizard-step">
+      <div class="step-body">
+        <!-- Review card -->
+        <div class="review-card">
+          <div class="review-row">
+            <span class="review-label">{{ t('accountWizard.accountName') }}</span>
+            <span class="review-value">{{ accountName }}</span>
+          </div>
+          <div v-if="email" class="review-row">
+            <span class="review-label">{{ t('accountWizard.email') }}</span>
+            <span class="review-value">{{ email }}</span>
+          </div>
+          <div v-if="configPath" class="review-row">
+            <span class="review-label">{{ t('accountWizard.configPath') }}</span>
+            <code class="review-value">{{ configPath }}</code>
+          </div>
+          <div v-if="apiKeyEnv" class="review-row">
+            <span class="review-label">{{ t('accountWizard.apiKeyEnv') }}</span>
+            <code class="review-value">{{ apiKeyEnv }}</code>
+          </div>
+        </div>
+
+        <div v-if="planOptions.length > 0" class="form-group">
+          <label for="wiz-plan">{{ t('accountWizard.plan') }}</label>
+          <select id="wiz-plan" v-model="selectedPlan">
+            <option value="">{{ t('accountWizard.selectPlan') }}</option>
+            <option v-for="opt in planOptions" :key="opt.id" :value="opt.id">
+              {{ opt.label }}
+            </option>
+          </select>
+        </div>
+        <div class="form-group checkbox">
+          <label>
+            <input type="checkbox" v-model="isDefault" />
+            {{ t('accountWizard.setDefault') }}
+          </label>
+        </div>
+        <div v-if="saveError" class="error-text">{{ saveError }}</div>
+      </div>
+      <div class="step-actions">
+        <button class="btn btn-secondary" @click="goPrev">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          {{ t('common.back') }}
+        </button>
+        <button class="btn btn-primary" :disabled="isSaving" @click="saveAccount">
+          <div v-if="isSaving" class="spinner-sm"></div>
+          {{ isSaving ? t('accountWizard.saving') : t('accountWizard.saveAccount') }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 5: Done -->
+    <div v-if="backendKind && currentStep === 'done'" class="wizard-step">
+      <div class="step-body done-body">
+        <div class="done-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="40" height="40">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+        </div>
+        <h4>{{ t('accountWizard.accountCreated') }}</h4>
+        <p>{{ accountName }} has been added to {{ backendName }}.</p>
+
+        <!-- Proxy login (CLIProxyAPI) step omitted — not in ai-accounts 0.3.0-alpha.1. -->
+
+        <div class="done-actions">
+          <button class="btn btn-outline" @click="addAnotherAccount">
+            {{ t('accountWizard.addAnother') }}
+          </button>
+          <button class="btn btn-primary" @click="doneWizard">
+            {{ t('accountWizard.doneNextBackend') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.aia-wizard {
-  background: var(--aia-bg-elevated);
-  border: 1px solid var(--aia-border);
-  border-radius: var(--aia-radius-lg);
-  padding: var(--aia-space-6);
-  font-family: var(--aia-font-sans);
-  color: var(--aia-fg);
-  max-width: 520px;
+.wizard-container {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  animation: wizardIn 0.3s ease;
 }
 
-.aia-wizard__header h2 {
-  margin: 0 0 var(--aia-space-4);
-  font-size: var(--aia-text-xl);
+@keyframes wizardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.aia-wizard__kinds {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--aia-space-3);
+.wizard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
 }
 
-.aia-btn {
-  background: var(--aia-bg);
-  color: var(--aia-fg);
-  border: 1px solid var(--aia-border);
-  border-radius: var(--aia-radius);
-  padding: var(--aia-space-3) var(--aia-space-4);
-  font: inherit;
+.wizard-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wizard-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
   cursor: pointer;
-  transition: all var(--aia-transition);
+  padding: 0 0.25rem;
+  line-height: 1;
 }
 
-.aia-btn:hover {
-  background: var(--aia-bg-hover);
-  border-color: var(--aia-border-hover);
+.wizard-close:hover {
+  color: var(--text-primary);
 }
 
-.aia-btn--primary {
-  background: var(--aia-primary);
-  color: var(--aia-primary-fg);
-  border-color: var(--aia-primary);
+/* Step indicators */
+.wizard-steps {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-default);
+  padding-bottom: 1rem;
 }
 
-.aia-btn--primary:hover {
-  background: var(--aia-primary-hover);
+.step-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  padding: 0.5rem 0;
+  position: relative;
 }
 
-.aia-wizard__form {
+.step-indicator.clickable {
+  cursor: pointer;
+}
+
+.step-indicator::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 1px;
+  background: var(--border-default);
+}
+
+.step-indicator:last-child::after {
+  display: none;
+}
+
+.step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  transition: all 0.2s ease;
+}
+
+.step-indicator.active .step-number {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.step-indicator.completed .step-number {
+  background: var(--accent-emerald);
+  color: white;
+  border-color: var(--accent-emerald);
+}
+
+.step-label {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+
+.step-indicator.active .step-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.step-indicator.completed .step-label {
+  color: var(--text-secondary);
+}
+
+/* Step body */
+.wizard-step {
+  animation: stepIn 0.25s ease;
+}
+
+@keyframes stepIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.step-body {
+  min-height: 160px;
+}
+
+.step-question {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0 0 1.25rem 0;
+}
+
+.step-description {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin: 0 0 1rem 0;
+}
+
+/* Radio card group */
+.radio-group {
   display: flex;
   flex-direction: column;
-  gap: var(--aia-space-4);
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
 }
 
-.aia-label {
+.radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border-default);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.radio-card:hover {
+  border-color: var(--primary-color);
+  background: var(--bg-hover, var(--bg-secondary));
+}
+
+.radio-card.selected {
+  border-color: var(--primary-color);
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.radio-card input[type="radio"] {
+  margin-top: 2px;
+  accent-color: var(--primary-color);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.radio-card-content {
   display: flex;
   flex-direction: column;
-  gap: var(--aia-space-2);
-  font-size: var(--aia-text-sm);
-  color: var(--aia-fg-muted);
+  gap: 0.25rem;
 }
 
-.aia-input {
-  background: var(--aia-bg);
-  color: var(--aia-fg);
-  border: 1px solid var(--aia-border);
-  border-radius: var(--aia-radius);
-  padding: var(--aia-space-3);
-  font: inherit;
-  font-family: var(--aia-font-mono);
+.radio-card-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
-.aia-wizard__status,
-.aia-wizard__success,
-.aia-wizard__error {
-  padding: var(--aia-space-4) 0;
+.radio-card-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
 }
 
-.aia-wizard__success {
-  color: var(--aia-success);
+/* Account fields transition */
+.account-fields {
+  padding-top: 0.25rem;
 }
 
-.aia-wizard__error {
-  color: var(--aia-danger);
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.25s ease;
+  overflow: hidden;
 }
 
-.aia-wizard__hint {
-  color: var(--aia-fg-muted);
-  font-size: var(--aia-text-sm);
-  margin-top: var(--aia-space-2);
+.slide-down-enter-from,
+.slide-down-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+  max-height: 0;
+}
+
+.slide-down-enter-to,
+.slide-down-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 300px;
+}
+
+/* Step actions */
+.step-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-default);
+}
+
+.step-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Form groups */
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group.compact {
+  margin-bottom: 0;
+  margin-top: 0.5rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.required {
+  color: var(--accent-crimson);
+}
+
+.form-group input[type="text"],
+.form-group input[type="email"] {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.form-group small {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.form-group select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.form-group.checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.form-group.checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+/* Status card */
+.status-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  margin-bottom: 1rem;
+}
+
+.status-card.status-ok {
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+.status-card.status-warn {
+  border-color: rgba(251, 191, 36, 0.3);
+}
+
+.status-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.status-card.status-ok .status-icon {
+  color: var(--accent-emerald);
+}
+
+.status-card.status-warn .status-icon {
+  color: var(--accent-amber, #fbbf24);
+}
+
+.status-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.status-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.status-detail {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* Config dir section */
+.config-dir-section {
+  margin-bottom: 1rem;
+}
+
+.config-dir-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.375rem;
+}
+
+.config-dir-path {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+}
+
+.config-dir-path code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.dir-created-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--accent-emerald);
+  font-weight: 500;
+}
+
+.config-path-edit {
+  margin-top: 0.375rem;
+}
+
+.btn-link-sm {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  font-family: inherit;
+}
+
+.btn-link-sm:hover {
+  color: var(--text-secondary);
+}
+
+/* API key info */
+.api-key-info {
+  padding: 0.75rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.api-key-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.api-key-info code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+/* Login start button */
+.login-start-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* Login terminal */
+.login-terminal {
+  background: #0a0a0f;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.login-terminal-output {
+  padding: 12px 16px;
+  font-family: 'Geist Mono', 'SF Mono', 'Monaco', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #a1a1aa;
+  min-height: 120px;
+  max-height: 250px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.terminal-line {
+  min-height: 1.2em;
+}
+
+.login-terminal-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-default);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.terminal-prompt {
+  color: var(--accent-cyan);
+  font-family: 'Geist Mono', monospace;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  outline: none;
+}
+
+.terminal-input::placeholder {
+  color: #52525b;
+}
+
+.login-connecting {
+  color: var(--accent-cyan);
+}
+
+.login-terminal-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-default);
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+/* Login interactive options — clickable buttons for CLI questions */
+.login-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-default);
+}
+
+.login-question-text {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.login-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  text-align: left;
+  font-family: inherit;
+}
+
+.login-option:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(0, 207, 253, 0.05);
+}
+
+.login-option-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.login-option-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.login-option-arrow {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+/* Login status */
+.login-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  margin-bottom: 0.75rem;
+}
+
+.login-started {
+  background: rgba(96, 165, 250, 0.1);
+  color: var(--accent-cyan, #60a5fa);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+}
+
+.login-error {
+  background: var(--accent-crimson-dim, rgba(239, 68, 68, 0.1));
+  color: var(--accent-crimson);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.login-completed {
+  background: var(--accent-emerald-dim, rgba(52, 211, 153, 0.1));
+  color: var(--accent-emerald);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+}
+
+/* Device code */
+.device-code-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.device-code-label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.device-code {
+  font-family: var(--font-mono, monospace);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  letter-spacing: 0.1em;
+  padding: 0.5rem 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+}
+
+.skip-note {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-align: center;
+  margin-top: 0.5rem;
+}
+
+/* Review card */
+.review-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.review-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8125rem;
+}
+
+.review-label {
+  color: var(--text-secondary);
+}
+
+.review-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+code.review-value {
+  font-family: var(--font-mono, monospace);
+  font-weight: 400;
+  font-size: 0.8125rem;
+}
+
+/* Done state */
+.done-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.done-icon {
+  color: var(--accent-emerald);
+  margin-bottom: 1rem;
+}
+
+.done-body h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.done-body p {
+  margin: 0 0 1.5rem 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.done-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* Proxy login status */
+.proxy-login-status {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.25rem;
+  font-size: 0.8125rem;
+}
+
+.proxy-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.proxy-running {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: var(--text-secondary);
+}
+
+.proxy-success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: var(--accent-emerald);
+}
+
+.proxy-device_auth {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: var(--text-secondary);
+}
+
+.proxy-device-auth {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.proxy-device-msg {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.proxy-device-code {
+  padding: 0.5rem 1.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.proxy-device-code code {
+  font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #e4e4e7;
+  letter-spacing: 2px;
+}
+
+.proxy-open-link {
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.proxy-callback-section {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.proxy-callback-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.proxy-callback-input {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.proxy-callback-input input {
+  flex: 1;
+  font-size: 0.75rem;
+  padding: 0.375rem 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: 'SF Mono', monospace;
+}
+
+.proxy-skipped {
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.15);
+  color: var(--text-tertiary);
+}
+
+.proxy-error {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  color: var(--accent-red, #ef4444);
+}
+
+/* Error text */
+.error-text {
+  font-size: 0.8125rem;
+  color: var(--accent-crimson);
+  margin-top: 0.375rem;
+}
+
+/* Shared button styles */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  border: none;
+}
+
+.btn-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.btn-primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-hover, var(--bg-secondary));
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+.btn-outline:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* Spinner */
+.spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

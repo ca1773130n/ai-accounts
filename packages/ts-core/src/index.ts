@@ -12,6 +12,32 @@ export type {
   DetectResultsDTO,
 } from './client';
 export type { paths as AiAccountsApiPaths } from './client/generated';
+export type {
+  LoginEvent,
+  UrlPrompt,
+  TextPrompt,
+  StdoutChunk,
+  ProgressUpdate,
+  LoginComplete,
+  LoginFailed,
+  PromptAnswer,
+  LoginFlowKind,
+} from './types/login';
+export type {
+  BackendMetadata,
+  InstallCheck,
+  InputSpec,
+  LoginFlowSpec,
+  PlanOption,
+} from './types/metadata';
+export type {
+  InstallResult,
+  CliproxyStatus,
+  CliproxyInstallResult,
+  CliproxyLoginBeginResponse,
+  CliproxyCallbackForwardResponse,
+} from './types/install';
+export type { AiAccountsEvent, AiAccountsEventHandler } from './events';
 export { createAccountWizard } from './machines/accountWizard';
 export type {
   AccountWizard,

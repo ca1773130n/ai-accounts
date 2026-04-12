@@ -1,3 +1,4 @@
+import msgspec
 from litestar import Controller, get, post, status_codes
 
 from ai_accounts_core.services.onboarding import OnboardingService
@@ -6,12 +7,18 @@ from ..dto import (
     BackendDTO,
     DetectResultDTO,
     DetectResultsDTO,
-    LoginRequest,
-    LoginResponseDTO,
     OnboardingStateDTO,
     PickKindRequest,
-    PollLoginRequest,
 )
+
+
+class _BeginLoginRequest(msgspec.Struct, kw_only=True):
+    flow_kind: str
+    inputs: dict[str, str] = {}
+
+
+class _BeginLoginResponse(msgspec.Struct, kw_only=True):
+    session_id: str
 
 
 class OnboardingController(Controller):
@@ -54,28 +61,16 @@ class OnboardingController(Controller):
         return BackendDTO.from_domain(backend)
 
     @post("/{onboarding_id:str}/login")
-    async def login(
+    async def begin_login(
         self,
         onboarding_id: str,
-        data: LoginRequest,
+        data: _BeginLoginRequest,
         onboarding_service: OnboardingService,
-    ) -> LoginResponseDTO:
-        response = await onboarding_service.begin_login(
+    ) -> _BeginLoginResponse:
+        session = await onboarding_service.begin_login(
             onboarding_id, flow_kind=data.flow_kind, inputs=data.inputs
         )
-        return LoginResponseDTO.from_service(response)
-
-    @post("/{onboarding_id:str}/login/poll")
-    async def poll_login(
-        self,
-        onboarding_id: str,
-        data: PollLoginRequest,
-        onboarding_service: OnboardingService,
-    ) -> LoginResponseDTO:
-        response = await onboarding_service.poll_login(
-            onboarding_id, handle=data.handle
-        )
-        return LoginResponseDTO.from_service(response)
+        return _BeginLoginResponse(session_id=session.session_id)
 
     @post("/{onboarding_id:str}/finalize")
     async def finalize(

@@ -1,0 +1,262 @@
+"""PTY-based CLI subprocess orchestrator.
+
+Ported from Agented's backend/app/services/pty_service.py +
+backend_cli_service.py. Runs a child CLI inside a pseudo-terminal so tools
+that require TTY (claude, codex, interactive gemini) launch correctly.
+Streams ANSI-stripped output as async str chunks, accepts stdin writes,
+supports graceful terminate + wait.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import os
+import pty
+import re
+import signal
+import time
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from pathlib import Path
+
+_CURSOR_POS_RE = re.compile(r"\x1b\[\d*(?:;\d*)*[HfGC]")
+_ERASE_SCREEN_RE = re.compile(r"\x1b\[\d*J")
+_ANSI_RE = re.compile(
+    r"\x1b"
+    r"(?:"
+    r"\[[\x20-\x3f]*[\x40-\x7e]"
+    r"|\][^\x07\x1b]*(?:\x07|\x1b\\)"
+    r"|[()][AB012]"
+    r"|[\x40-\x5f]"
+    r")"
+    r"|\x0f|\x0e"
+)
+
+_CHILD_ENV_CLEAR = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+
+# Numbered menu: "❯ 1. Dark mode ✔" / "  2. Light mode" / "● 3 Option · description"
+#
+# Match either:
+#   (a) an optional ❯/●/○/◉ bullet followed by ``N. label``  (``.`` required)
+#   (b) a ●/○/◉ bullet followed by ``N label · description``  (bullet required)
+#
+# Matching plain ``N word`` without either bullet or dot false-positives on
+# diff lines like ``2 -  console.log("Hello")`` and ``1  function foo``.
+_NUMBERED_OPTION_RE = re.compile(
+    r"^\s*(?:"
+    r"[❯●○◉]?\s*(?P<num>\d+)\.\s+(?P<label>.+?)(?:\s*·\s*(?P<desc>.+))?"
+    r"|"
+    r"[●○◉]\s*(?P<num2>\d+)\s+(?P<label2>.+?)(?:\s*·\s*(?P<desc2>.+))?"
+    r")\s*$"
+)
+
+# Login success markers — fires force-complete path when seen in stdout.
+_LOGIN_SUCCESS_RE = re.compile(
+    r"(?:"
+    r"successfully\s+(?:logged|authenticated|signed)"
+    r"|(?:now\s+)?logged\s+in\s+as\b"
+    r"|signed\s+in\s+with\b"
+    r"|authentication\s+(?:successful|complete)"
+    r"|login\s+(?:successful|complete)"
+    r"|you\s+are\s+(?:now\s+)?logged\s+in"
+    r"|account\s+(?:added|connected|linked)"
+    r")",
+    re.IGNORECASE,
+)
+
+# Permissive URL matcher for OAuth flows printed in CLI output.
+_URL_IN_OUTPUT_RE = re.compile(r"https?://[^\s\"'<>]+")
+
+
+@dataclass
+class MenuOption:
+    """A single numbered option parsed from a CLI menu."""
+
+    number: int
+    label: str
+    description: str | None = None
+
+
+def parse_menu_options(recent_lines: list[str]) -> list[MenuOption]:
+    """Scan ``recent_lines`` for numbered menu options in display order.
+
+    Dedupes by option number: menus that redraw on terminal repaint will
+    emit the same option multiple times — keep the first occurrence.
+    """
+    options: list[MenuOption] = []
+    seen_numbers: set[int] = set()
+    for line in recent_lines:
+        m = _NUMBERED_OPTION_RE.match(line)
+        if not m:
+            continue
+        num_str = m.group("num") or m.group("num2")
+        label = m.group("label") or m.group("label2")
+        desc = m.group("desc") or m.group("desc2")
+        if num_str is None or label is None:
+            continue
+        num = int(num_str)
+        if num in seen_numbers:
+            continue
+        seen_numbers.add(num)
+        options.append(
+            MenuOption(
+                number=num,
+                label=label.strip(),
+                description=desc.strip() if desc else None,
+            )
+        )
+    return options
+
+
+logger = logging.getLogger(__name__)
+
+
+def strip_ansi(text: str) -> str:
+    text = _CURSOR_POS_RE.sub(" ", text)
+    text = _ERASE_SCREEN_RE.sub("\n", text)
+    text = _ANSI_RE.sub("", text)
+    return text
+
+
+class CliOrchestrator:
+    """Runs ``argv`` inside a PTY, exposes stdout as async chunks and stdin as ``write()``."""
+
+    def __init__(
+        self,
+        argv: list[str],
+        env: dict[str, str],
+        cwd: Path,
+    ) -> None:
+        self._argv = argv
+        self._env = env
+        self._cwd = cwd
+        self._pid: int | None = None
+        self._master_fd: int | None = None
+        self._exit_code: int | None = None
+        self._reader_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self._reader_task: asyncio.Task[None] | None = None
+        self._started = False
+
+    async def start(self) -> None:
+        if self._started:
+            return
+        self._started = True
+        pid, master_fd = pty.fork()
+        if pid == 0:
+            # child
+            env = dict(os.environ)
+            env.update(self._env)
+            for k in _CHILD_ENV_CLEAR:
+                env.pop(k, None)
+            try:
+                os.chdir(self._cwd)
+                os.execvpe(self._argv[0], self._argv, env)
+            except Exception:  # pragma: no cover - child side
+                os._exit(127)
+        self._pid = pid
+        self._master_fd = master_fd
+        self._reader_task = asyncio.create_task(self._reader_loop())
+
+    async def _reader_loop(self) -> None:
+        assert self._master_fd is not None
+        loop = asyncio.get_running_loop()
+        try:
+            while True:
+                try:
+                    data = await loop.run_in_executor(None, self._read_once)
+                except OSError:
+                    break
+                if not data:
+                    break
+                await self._reader_queue.put(data)
+        finally:
+            await self._reader_queue.put(None)
+
+    def _read_once(self) -> bytes:
+        assert self._master_fd is not None
+        try:
+            return os.read(self._master_fd, 4096)
+        except OSError:
+            return b""
+
+    async def poll_output(self, timeout: float = 1.0) -> tuple[float, str | None]:
+        """Wait up to ``timeout`` for the next ANSI-stripped output chunk.
+
+        Returns ``(idle_elapsed_seconds, chunk_or_None)``. On timeout the
+        chunk is ``None`` and ``idle_elapsed_seconds`` is roughly ``timeout``.
+        Raises :class:`StopAsyncIteration` when the reader has hit EOF.
+        """
+        start = time.monotonic()
+        try:
+            item = await asyncio.wait_for(self._reader_queue.get(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return (time.monotonic() - start, None)
+        if item is None:
+            raise StopAsyncIteration
+        return (time.monotonic() - start, strip_ansi(item.decode(errors="replace")))
+
+    async def send_menu_selection(self, zero_based_index: int) -> None:
+        """Send arrow-down * N + Enter to pick option at ``zero_based_index``."""
+        for _ in range(zero_based_index):
+            await self.write(b"\x1b[B")
+            await asyncio.sleep(0.05)
+        await self.write(b"\r")
+
+    async def read_output(self) -> AsyncIterator[str]:
+        """Yield ANSI-stripped output chunks until EOF."""
+        buf = b""
+        while True:
+            item = await self._reader_queue.get()
+            if item is None:
+                if buf:
+                    yield strip_ansi(buf.decode(errors="replace"))
+                return
+            buf += item
+            if b"\n" in item or len(buf) > 1024:
+                text = buf.decode(errors="replace")
+                buf = b""
+                yield strip_ansi(text)
+
+    async def write(self, data: bytes) -> None:
+        if self._master_fd is None:
+            raise RuntimeError("orchestrator not started")
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, os.write, self._master_fd, data)
+
+    async def terminate(self) -> None:
+        if self._pid is None:
+            return
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(self._pid, signal.SIGTERM)
+
+    async def kill(self) -> None:
+        if self._pid is None:
+            return
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(self._pid, signal.SIGKILL)
+
+    async def wait(self) -> int:
+        if self._pid is None:
+            return self._exit_code or 0
+        loop = asyncio.get_running_loop()
+        _, status = await loop.run_in_executor(None, os.waitpid, self._pid, 0)
+        if os.WIFEXITED(status):
+            self._exit_code = os.WEXITSTATUS(status)
+        elif os.WIFSIGNALED(status):
+            self._exit_code = -os.WTERMSIG(status)
+        else:
+            self._exit_code = -1
+        if self._reader_task is not None:
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._reader_task
+        if self._master_fd is not None:
+            with contextlib.suppress(OSError):
+                os.close(self._master_fd)
+            self._master_fd = None
+        return self._exit_code
+
+    @property
+    def exit_code(self) -> int | None:
+        return self._exit_code

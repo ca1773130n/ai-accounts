@@ -38,13 +38,12 @@ def test_get_unknown_onboarding_returns_404(client):
     assert response.json()["error"]["code"] == "onboarding_not_found"
 
 
-def test_full_happy_path_api_key(client):
+def test_begin_login_returns_session_id(client):
     started = client.post("/api/v1/onboarding/").json()
     onb_id = started["id"]
 
     detect = client.post(f"/api/v1/onboarding/{onb_id}/detect")
     assert detect.status_code == 201
-    assert detect.json()["results"]["fake"]["installed"] is True
 
     pick = client.post(
         f"/api/v1/onboarding/{onb_id}/pick",
@@ -58,40 +57,6 @@ def test_full_happy_path_api_key(client):
         json={"flow_kind": "api_key", "inputs": {}},
     )
     assert login.status_code == 201
-    assert login.json()["kind"] == "complete"
-
-    final = client.post(f"/api/v1/onboarding/{onb_id}/finalize")
-    assert final.status_code == 201
-    assert final.json()["current_step"] == "done"
-
-
-def test_oauth_happy_path(client):
-    started = client.post("/api/v1/onboarding/").json()
-    onb_id = started["id"]
-    client.post(f"/api/v1/onboarding/{onb_id}/detect")
-    client.post(
-        f"/api/v1/onboarding/{onb_id}/pick",
-        json={"kind": "fake", "display_name": "Test"},
-    )
-
-    start = client.post(
-        f"/api/v1/onboarding/{onb_id}/login",
-        json={"flow_kind": "oauth_device", "inputs": {}},
-    ).json()
-    assert start["kind"] == "pending"
-    handle = start["oauth"]["handle"]
-
-    first = client.post(
-        f"/api/v1/onboarding/{onb_id}/login/poll",
-        json={"handle": handle},
-    )
-    assert first.json()["kind"] == "pending"
-    second = client.post(
-        f"/api/v1/onboarding/{onb_id}/login/poll",
-        json={"handle": handle},
-    )
-    assert second.json()["kind"] == "complete"
-
-    final = client.post(f"/api/v1/onboarding/{onb_id}/finalize")
-    assert final.status_code == 201
-    assert final.json()["current_step"] == "done"
+    body = login.json()
+    assert "session_id" in body
+    assert body["session_id"].startswith("sess-")

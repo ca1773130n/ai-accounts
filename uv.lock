@@ -12,11 +12,12 @@ members = [
 
 [[package]]
 name = "ai-accounts-core"
-version = "0.2.2"
+version = "0.3.0a2"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "cryptography" },
+    { name = "httpx" },
     { name = "msgspec" },
 ]
 
@@ -24,13 +25,14 @@ dependencies = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20" },
     { name = "cryptography", specifier = ">=43.0" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "msgspec", specifier = ">=0.18" },
 ]
 provides-extras = ["testing"]
 
 [[package]]
 name = "ai-accounts-litestar"
-version = "0.2.2"
+version = "0.3.0a2"
 source = { editable = "packages/litestar" }
 dependencies = [
     { name = "ai-accounts-core" },

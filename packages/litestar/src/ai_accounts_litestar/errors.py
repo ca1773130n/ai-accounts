@@ -1,8 +1,11 @@
+import logging
 from typing import Any
 
 from litestar import Request, Response
 
 from ai_accounts_core.services.errors import ServiceError
+
+logger = logging.getLogger(__name__)
 
 _STATUS_BY_CODE: dict[str, int] = {
     "backend_not_found": 404,
@@ -25,7 +28,8 @@ def service_error_handler(
             content={"error": {"code": exc.code, "message": str(exc) or exc.code}},
             status_code=status,
         )
+    logger.exception("Unhandled error in service layer")
     return Response(
-        content={"error": {"code": "internal_error", "message": str(exc)}},
+        content={"error": {"code": "internal_error", "message": "An internal error occurred"}},
         status_code=500,
     )

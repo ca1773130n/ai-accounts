@@ -1,4 +1,4 @@
-from .accounts import AccountService, LoginResponse
+from .accounts import AccountService
 from .errors import (
     BackendAlreadyExists,
     BackendKindUnknown,
@@ -20,7 +20,6 @@ __all__ = [
     "BackendValidationFailed",
     "CredentialMissing",
     "LoginFlowUnsupported",
-    "LoginResponse",
     "OnboardingNotFound",
     "OnboardingService",
     "ServiceError",
