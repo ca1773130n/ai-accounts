@@ -2,14 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import hashlib
 import json
 import logging
 import os
-import platform
 import re
 import shutil
-import subprocess
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -51,73 +48,6 @@ _CLAUDE_CONSOLE_URL_RE = re.compile(
 )
 
 
-def _read_claude_oauth_token(config_dir: Path) -> bytes | None:
-    """Read OAuth token after CLI login.
-
-    Claude Code stores credentials in:
-    1. macOS Keychain (primary on macOS)
-    2. config_dir/.credentials.json (fallback / Linux)
-
-    Keychain service name:
-    - Default account: "Claude Code-credentials"
-    - Non-default:     "Claude Code-credentials-{sha256(config_dir)[:8]}"
-    """
-    config_str = str(config_dir)
-    default_config = str(Path.home() / ".claude")
-
-    # Try keychain first (macOS)
-    if platform.system() == "Darwin":
-        if config_str != default_config:
-            suffix = hashlib.sha256(config_str.encode()).hexdigest()[:8]
-            service = f"Claude Code-credentials-{suffix}"
-        else:
-            service = "Claude Code-credentials"
-        token = _keychain_read_token(service)
-        if token:
-            return token.encode("utf-8")
-
-    # Fallback: .credentials.json in config dir
-    token = _file_read_token(config_dir / ".credentials.json")
-    if token:
-        return token.encode("utf-8")
-
-    # Fallback: default config dir
-    if config_str != default_config:
-        token = _file_read_token(Path.home() / ".claude" / ".credentials.json")
-        if token:
-            return token.encode("utf-8")
-
-    logger.warning("could not read Claude OAuth token from keychain or file for %s", config_dir)
-    return None
-
-
-def _keychain_read_token(service: str) -> str | None:
-    """Read claudeAiOauth.accessToken from macOS Keychain."""
-    try:
-        result = subprocess.run(
-            ["security", "find-generic-password", "-s", service, "-w"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode != 0:
-            return None
-        raw = result.stdout.strip()
-        if not raw:
-            return None
-        data = json.loads(raw)
-        return data.get("claudeAiOauth", {}).get("accessToken")
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
-        return None
-
-
-def _file_read_token(path: Path) -> str | None:
-    """Read claudeAiOauth.accessToken from .credentials.json."""
-    try:
-        if not path.exists():
-            return None
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data.get("claudeAiOauth", {}).get("accessToken")
-    except (json.JSONDecodeError, OSError):
-        return None
 
 
 class _ClaudeCliBrowserSession(LoginSession):
@@ -210,16 +140,12 @@ class _ClaudeCliBrowserSession(LoginSession):
                 action_command=self.ACTION_COMMAND,
                 url_regex=_CLAUDE_CONSOLE_URL_RE,
             ):
-                # After LoginComplete, send Enter to dismiss "Press Enter
-                # to continue" and then extract the OAuth token from the
-                # CLI's config directory or macOS Keychain.
-                if isinstance(event, LoginComplete):
-                    if self._orchestrator:
-                        try:
-                            await self._orchestrator.write(b"\r")
-                        except Exception:
-                            pass
-                    self._credential = _read_claude_oauth_token(config_dir)
+                # Send Enter to dismiss "Press Enter to continue"
+                if isinstance(event, LoginComplete) and self._orchestrator:
+                    try:
+                        await self._orchestrator.write(b"\r")
+                    except Exception:
+                        pass
                 yield event
         finally:
             await self._cleanup()
