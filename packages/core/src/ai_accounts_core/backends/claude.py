@@ -17,11 +17,10 @@ from ai_accounts_core.login import (
     LoginFailed,
     LoginSession,
     PromptAnswer,
-    StdoutChunk,
     TextPrompt,
-    UrlPrompt,
 )
 from ai_accounts_core.login.cli_orchestrator import CliOrchestrator
+from ai_accounts_core.login.interactive import run_interactive_cli_login
 from ai_accounts_core.metadata import (
     BackendMetadata,
     InputSpec,
@@ -37,17 +36,28 @@ from ai_accounts_core.protocols.backend import (
     PtyRequest,
 )
 
-_URL_RE = re.compile(r"https://(?:claude\.ai|console\.anthropic\.com)/\S+")
-_SUCCESS_MARKERS = ("Authentication successful", "Login successful", "Logged in as")
-_FAILURE_MARKERS = ("Authentication failed", "Login failed", "error:")
+_CLAUDE_CONSOLE_URL_RE = re.compile(
+    r"https://(?:claude\.ai|console\.anthropic\.com)/\S+"
+)
 
 
 class _ClaudeCliBrowserSession(LoginSession):
+    """Interactive ``claude`` login session.
+
+    Handles Claude Code's first-run TUI (theme picker, menus) before the
+    OAuth URL appears. The interactive loop in
+    :func:`run_interactive_cli_login` waits for REPL idle, then sends
+    ``/login`` to trigger the browser-based auth.
+    """
+
+    ACTION_COMMAND = "/login"
+
     def __init__(self, isolation_dir: Path) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
         self._isolation_dir = isolation_dir
         self._done = False
         self._orchestrator: CliOrchestrator | None = None
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
 
     @property
     def session_id(self) -> str:
@@ -66,8 +76,10 @@ class _ClaudeCliBrowserSession(LoginSession):
         return self._done
 
     async def events(self) -> AsyncIterator[LoginEvent]:
+        # claude is launched bare (no /login arg): the first-run TUI runs
+        # through its theme picker, then we send /login into the REPL.
         self._orchestrator = CliOrchestrator(
-            argv=["claude", "/login"],
+            argv=["claude"],
             env={"CLAUDE_CONFIG_DIR": str(self._isolation_dir)},
             cwd=self._isolation_dir,
         )
@@ -78,39 +90,36 @@ class _ClaudeCliBrowserSession(LoginSession):
             yield LoginFailed(code="cli_not_found", message="claude CLI not installed")
             return
 
-        url_seen = False
-        success = False
-        async for chunk in self._orchestrator.read_output():
-            if chunk.strip():
-                yield StdoutChunk(text=chunk)
-            if not url_seen:
-                m = _URL_RE.search(chunk)
-                if m:
-                    url_seen = True
-                    yield UrlPrompt(prompt_id="auth", url=m.group(0))
-            if any(mk in chunk for mk in _SUCCESS_MARKERS):
-                success = True
-                break
-            if any(mk in chunk for mk in _FAILURE_MARKERS):
-                break
-
-        exit_code = await self._orchestrator.wait()
-        self._done = True
-        if success and exit_code == 0:
-            yield LoginComplete(account_id="", backend_status="validating")
-        else:
-            yield LoginFailed(
-                code="cli_exit_nonzero" if exit_code != 0 else "auth_failed",
-                message=f"claude /login exited with {exit_code}",
-            )
+        try:
+            async for event in run_interactive_cli_login(
+                orchestrator=self._orchestrator,
+                answers=self._answers,
+                progress_label="Starting claude /login",
+                action_command=self.ACTION_COMMAND,
+                url_regex=_CLAUDE_CONSOLE_URL_RE,
+            ):
+                yield event
+        finally:
+            if self._orchestrator is not None:
+                try:
+                    await self._orchestrator.terminate()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+                try:
+                    await self._orchestrator.wait()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+            self._done = True
 
     async def respond(self, answer: PromptAnswer) -> None:
-        pass  # cli_browser has no text prompts
+        await self._answers.put(answer)
 
     async def cancel(self) -> None:
         if self._orchestrator is not None and not self._done:
-            await self._orchestrator.terminate()
-            await self._orchestrator.wait()
+            try:
+                await self._orchestrator.terminate()
+            except Exception:  # pragma: no cover
+                pass
         self._done = True
 
 
