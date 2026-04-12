@@ -267,7 +267,7 @@ async def run_interactive_cli_login(
                         )
                         return
                     await orchestrator.write(
-                        (answer.answer.strip() + "\n").encode()
+                        (answer.answer.strip() + "\r").encode()
                     )
                     recent_lines = []
                     last_output_time = time.monotonic()
