@@ -235,6 +235,11 @@ async def start_cliproxy_login(
     return proc, info
 
 
+_CLIPROXY_ALLOWED_PORTS = frozenset({54545, 8085})
+_CLIPROXY_ALLOWED_PATH_PREFIXES = ("/callback", "/cb", "/oauth")
+_CLIPROXY_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1"})
+
+
 async def forward_cliproxy_callback(callback_url: str) -> dict:
     """Forward an OAuth callback URL to cliproxyapi's local HTTP server."""
     from urllib.parse import parse_qs, urlparse
@@ -244,6 +249,16 @@ async def forward_cliproxy_callback(callback_url: str) -> dict:
     code = qs.get("code", [""])[0]
     state = qs.get("state", [""])[0]
     port = parsed.port or 54545
+
+    # SSRF guard: restrict scheme, host, port, and path
+    if parsed.scheme not in ("http", "https"):
+        return {"status": "error", "message": "callback URL must use http or https"}
+    if parsed.hostname not in _CLIPROXY_ALLOWED_HOSTS:
+        return {"status": "error", "message": "callback URL must target localhost"}
+    if parsed.port and parsed.port not in _CLIPROXY_ALLOWED_PORTS:
+        return {"status": "error", "message": f"callback port {parsed.port} not allowed"}
+    if not any(parsed.path.startswith(p) for p in _CLIPROXY_ALLOWED_PATH_PREFIXES):
+        return {"status": "error", "message": "callback path not allowed"}
 
     if not code:
         return {"status": "error", "message": "No 'code' parameter found in URL"}
