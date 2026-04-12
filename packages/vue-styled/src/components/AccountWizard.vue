@@ -529,6 +529,8 @@ async function runProxyLogin() {
       proxyLoginStatus.value = 'device_auth';
       proxyOauthUrl.value = res.oauth_url;
       proxyDeviceCode.value = res.device_code ?? '';
+      // Auto-open the OAuth URL in the user's browser
+      window.open(res.oauth_url, '_blank', 'noopener');
       if (res.device_code) {
         proxyLoginMessage.value = `Open the URL and enter code ${res.device_code}`;
       } else {
