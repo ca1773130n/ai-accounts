@@ -48,6 +48,7 @@ class _OpenCodeCliBrowserSession(LoginSession):
         self._isolation_dir = isolation_dir
         self._done = False
         self._orchestrator: CliOrchestrator | None = None
+        self._cleanup_lock = asyncio.Lock()
 
     @property
     def session_id(self) -> str:
@@ -65,6 +66,23 @@ class _OpenCodeCliBrowserSession(LoginSession):
     def done(self) -> bool:
         return self._done
 
+    async def _cleanup(self) -> None:
+        async with self._cleanup_lock:
+            if self._orchestrator is not None:
+                try:
+                    await self._orchestrator.terminate()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+                try:
+                    exit_code = await asyncio.wait_for(
+                        self._orchestrator.wait(), timeout=10
+                    )
+                except asyncio.TimeoutError:
+                    await self._orchestrator.kill()
+                    await self._orchestrator.wait()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+
     async def events(self) -> AsyncIterator[LoginEvent]:
         self._orchestrator = CliOrchestrator(
             argv=["opencode", "auth", "login"],
@@ -80,45 +98,40 @@ class _OpenCodeCliBrowserSession(LoginSession):
 
         url_seen = False
         success = False
-        async for chunk in self._orchestrator.read_output():
-            if chunk.strip():
-                yield StdoutChunk(text=chunk)
-            if not url_seen:
-                m = _OPENCODE_URL_RE.search(chunk)
-                if m:
-                    url_seen = True
-                    yield UrlPrompt(prompt_id="auth", url=m.group(0))
-            if any(mk in chunk for mk in _OPENCODE_SUCCESS_MARKERS):
-                success = True
-                break
-            lower = chunk.lower()
-            if "error" in lower or "failed" in lower or any(
-                mk in chunk for mk in _OPENCODE_FAILURE_MARKERS
-            ):
-                break
-
-        await self._orchestrator.terminate()
         try:
-            exit_code = await asyncio.wait_for(self._orchestrator.wait(), timeout=10)
-        except asyncio.TimeoutError:
-            await self._orchestrator.kill()
-            exit_code = await self._orchestrator.wait()
-        self._done = True
-        if success and exit_code == 0:
+            async for chunk in self._orchestrator.read_output():
+                if chunk.strip():
+                    yield StdoutChunk(text=chunk)
+                if not url_seen:
+                    m = _OPENCODE_URL_RE.search(chunk)
+                    if m:
+                        url_seen = True
+                        yield UrlPrompt(prompt_id="auth", url=m.group(0))
+                if any(mk in chunk for mk in _OPENCODE_SUCCESS_MARKERS):
+                    success = True
+                    break
+                lower = chunk.lower()
+                if "error" in lower or "failed" in lower or any(
+                    mk in chunk for mk in _OPENCODE_FAILURE_MARKERS
+                ):
+                    break
+        finally:
+            await self._cleanup()
+            self._done = True
+
+        if success:
             yield LoginComplete(account_id="", backend_status="validating")
         else:
             yield LoginFailed(
-                code="cli_exit_nonzero" if exit_code != 0 else "auth_failed",
-                message=f"opencode auth login exited with {exit_code}",
+                code="auth_failed",
+                message="opencode auth login failed",
             )
 
     async def respond(self, answer: PromptAnswer) -> None:
         pass
 
     async def cancel(self) -> None:
-        if self._orchestrator is not None and not self._done:
-            await self._orchestrator.terminate()
-            await self._orchestrator.wait()
+        await self._cleanup()
         self._done = True
 
 
