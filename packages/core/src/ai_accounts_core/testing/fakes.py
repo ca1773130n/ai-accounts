@@ -280,8 +280,14 @@ class FakeBackend:
         self.calls.append(("list_models", credential))
         return [Model(id="fake-1", display_name="Fake Model 1")]
 
-    async def chat(self, request: object, credential: bytes, *, isolation_dir: Path):  # type: ignore[no-untyped-def]
-        raise NotImplementedError("chat lands in Phase 3")
+    async def chat(  # type: ignore[override]
+        self, request: Any, credential: bytes, *, isolation_dir: Path,
+    ) -> AsyncIterator[Any]:
+        from ai_accounts_core.protocols.backend import ChatStreamEvent
+        self.calls.append(("chat", request))
+        yield ChatStreamEvent(kind="token", payload="Hello ")
+        yield ChatStreamEvent(kind="token", payload="world!")
+        yield ChatStreamEvent(kind="done", payload={"tokens_in": 10, "tokens_out": 2, "model": "fake-1"})
 
     async def pty(self, request: object, credential: bytes, *, isolation_dir: Path):  # type: ignore[no-untyped-def]
         raise NotImplementedError("pty lands in Phase 4")

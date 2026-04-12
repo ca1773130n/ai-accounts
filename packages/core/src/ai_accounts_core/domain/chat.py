@@ -29,3 +29,15 @@ class ChatSession(msgspec.Struct, frozen=True, kw_only=True):
     created_at: datetime
     updated_at: datetime | None = None
     model: str | None = None
+
+
+class ChatDelta(msgspec.Struct, frozen=True, kw_only=True):
+    """Single streaming event from a chat response.
+    kind: "token" | "done" | "error"
+    """
+    kind: str
+    text: str | None = None
+    finish_reason: str | None = None
+    model: str | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None

@@ -12,12 +12,14 @@ from ai_accounts_core.login.registry import LoginSessionRegistry
 from ai_accounts_core.metadata import BackendRegistry
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.errors import ServiceError
+from ai_accounts_core.services.chat import ChatService
 from ai_accounts_core.services.onboarding import OnboardingService
 
 from .config import AiAccountsConfig
 from .errors import service_error_handler
 from .routes.backends import BackendsController
 from .routes.cliproxy import CliproxyController
+from .routes.conversations import ConversationsController
 from .routes.install import InstallController
 from .routes.login import LoginController
 from .routes.meta import MetaController
@@ -89,6 +91,9 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         accounts=account_service,
         backend_kinds=tuple(impls.keys()),
     )
+    chat_service = ChatService(
+        account_service=account_service, storage=config.storage
+    )
 
     backend_registry = BackendRegistry()
     for b in config.backends:
@@ -106,11 +111,15 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     def _provide_backend_registry() -> BackendRegistry:
         return backend_registry
 
+    def _provide_chat_service() -> ChatService:
+        return chat_service
+
     dependencies: dict[str, Any] = {
         "config": Provide(_provide_config, sync_to_thread=False),
         "account_service": Provide(_provide_account_service, sync_to_thread=False),
         "onboarding_service": Provide(_provide_onboarding_service, sync_to_thread=False),
         "backend_registry": Provide(_provide_backend_registry, sync_to_thread=False),
+        "chat_service": Provide(_provide_chat_service, sync_to_thread=False),
     }
 
     cors_config = (
@@ -133,6 +142,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
             health,
             BackendsController,
             CliproxyController,
+            ConversationsController,
             InstallController,
             LoginController,
             MetaController,
