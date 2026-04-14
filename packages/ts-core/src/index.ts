@@ -57,6 +57,8 @@ export type {
   SmartChatEvent,
   ChatMode,
   SendChatRequest,
+  ProcessGroupType,
+  ToolCallDelta,
 } from './types/smart-chat';
 export { createAccountWizard } from './machines/accountWizard';
 export type {
