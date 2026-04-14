@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { watchEffect } from 'vue';
 import { useSmartChat, useSmartScroll } from '@ai-accounts/vue-headless';
 import ChatBubble from './ChatBubble.vue';
 import ChatControls from './ChatControls.vue';
 import ChatInput from './ChatInput.vue';
 import AllModeResponses from './AllModeResponses.vue';
 import CompoundSynthesis from './CompoundSynthesis.vue';
+import FinalizationBanner from './FinalizationBanner.vue';
 
 const props = withDefaults(defineProps<{
   density?: 'minimal' | 'detailed';
@@ -14,6 +16,10 @@ const props = withDefaults(defineProps<{
   welcomeTitle?: string;
   welcomeSubtitle?: string;
   readOnly?: boolean;
+  entityLabel?: string;
+  bannerTitle?: string;
+  bannerButtonLabel?: string;
+  configParser?: (content: string) => Record<string, unknown> | null;
 }>(), {
   density: 'minimal',
   placeholder: 'Type a message...',
@@ -21,8 +27,21 @@ const props = withDefaults(defineProps<{
   welcomeSubtitle: 'Send a message to get started',
 });
 
+const emit = defineEmits<{
+  finalize: [config: Record<string, unknown> | null];
+}>();
+
 const chat = useSmartChat();
 const scroll = useSmartScroll();
+
+watchEffect(() => {
+  chat.setConfigParser(props.configParser ?? null);
+});
+
+async function handleFinalize() {
+  const cfg = await chat.finalize();
+  emit('finalize', cfg);
+}
 </script>
 
 <template>
@@ -75,6 +94,21 @@ const scroll = useSmartScroll();
       <CompoundSynthesis
         v-if="chat.synthesisState.value"
         :state="chat.synthesisState.value"
+      />
+
+      <!-- Finalization banner -->
+      <slot
+        v-if="$slots.finalization"
+        name="finalization"
+        :state="{ canFinalize: chat.canFinalize, isFinalizing: chat.isFinalizing }"
+      />
+      <FinalizationBanner
+        v-else-if="chat.canFinalize.value && entityLabel"
+        :title="bannerTitle ?? 'Ready to finalize'"
+        :button-label="bannerButtonLabel ?? 'Finalize'"
+        :entity-label="entityLabel"
+        :is-finalizing="chat.isFinalizing.value"
+        @finalize="handleFinalize"
       />
 
       <!-- Scroll anchor -->

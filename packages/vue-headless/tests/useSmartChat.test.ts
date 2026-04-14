@@ -96,3 +96,18 @@ describe('useSmartChat', () => {
     expect(selectedModel.value).toBeNull();
   });
 });
+
+describe('useSmartChat finalization', () => {
+  it('exposes finalization state', () => {
+    const chat = useSmartChat();
+    expect(chat.canFinalize.value).toBe(false);
+    expect(chat.isFinalizing.value).toBe(false);
+    expect(chat.detectedConfig.value).toBeNull();
+  });
+
+  it('setConfigParser accepts a function', () => {
+    const chat = useSmartChat();
+    expect(() => chat.setConfigParser(() => null)).not.toThrow();
+    expect(() => chat.setConfigParser(null)).not.toThrow();
+  });
+});

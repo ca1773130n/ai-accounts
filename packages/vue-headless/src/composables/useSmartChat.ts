@@ -42,6 +42,11 @@ export interface UseSmartChatReturn {
   setMode: (mode: ChatMode) => void;
   selectBackend: (kind: string | null) => void;
   processGroups: UseProcessGroupsReturn;
+  canFinalize: Ref<boolean>;
+  isFinalizing: Ref<boolean>;
+  detectedConfig: Ref<Record<string, unknown> | null>;
+  finalize: () => Promise<Record<string, unknown> | null>;
+  setConfigParser: (parser: ((content: string) => Record<string, unknown> | null) | null) => void;
 }
 
 const HEARTBEAT_TIMEOUT_MS = 65_000;
@@ -61,6 +66,25 @@ export function useSmartChat(): UseSmartChatReturn {
   const selectedAccount = ref<string | null>(null);
   const selectedModel = ref<string | null>(null);
   const processGroups = useProcessGroups();
+
+  const canFinalize = ref(false);
+  const isFinalizing = ref(false);
+  const detectedConfig = ref<Record<string, unknown> | null>(null);
+  let configParser: ((content: string) => Record<string, unknown> | null) | null = null;
+
+  function setConfigParser(parser: ((content: string) => Record<string, unknown> | null) | null) {
+    configParser = parser;
+  }
+
+  async function finalize(): Promise<Record<string, unknown> | null> {
+    if (!canFinalize.value) return null;
+    isFinalizing.value = true;
+    try {
+      return detectedConfig.value;
+    } finally {
+      isFinalizing.value = false;
+    }
+  }
 
   let lastSeq = 0;
   let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
@@ -102,6 +126,8 @@ export function useSmartChat(): UseSmartChatReturn {
     streamingContent.value = '';
     backendResponses.value = new Map();
     synthesisState.value = null;
+    canFinalize.value = false;
+    detectedConfig.value = null;
     processGroups.clearGroups();
     lastSeq = 0;
     resetHeartbeat();
@@ -128,6 +154,20 @@ export function useSmartChat(): UseSmartChatReturn {
           created_at: new Date().toISOString(), model: null, tokens_in: null, tokens_out: null,
         };
         messages.value = [...messages.value, assistantMsg];
+      }
+      if (configParser) {
+        const lastMsg = messages.value[messages.value.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant') {
+          try {
+            const cfg = configParser(lastMsg.content);
+            if (cfg) {
+              detectedConfig.value = cfg;
+              canFinalize.value = true;
+            }
+          } catch {
+            /* parser errors ignored */
+          }
+        }
       }
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Chat failed';
@@ -268,5 +308,6 @@ export function useSmartChat(): UseSmartChatReturn {
     backendResponses, synthesisState, selectedBackend, selectedAccount, selectedModel,
     createSession, loadSession, send, setMode, selectBackend,
     processGroups,
+    canFinalize, isFinalizing, detectedConfig, finalize, setConfigParser,
   };
 }
