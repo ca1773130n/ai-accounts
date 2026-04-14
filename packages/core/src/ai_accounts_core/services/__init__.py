@@ -1,4 +1,5 @@
 from .accounts import AccountService
+from .chat_state import ChatStateService
 from .errors import (
     BackendAlreadyExists,
     BackendKindUnknown,
@@ -18,6 +19,7 @@ __all__ = [
     "BackendNotFound",
     "BackendNotReady",
     "BackendValidationFailed",
+    "ChatStateService",
     "CredentialMissing",
     "LoginFlowUnsupported",
     "OnboardingNotFound",

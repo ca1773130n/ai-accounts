@@ -121,6 +121,19 @@ async def test_send_returns_sse_format(client: AsyncTestClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_chat_send_includes_seq_ids(client: AsyncTestClient) -> None:
+    """Each SSE frame should carry an `id: <seq>` line for client-side reconnect."""
+    _, session_id = await _setup_backend_and_session(client)
+    r = await client.post(
+        "/api/v1/chat/send",
+        json={"session_id": session_id, "content": "Hello", "mode": "single"},
+    )
+    assert r.status_code == 200
+    # at least one id: line should appear, tagged monotonically
+    assert "id: 1" in r.text
+
+
+@pytest.mark.asyncio
 async def test_chat_send_streams_tool_call(tool_client: AsyncTestClient) -> None:
     """POST /api/v1/chat/send streams tool_call events for backends that emit them."""
     _, session_id = await _setup_backend_and_session(tool_client)
