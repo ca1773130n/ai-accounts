@@ -7,6 +7,7 @@ import type {
   SendChatRequest,
 } from '@ai-accounts/ts-core';
 import { useAiAccounts } from './useAiAccounts';
+import { useProcessGroups, type UseProcessGroupsReturn } from './useProcessGroups';
 
 export interface BackendResponseState {
   backend: string;
@@ -40,6 +41,7 @@ export interface UseSmartChatReturn {
   send: (content: string) => Promise<void>;
   setMode: (mode: ChatMode) => void;
   selectBackend: (kind: string | null) => void;
+  processGroups: UseProcessGroupsReturn;
 }
 
 export function useSmartChat(): UseSmartChatReturn {
@@ -56,6 +58,7 @@ export function useSmartChat(): UseSmartChatReturn {
   const selectedBackend = ref<string | null>(null);
   const selectedAccount = ref<string | null>(null);
   const selectedModel = ref<string | null>(null);
+  const processGroups = useProcessGroups();
 
   async function createSession(backendId: string, model: string) {
     error.value = null;
@@ -78,6 +81,7 @@ export function useSmartChat(): UseSmartChatReturn {
     streamingContent.value = '';
     backendResponses.value = new Map();
     synthesisState.value = null;
+    processGroups.clearGroups();
 
     // Add user message optimistically
     const userMsg: ChatMessageDTO = {
@@ -120,6 +124,14 @@ export function useSmartChat(): UseSmartChatReturn {
         break;
       case 'error':
         error.value = event.payload ?? 'Unknown error';
+        break;
+      case 'tool_call':
+        processGroups.processToolCallDelta({
+          id: event.id,
+          name: event.name,
+          arguments: event.arguments,
+          group_type: event.group_type,
+        });
         break;
 
       // All/compound mode — backend events
@@ -215,5 +227,6 @@ export function useSmartChat(): UseSmartChatReturn {
     sessionId, messages, isStreaming, streamingContent, error, chatMode,
     backendResponses, synthesisState, selectedBackend, selectedAccount, selectedModel,
     createSession, loadSession, send, setMode, selectBackend,
+    processGroups,
   };
 }
