@@ -33,7 +33,7 @@ class ChatSession(msgspec.Struct, frozen=True, kw_only=True):
 
 class ChatDelta(msgspec.Struct, frozen=True, kw_only=True):
     """Single streaming event from a chat response.
-    kind: "token" | "done" | "error"
+    kind: "token" | "tool_call" | "done" | "error"
     """
     kind: str
     text: str | None = None
@@ -41,3 +41,6 @@ class ChatDelta(msgspec.Struct, frozen=True, kw_only=True):
     model: str | None = None
     tokens_in: int | None = None
     tokens_out: int | None = None
+    tool_id: str | None = None
+    tool_name: str | None = None
+    tool_arguments: str | None = None

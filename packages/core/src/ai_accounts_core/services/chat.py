@@ -86,6 +86,15 @@ class ChatService:
         tokens_out = None
         model_used = None
         async for event in impl.chat(request, plaintext, isolation_dir=isolation_dir):
+            if event.kind == "tool_call" and isinstance(event.payload, dict):
+                delta = ChatDelta(
+                    kind="tool_call",
+                    tool_id=event.payload.get("id"),
+                    tool_name=event.payload.get("name"),
+                    tool_arguments=event.payload.get("arguments"),
+                )
+                yield delta
+                continue
             delta = ChatDelta(
                 kind=event.kind,
                 text=event.payload if isinstance(event.payload, str) else None,
