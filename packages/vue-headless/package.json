@@ -18,7 +18,13 @@
     "dist"
   ],
   "peerDependencies": {
-    "vue": "^3.4.0"
+    "vue": "^3.4.0",
+    "smd": "*"
+  },
+  "peerDependenciesMeta": {
+    "smd": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@ai-accounts/ts-core": "workspace:*"
@@ -26,7 +32,8 @@
   "devDependencies": {
     "vue": "^3.4.0",
     "@vue/test-utils": "^2.4.0",
-    "happy-dom": "^15.0.0"
+    "happy-dom": "^15.0.0",
+    "smd": "*"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --external vue",
