@@ -44,6 +44,8 @@ export interface UseSmartChatReturn {
   processGroups: UseProcessGroupsReturn;
 }
 
+const HEARTBEAT_TIMEOUT_MS = 65_000;
+
 export function useSmartChat(): UseSmartChatReturn {
   const { client } = useAiAccounts();
 
@@ -59,6 +61,25 @@ export function useSmartChat(): UseSmartChatReturn {
   const selectedAccount = ref<string | null>(null);
   const selectedModel = ref<string | null>(null);
   const processGroups = useProcessGroups();
+
+  let lastSeq = 0;
+  let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearHeartbeat() {
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  }
+
+  function resetHeartbeat() {
+    clearHeartbeat();
+    heartbeatTimer = setTimeout(() => {
+      error.value = 'Connection stale';
+      isStreaming.value = false;
+      heartbeatTimer = null;
+    }, HEARTBEAT_TIMEOUT_MS);
+  }
 
   async function createSession(backendId: string, model: string) {
     error.value = null;
@@ -82,6 +103,8 @@ export function useSmartChat(): UseSmartChatReturn {
     backendResponses.value = new Map();
     synthesisState.value = null;
     processGroups.clearGroups();
+    lastSeq = 0;
+    resetHeartbeat();
 
     // Add user message optimistically
     const userMsg: ChatMessageDTO = {
@@ -109,12 +132,29 @@ export function useSmartChat(): UseSmartChatReturn {
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Chat failed';
     } finally {
+      clearHeartbeat();
       isStreaming.value = false;
       streamingContent.value = '';
     }
   }
 
   function dispatch(event: SmartChatEvent) {
+    // Seq-based dedup: skip replays / already-seen events.
+    if (typeof event._seq === 'number') {
+      if (event._seq <= lastSeq) return;
+      lastSeq = event._seq;
+    }
+    // Heartbeat reset on every live event.
+    resetHeartbeat();
+    // Terminal events should stop the heartbeat watchdog.
+    if (
+      event.kind === 'done' ||
+      event.kind === 'error' ||
+      event.kind === 'synthesis_complete' ||
+      event.kind === 'synthesis_error'
+    ) {
+      clearHeartbeat();
+    }
     switch (event.kind) {
       // Single mode
       case 'token':

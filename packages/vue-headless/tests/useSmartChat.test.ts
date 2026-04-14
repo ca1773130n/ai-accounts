@@ -1,5 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useSmartChat } from '../src/composables/useSmartChat';
+
+// Mutable events yielded by the mocked sendChat.
+let mockEvents: any[] = [
+  { kind: 'token', payload: 'Hello' },
+  { kind: 'done', payload: { finish_reason: 'stop' } },
+];
+let mockStall = false;
 
 // Mock useAiAccounts
 vi.mock('../src/composables/useAiAccounts', () => ({
@@ -8,13 +15,23 @@ vi.mock('../src/composables/useAiAccounts', () => ({
       createChatSession: vi.fn().mockResolvedValue({ id: 'cht-1', backend_id: 'bkd-1', model: 'fake-1', title: null, created_at: '2026-04-13T00:00:00Z' }),
       getConversation: vi.fn().mockResolvedValue({ id: 'cht-1', messages: [] }),
       sendChat: vi.fn().mockImplementation(async function*() {
-        yield { kind: 'token', payload: 'Hello' };
-        yield { kind: 'done', payload: { finish_reason: 'stop' } };
+        if (mockStall) {
+          await new Promise(() => {}); // never resolves
+        }
+        for (const ev of mockEvents) yield ev;
       }),
     },
     emit: vi.fn(),
   }),
 }));
+
+beforeEach(() => {
+  mockEvents = [
+    { kind: 'token', payload: 'Hello' },
+    { kind: 'done', payload: { finish_reason: 'stop' } },
+  ];
+  mockStall = false;
+});
 
 describe('useSmartChat', () => {
   it('creates a session', async () => {
@@ -35,6 +52,40 @@ describe('useSmartChat', () => {
     const { setMode, chatMode } = useSmartChat();
     setMode('all');
     expect(chatMode.value).toBe('all');
+  });
+
+  it('deduplicates events by _seq (skips <= lastSeq)', async () => {
+    mockEvents = [
+      { kind: 'token', payload: 'A', _seq: 1 },
+      { kind: 'token', payload: 'B', _seq: 2 },
+      // Replayed duplicates — should be skipped.
+      { kind: 'token', payload: 'A', _seq: 1 },
+      { kind: 'token', payload: 'B', _seq: 2 },
+      { kind: 'token', payload: 'C', _seq: 3 },
+      { kind: 'done', payload: { finish_reason: 'stop' }, _seq: 4 },
+    ];
+    const { createSession, send, messages } = useSmartChat();
+    await createSession('bkd-1', 'fake-1');
+    await send('Hi');
+    // user + assistant; assistant should be 'ABC' (duplicates skipped).
+    expect(messages.value[1].content).toBe('ABC');
+  });
+
+  it('triggers heartbeat stale error when no events arrive within timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      mockStall = true;
+      const { createSession, send, error, isStreaming } = useSmartChat();
+      await createSession('bkd-1', 'fake-1');
+      const p = send('Hi');
+      // Advance just past the 65s heartbeat window.
+      await vi.advanceTimersByTimeAsync(66_000);
+      expect(error.value).toBe('Connection stale');
+      expect(isStreaming.value).toBe(false);
+      void p;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('selects backend and resets account/model', () => {
