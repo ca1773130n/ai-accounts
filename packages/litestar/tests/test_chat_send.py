@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -23,6 +24,31 @@ async def client(tmp_path: Path) -> AsyncIterator[AsyncTestClient]:
             vault=FakeVault(),
             auth=NoAuth(),
             backends=(FakeBackend(),),
+            backend_dirs_path=tmp_path / "iso",
+        )
+    )
+    async with AsyncTestClient(app=app) as c:
+        yield c
+
+
+@pytest_asyncio.fixture
+async def tool_client(tmp_path: Path) -> AsyncIterator[AsyncTestClient]:
+    app = create_app(
+        AiAccountsConfig(
+            env="development",
+            storage=SqliteStorage(str(tmp_path / "t.db")),
+            vault=FakeVault(),
+            auth=NoAuth(),
+            backends=(
+                FakeBackend(
+                    tool_call={
+                        "id": "call_abc",
+                        "name": "search",
+                        "arguments": '{"q":"hi"}',
+                        "group_type": "tool_call",
+                    }
+                ),
+            ),
             backend_dirs_path=tmp_path / "iso",
         )
     )
@@ -92,3 +118,26 @@ async def test_send_returns_sse_format(client: AsyncTestClient) -> None:
     )
     assert r.status_code == 200
     assert "event: chat" in r.text
+
+
+@pytest.mark.asyncio
+async def test_chat_send_streams_tool_call(tool_client: AsyncTestClient) -> None:
+    """POST /api/v1/chat/send streams tool_call events for backends that emit them."""
+    _, session_id = await _setup_backend_and_session(tool_client)
+    resp = await tool_client.post(
+        "/api/v1/chat/send",
+        json={"session_id": session_id, "content": "trigger tool", "mode": "single"},
+    )
+    assert resp.status_code == 200
+    events = []
+    for block in resp.text.split("\n\n"):
+        for line in block.strip().split("\n"):
+            if line.startswith("data:"):
+                raw = line.removeprefix("data:").strip()
+                if raw:
+                    events.append(json.loads(raw))
+    tool_events = [e for e in events if e.get("kind") == "tool_call"]
+    assert len(tool_events) >= 1
+    assert tool_events[0]["id"] == "call_abc"
+    assert tool_events[0]["name"] == "search"
+    assert tool_events[0]["group_type"] == "tool_call"
