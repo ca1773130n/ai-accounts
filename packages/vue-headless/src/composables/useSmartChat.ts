@@ -5,6 +5,7 @@ import type {
   SmartChatEvent,
   ChatMode,
   SendChatRequest,
+  ToolCallDelta,
 } from '@ai-accounts/ts-core';
 import { useAiAccounts } from './useAiAccounts';
 import { useProcessGroups, type UseProcessGroupsReturn } from './useProcessGroups';
@@ -205,14 +206,14 @@ export function useSmartChat(): UseSmartChatReturn {
       case 'error':
         error.value = event.payload ?? 'Unknown error';
         break;
-      case 'tool_call':
-        processGroups.processToolCallDelta({
-          id: event.id,
-          name: event.name,
-          arguments: event.arguments,
-          group_type: event.group_type,
-        });
+      case 'tool_call': {
+        const delta: ToolCallDelta = { id: event.id };
+        if (event.name !== undefined) delta.name = event.name;
+        if (event.arguments !== undefined) delta.arguments = event.arguments;
+        if (event.group_type !== undefined) delta.group_type = event.group_type;
+        processGroups.processToolCallDelta(delta);
         break;
+      }
 
       // All/compound mode — backend events
       case 'backend_delta': {

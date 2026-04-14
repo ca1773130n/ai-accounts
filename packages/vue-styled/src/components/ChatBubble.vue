@@ -60,7 +60,11 @@ function copyCode(e: Event) {
       </div>
       <div class="aia-bubble__content" @click="copyCode" v-html="html" />
     </div>
-    <MessageActions v-if="showActions" :content="content" :all-messages="allMessages" />
+    <MessageActions
+      v-if="showActions"
+      :content="content"
+      v-bind="allMessages !== undefined ? { allMessages } : {}"
+    />
   </div>
 </template>
 
