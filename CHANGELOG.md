@@ -2,6 +2,29 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.0-alpha.3 — 2026-04-15
+
+Smart AI chat panel v2 — real-time tool call visibility, resilient streaming, and message actions on top of the alpha.2 chat foundation.
+
+### Added
+- `ToolCallEvent` domain type (`ai-accounts-core`) — emitted by `ChatOrchestrator` when backends invoke tools
+- `ChatStateService` (`ai-accounts-core`) — per-session seq numbering, event replay, and SSE reconnection support
+- `tool_call` event streaming on `POST /api/v1/chat/send` SSE (`ai-accounts-litestar`)
+- `@ai-accounts/ts-core`: `tool_call` variant on `SmartChatEvent` + `ProcessGroup` types
+- `@ai-accounts/vue-headless`:
+  - `useProcessGroups` composable — groups sequential tool calls into collapsible process groups
+  - `useStreamingParser` composable — incremental markdown parsing via `streaming-markdown` (smd.js)
+  - `useSmartChat`: seq-based event deduplication, heartbeat watchdog, finalization state
+- `@ai-accounts/vue-styled`:
+  - `ProcessGroup` component (tool-type badges + collapse)
+  - `MessageActions` component (copy, retry, edit) wired into `ChatBubble`
+  - `FinalizationBanner` component
+  - `AiChatPanel` integration with density-aware defaults
+
+### Fixed
+- `tool_call` dispatch and `MessageActions` prop typing
+- `vue-headless` dependency name — was typo `smd`, corrected to `streaming-markdown`
+
 ## 0.3.0-alpha.2 — 2026-04-11
 
 ### Fixed
