@@ -22,8 +22,8 @@ async function resolveSmd(): Promise<SmdModule | null> {
   if (injected) return injected as SmdModule
   // 2. dynamic import — optional peerDep
   try {
-    // @ts-expect-error - smd is an optional peer dep; may not be installed or typed
-    const mod = (await import(/* @vite-ignore */ 'smd')) as unknown
+    // @ts-expect-error - streaming-markdown is an optional peer dep; may not be installed or typed
+    const mod = (await import(/* @vite-ignore */ 'streaming-markdown')) as unknown
     return mod as SmdModule
   } catch {
     return null

@@ -19,10 +19,10 @@
   ],
   "peerDependencies": {
     "vue": "^3.4.0",
-    "smd": "*"
+    "streaming-markdown": "*"
   },
   "peerDependenciesMeta": {
-    "smd": {
+    "streaming-markdown": {
       "optional": true
     }
   },
@@ -33,7 +33,7 @@
     "vue": "^3.4.0",
     "@vue/test-utils": "^2.4.0",
     "happy-dom": "^15.0.0",
-    "smd": "*"
+    "streaming-markdown": "*"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --external vue",
