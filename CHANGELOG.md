@@ -2,6 +2,29 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.0-alpha.3 — 2026-04-15
+
+Smart AI chat panel v2 — real-time tool call visibility, resilient streaming, and message actions on top of the alpha.2 chat foundation.
+
+### Added
+- `ToolCallEvent` domain type (`ai-accounts-core`) — emitted by `ChatOrchestrator` when backends invoke tools
+- `ChatStateService` (`ai-accounts-core`) — per-session seq numbering, event replay, and SSE reconnection support
+- `tool_call` event streaming on `POST /api/v1/chat/send` SSE (`ai-accounts-litestar`)
+- `@ai-accounts/ts-core`: `tool_call` variant on `SmartChatEvent` + `ProcessGroup` types
+- `@ai-accounts/vue-headless`:
+  - `useProcessGroups` composable — groups sequential tool calls into collapsible process groups
+  - `useStreamingParser` composable — incremental markdown parsing via `streaming-markdown` (smd.js)
+  - `useSmartChat`: seq-based event deduplication, heartbeat watchdog, finalization state
+- `@ai-accounts/vue-styled`:
+  - `ProcessGroup` component (tool-type badges + collapse)
+  - `MessageActions` component (copy, retry, edit) wired into `ChatBubble`
+  - `FinalizationBanner` component
+  - `AiChatPanel` integration with density-aware defaults
+
+### Fixed
+- `tool_call` dispatch and `MessageActions` prop typing
+- `vue-headless` dependency name — was typo `smd`, corrected to `streaming-markdown`
+
 ## 0.3.0-alpha.2 — 2026-04-11
 
 ### Fixed
@@ -14,9 +37,40 @@ All notable changes to ai-accounts packages in this monorepo.
 - `run_interactive_cli_login()` shared state machine in `login/interactive.py`
 - `_NUMBERED_OPTION_RE`, `_LOGIN_SUCCESS_RE`, `_URL_IN_OUTPUT_RE` module-level patterns
 
+#### PTY Session System (originally planned as alpha.4)
+- `AsyncPtyHandle` — async PTY subprocess wrapper with read/write/resize (`ai_accounts_core/pty/handle.py`)
+- `PtyService` — session lifecycle management: spawn/attach/kill backed by `SessionRepository`
+- `BackendProtocol.pty()` — implementations for Claude, Codex, Gemini, OpenCode backends
+- `FakeBackend.pty()` + `AsyncPtyHandle`-based fake for test fixtures
+- Litestar: `POST /api/v1/pty/spawn`, `/kill`, `/resize` + WebSocket `/ws/pty/{session_id}` binary frame bridge
+- `@ai-accounts/ts-core`: `PtySocket` reconnect-capable WebSocket client + `spawnPty()`, `killPty()`, `resizePty()` methods
+- `@ai-accounts/vue-headless`: `usePtySession` composable with reactive state
+- `@ai-accounts/vue-styled`: `TerminalView.vue` component with xterm.js integration
+- `xterm` + `@xterm/addon-fit` dependencies added to `vue-styled`
+
+#### Security Hardening (originally planned as alpha.5)
+- Fix SSRF port bypass in `cliproxy/manager.py` — validate port in allowed range, not just host
+- Fix fd leak in `backends/claude.py` cleanup paths — narrow `except` catches to `(OSError, ProcessLookupError)` + log
+- Replace silent key-format leak in error messages
+- Narrow `finally`-block catches across backends; log previously-swallowed errors
+- Log `rmtree` failures during account deletion instead of silently ignoring
+- Add `GET /api/v1/backends/{id}/models` route + `list_models()` wiring across backends
+- PR review fixes: typed DTOs, 204-no-content for empty pick responses, kind-filter fallback, timeout double-wrap removal, `backend_id` keying, structured logging, port validation, stderr capture
+- Enable SQLite WAL mode for concurrent read performance
+- Path traversal hardening via `Path.is_relative_to()` checks
+
 ### Test coverage
 - 14 new unit tests for menu parsing + regexes + diff-line false-positive regression
 - Rewritten Claude cli_browser login test with faked `time.monotonic` for deterministic timing
+- 5 `AsyncPtyHandle` + `PtyService` tests (spawn/attach/kill roundtrip)
+- 2 Litestar PTY REST route tests (spawn/kill)
+- 5 `cliproxy/manager` unit tests
+- 6 direct `run_interactive_cli_login` state-machine tests
+- 3 real-subprocess `CliOrchestrator` tests (echo + cat + claude --version)
+
+### Fixed (Python 3.14 compatibility)
+- `cli_orchestrator.py` — replace removed `pty.fork()` with `os.forkpty()` (Python 3.14+)
+- `test_strip_ansi_cursor_positioning` — align test with intentional semantics where cursor-row reposition (`ESC[H`) yields `\n` and column-only movement yields space
 
 ## 0.3.0-alpha.1 — 2026-04-11
 

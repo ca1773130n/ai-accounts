@@ -5,8 +5,10 @@ import type {
   SmartChatEvent,
   ChatMode,
   SendChatRequest,
+  ToolCallDelta,
 } from '@ai-accounts/ts-core';
 import { useAiAccounts } from './useAiAccounts';
+import { useProcessGroups, type UseProcessGroupsReturn } from './useProcessGroups';
 
 export interface BackendResponseState {
   backend: string;
@@ -40,7 +42,15 @@ export interface UseSmartChatReturn {
   send: (content: string) => Promise<void>;
   setMode: (mode: ChatMode) => void;
   selectBackend: (kind: string | null) => void;
+  processGroups: UseProcessGroupsReturn;
+  canFinalize: Ref<boolean>;
+  isFinalizing: Ref<boolean>;
+  detectedConfig: Ref<Record<string, unknown> | null>;
+  finalize: () => Promise<Record<string, unknown> | null>;
+  setConfigParser: (parser: ((content: string) => Record<string, unknown> | null) | null) => void;
 }
+
+const HEARTBEAT_TIMEOUT_MS = 90_000;
 
 export function useSmartChat(): UseSmartChatReturn {
   const { client } = useAiAccounts();
@@ -56,6 +66,54 @@ export function useSmartChat(): UseSmartChatReturn {
   const selectedBackend = ref<string | null>(null);
   const selectedAccount = ref<string | null>(null);
   const selectedModel = ref<string | null>(null);
+  const processGroups = useProcessGroups();
+
+  const canFinalize = ref(false);
+  const isFinalizing = ref(false);
+  const detectedConfig = ref<Record<string, unknown> | null>(null);
+  let configParser: ((content: string) => Record<string, unknown> | null) | null = null;
+
+  function setConfigParser(parser: ((content: string) => Record<string, unknown> | null) | null) {
+    configParser = parser;
+  }
+
+  /**
+   * Returns the parsed config for the host to act on. This composable
+   * performs no persistence — the `isFinalizing` flag is exposed so hosts
+   * can drive a spinner around their own save call.
+   */
+  async function finalize(): Promise<Record<string, unknown> | null> {
+    if (!canFinalize.value) return null;
+    isFinalizing.value = true;
+    try {
+      return detectedConfig.value;
+    } finally {
+      isFinalizing.value = false;
+    }
+  }
+
+  let lastSeq = 0;
+  let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+  let activeAbort: AbortController | null = null;
+
+  function clearHeartbeat() {
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  }
+
+  function resetHeartbeat() {
+    clearHeartbeat();
+    heartbeatTimer = setTimeout(() => {
+      error.value = 'Connection lost — no activity from server';
+      isStreaming.value = false;
+      heartbeatTimer = null;
+      if (activeAbort) {
+        activeAbort.abort(new DOMException('heartbeat-timeout', 'AbortError'));
+      }
+    }, HEARTBEAT_TIMEOUT_MS);
+  }
 
   async function createSession(backendId: string, model: string) {
     error.value = null;
@@ -78,6 +136,12 @@ export function useSmartChat(): UseSmartChatReturn {
     streamingContent.value = '';
     backendResponses.value = new Map();
     synthesisState.value = null;
+    canFinalize.value = false;
+    detectedConfig.value = null;
+    processGroups.clearGroups();
+    lastSeq = 0;
+    activeAbort = new AbortController();
+    resetHeartbeat();
 
     // Add user message optimistically
     const userMsg: ChatMessageDTO = {
@@ -91,10 +155,10 @@ export function useSmartChat(): UseSmartChatReturn {
       if (selectedBackend.value) req.backend_kind = selectedBackend.value;
       if (selectedAccount.value) req.account_id = selectedAccount.value;
       if (selectedModel.value) req.model = selectedModel.value;
-      for await (const event of client.sendChat(req)) {
+      for await (const event of client.sendChat(req, { signal: activeAbort.signal })) {
         dispatch(event);
       }
-      // Stream ended — finalize
+      // Stream ended — commit assistant message to history
       if (chatMode.value === 'single' && streamingContent.value) {
         const assistantMsg: ChatMessageDTO = {
           id: `msg-${Date.now()}`, role: 'assistant', content: streamingContent.value,
@@ -102,15 +166,63 @@ export function useSmartChat(): UseSmartChatReturn {
         };
         messages.value = [...messages.value, assistantMsg];
       }
+      if (configParser) {
+        const lastMsg = messages.value[messages.value.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant') {
+          try {
+            const cfg = configParser(lastMsg.content);
+            if (cfg) {
+              detectedConfig.value = cfg;
+              canFinalize.value = true;
+            }
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error('[useSmartChat] configParser threw — canFinalize stays false', e);
+          }
+        }
+      }
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Chat failed';
+      // Heartbeat-triggered aborts already set a user-visible message; don't overwrite.
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        // leave error.value as set by the heartbeat watchdog
+      } else if (e instanceof Error) {
+        error.value = `${e.name}: ${e.message}`;
+      } else {
+        error.value = `Chat failed: ${String(e)}`;
+      }
     } finally {
+      clearHeartbeat();
+      activeAbort = null;
       isStreaming.value = false;
       streamingContent.value = '';
     }
   }
 
   function dispatch(event: SmartChatEvent) {
+    // Seq-based dedup: skip replays / already-seen events.
+    if (typeof event._seq === 'number') {
+      if (event._seq <= lastSeq) return;
+      if (lastSeq > 0 && event._seq > lastSeq + 1) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[useSmartChat] seq gap detected: lastSeq=%d incoming=%d (lost %d events)',
+          lastSeq,
+          event._seq,
+          event._seq - lastSeq - 1,
+        );
+      }
+      lastSeq = event._seq;
+    }
+    resetHeartbeat();
+    // Terminal events should stop the heartbeat watchdog.
+    if (
+      event.kind === 'done' ||
+      event.kind === 'error' ||
+      event.kind === 'synthesis_complete' ||
+      event.kind === 'synthesis_error'
+    ) {
+      clearHeartbeat();
+    }
     switch (event.kind) {
       // Single mode
       case 'token':
@@ -121,6 +233,14 @@ export function useSmartChat(): UseSmartChatReturn {
       case 'error':
         error.value = event.payload ?? 'Unknown error';
         break;
+      case 'tool_call': {
+        const delta: ToolCallDelta = { id: event.id };
+        if (event.name !== undefined) delta.name = event.name;
+        if (event.arguments !== undefined) delta.arguments = event.arguments;
+        if (event.group_type !== undefined) delta.group_type = event.group_type;
+        processGroups.processToolCallDelta(delta);
+        break;
+      }
 
       // All/compound mode — backend events
       case 'backend_delta': {
@@ -215,5 +335,7 @@ export function useSmartChat(): UseSmartChatReturn {
     sessionId, messages, isStreaming, streamingContent, error, chatMode,
     backendResponses, synthesisState, selectedBackend, selectedAccount, selectedModel,
     createSession, loadSession, send, setMode, selectBackend,
+    processGroups,
+    canFinalize, isFinalizing, detectedConfig, finalize, setConfigParser,
   };
 }

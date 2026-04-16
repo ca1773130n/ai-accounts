@@ -2,6 +2,13 @@
 import { computed } from 'vue';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
+import MessageActions from './MessageActions.vue';
+
+interface MessageLike {
+  role: string;
+  content: string;
+  created_at?: string;
+}
 
 // marked v13+ dropped the highlight option; use a custom renderer instead
 const renderer: import('marked').RendererObject = {
@@ -24,6 +31,8 @@ const props = defineProps<{
   backend?: string | null;
   timestamp?: string | null;
   streaming?: boolean;
+  showActions?: boolean;
+  allMessages?: MessageLike[];
 }>();
 
 const html = computed(() => marked.parse(props.content || '') as string);
@@ -51,11 +60,17 @@ function copyCode(e: Event) {
       </div>
       <div class="aia-bubble__content" @click="copyCode" v-html="html" />
     </div>
+    <MessageActions
+      v-if="showActions"
+      :content="content"
+      v-bind="allMessages !== undefined ? { allMessages } : {}"
+    />
   </div>
 </template>
 
 <style scoped>
-.aia-bubble { display: flex; gap: 0.75rem; padding: 0.75rem 0; }
+.aia-bubble { display: flex; gap: 0.75rem; padding: 0.75rem 0; position: relative; }
+.aia-bubble:hover :deep(.message-actions) { opacity: 1; }
 .aia-bubble--user { flex-direction: row-reverse; }
 .aia-bubble__avatar {
   width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;

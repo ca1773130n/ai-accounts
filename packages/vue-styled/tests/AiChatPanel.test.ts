@@ -1,10 +1,97 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
+import { ref } from 'vue';
 import ChatBubble from '../src/components/ChatBubble.vue';
 import ChatInput from '../src/components/ChatInput.vue';
 import ChatControls from '../src/components/ChatControls.vue';
 import AllModeResponses from '../src/components/AllModeResponses.vue';
 import CompoundSynthesis from '../src/components/CompoundSynthesis.vue';
+
+// Mock vue-headless composables for AiChatPanel integration tests
+vi.mock('@ai-accounts/vue-headless', () => {
+  const makeChat = (opts: { groups?: Map<string, any> } = {}) => ({
+    messages: ref([]),
+    isStreaming: ref(false),
+    streamingContent: ref(''),
+    chatMode: ref('single'),
+    selectedBackend: ref(null),
+    selectedModel: ref(null),
+    backendResponses: ref(new Map()),
+    synthesisState: ref(null),
+    canFinalize: ref(false),
+    isFinalizing: ref(false),
+    error: ref(null),
+    processGroups: {
+      groups: ref(opts.groups ?? new Map()),
+      toggleGroup: vi.fn(),
+      addGroup: vi.fn(),
+      removeGroup: vi.fn(),
+      collapseGroup: vi.fn(),
+      expandGroup: vi.fn(),
+      updateGroupContent: vi.fn(),
+      clearGroups: vi.fn(),
+      processToolCallDelta: vi.fn(),
+    },
+    setMode: vi.fn(),
+    selectBackend: vi.fn(),
+    setConfigParser: vi.fn(),
+    send: vi.fn(),
+    finalize: vi.fn(),
+  });
+  // Hold reference so tests can reconfigure before mount
+  (globalThis as any).__mockChatOpts = {};
+  return {
+    useSmartChat: () => makeChat((globalThis as any).__mockChatOpts),
+    useSmartScroll: () => ({
+      containerRef: ref(null),
+      showScrollButton: ref(false),
+      scrollToBottom: vi.fn(),
+    }),
+  };
+});
+
+describe('AiChatPanel process groups', () => {
+  beforeEach(() => {
+    (globalThis as any).__mockChatOpts = {};
+  });
+
+  it('does not render process groups in minimal density by default', async () => {
+    const AiChatPanel = (await import('../src/components/AiChatPanel.vue')).default;
+    const wrapper = mount(AiChatPanel, { props: { density: 'minimal' } });
+    expect(wrapper.find('.process-groups').exists()).toBe(false);
+  });
+
+  it('renders process groups when showProcessGroups=true and groups exist', async () => {
+    const groups = new Map();
+    groups.set('g1', {
+      id: 'g1',
+      type: 'tool_call',
+      label: 'read_file',
+      content: 'contents',
+      timestamp: '2025-01-15T10:30:00Z',
+      isExpanded: true,
+      autoCollapseMs: 0,
+    });
+    (globalThis as any).__mockChatOpts = { groups };
+    const AiChatPanel = (await import('../src/components/AiChatPanel.vue')).default;
+    const wrapper = mount(AiChatPanel, { props: { showProcessGroups: true } });
+    expect(wrapper.find('.process-groups').exists()).toBe(true);
+    expect(wrapper.find('.process-group').exists()).toBe(true);
+  });
+
+  it('auto-enables process groups in detailed density', async () => {
+    const groups = new Map();
+    groups.set('g1', {
+      id: 'g1', type: 'reasoning', label: 'think', content: 'x',
+      timestamp: '2025-01-15T10:30:00Z', isExpanded: true, autoCollapseMs: 0,
+    });
+    (globalThis as any).__mockChatOpts = { groups };
+    const AiChatPanel = (await import('../src/components/AiChatPanel.vue')).default;
+    const wrapper = mount(AiChatPanel, { props: { density: 'detailed' } });
+    // In detailed density, showProcessGroups defaults to true
+    expect(wrapper.find('.process-group').exists()).toBe(true);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // ChatBubble

@@ -13,6 +13,7 @@ from ai_accounts_core.metadata import BackendRegistry
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.errors import ServiceError
 from ai_accounts_core.services.chat import ChatService
+from ai_accounts_core.services.chat_state import ChatStateService
 from ai_accounts_core.services.onboarding import OnboardingService
 from ai_accounts_core.services.pty import PtyService
 from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
@@ -120,6 +121,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     orchestrator = ChatOrchestrator(
         chat_service=chat_service, scheduler=scheduler
     )
+    chat_state = ChatStateService()
 
     backend_registry = BackendRegistry()
     for b in config.backends:
@@ -149,6 +151,9 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     def _provide_orchestrator() -> ChatOrchestrator:
         return orchestrator
 
+    def _provide_chat_state() -> ChatStateService:
+        return chat_state
+
     dependencies: dict[str, Any] = {
         "config": Provide(_provide_config, sync_to_thread=False),
         "account_service": Provide(_provide_account_service, sync_to_thread=False),
@@ -158,6 +163,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         "pty_service": Provide(_provide_pty_service, sync_to_thread=False),
         "scheduler": Provide(_provide_scheduler, sync_to_thread=False),
         "orchestrator": Provide(_provide_orchestrator, sync_to_thread=False),
+        "chat_state": Provide(_provide_chat_state, sync_to_thread=False),
     }
 
     cors_config = (

@@ -17,6 +17,9 @@ export { default as ChatControls } from './components/ChatControls.vue';
 export { default as ChatInput } from './components/ChatInput.vue';
 export { default as AllModeResponses } from './components/AllModeResponses.vue';
 export { default as CompoundSynthesis } from './components/CompoundSynthesis.vue';
+export { default as ProcessGroup } from './components/ProcessGroup.vue';
+export { default as MessageActions } from './components/MessageActions.vue';
+export { default as FinalizationBanner } from './components/FinalizationBanner.vue';
 
 export const version = '0.3.0-alpha.2';
 

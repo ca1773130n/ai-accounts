@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ai_accounts_core.domain.chat import ChatDelta, ChatMessage, ChatRole
-from ai_accounts_core.domain.chat_events import AllModeEvent, CompoundEvent
+from ai_accounts_core.domain.chat_events import AllModeEvent, CompoundEvent, ToolCallEvent
 from ai_accounts_core.ids import new_id
 from ai_accounts_core.protocols.backend import ChatRequest
 from ai_accounts_core.services.chat import ChatService
@@ -33,10 +33,17 @@ class ChatOrchestrator:
         backend_kind: str | None = None,
         account_id: str | None = None,
         model: str | None = None,
-    ) -> AsyncIterator[ChatDelta]:
+    ) -> AsyncIterator[ChatDelta | ToolCallEvent]:
         """Single mode: use ChatService.send_message which already handles credentials."""
         async for event in self._chat.send_message(session_id=session_id, content=content):
-            yield event
+            if event.kind == "tool_call":
+                yield ToolCallEvent(
+                    id=event.tool_id or "",
+                    name=event.tool_name,
+                    arguments=event.tool_arguments,
+                )
+            else:
+                yield event
 
     # ── All-mode: parallel fan-out ──
 
@@ -156,8 +163,16 @@ class ChatOrchestrator:
             try:
                 first_backend = await self._scheduler._accounts.get(first_bid)
                 primary = first_backend.kind
-            except Exception:
-                primary = "claude"  # fallback
+            except Exception as exc:
+                logger.exception(
+                    "compound synthesis: failed to resolve primary kind from first responder %s",
+                    first_bid,
+                )
+                yield CompoundEvent(
+                    kind="synthesis_error",
+                    error=f"Could not resolve synthesis backend: {type(exc).__name__}: {exc}",
+                )
+                return
         yield CompoundEvent(
             kind="synthesis_start",
             primary_backend=primary,

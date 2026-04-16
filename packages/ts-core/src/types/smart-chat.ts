@@ -20,7 +20,18 @@ export interface BackendOption {
   models: string[];
 }
 
-export type SmartChatEvent =
+export type ProcessGroupType = 'tool_call' | 'reasoning' | 'code_execution';
+
+export interface ToolCallDelta {
+  id: string;
+  name?: string;
+  arguments?: string;
+  group_type?: ProcessGroupType;
+}
+
+type _WithSeq<T> = T & { _seq?: number };
+
+export type SmartChatEvent = _WithSeq<
   | { kind: 'token'; payload: string }
   | { kind: 'done'; payload: Record<string, unknown> }
   | { kind: 'error'; payload: string }
@@ -31,7 +42,9 @@ export type SmartChatEvent =
   | { kind: 'synthesis_start'; primary_backend: string; backends_collected: string[] }
   | { kind: 'synthesis_delta'; text: string }
   | { kind: 'synthesis_complete' }
-  | { kind: 'synthesis_error'; error: string };
+  | { kind: 'synthesis_error'; error: string }
+  | { kind: 'tool_call'; id: string; name?: string; arguments?: string; group_type?: ProcessGroupType }
+>;
 
 export type ChatMode = 'single' | 'all' | 'compound';
 

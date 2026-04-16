@@ -481,12 +481,23 @@ export class AiAccountsClient {
 
   // --- Smart Chat ---
 
-  async *sendChat(request: SendChatRequest): AsyncIterable<SmartChatEvent> {
+  async *sendChat(
+    request: SendChatRequest,
+    opts: { signal?: AbortSignal; lastEventId?: number } = {},
+  ): AsyncIterable<SmartChatEvent> {
     const url = `${this.baseUrl}/api/v1/chat/send`;
+    const headers: Record<string, string> = {
+      ...this.headers(),
+      Accept: 'text/event-stream',
+    };
+    if (opts.lastEventId && opts.lastEventId > 0) {
+      headers['Last-Event-ID'] = String(opts.lastEventId);
+    }
     const r = await this._fetch(url, {
       method: 'POST',
-      headers: { ...this.headers(), Accept: 'text/event-stream' },
+      headers,
       body: JSON.stringify(request),
+      ...(opts.signal ? { signal: opts.signal } : {}),
     });
     if (!r.ok) throw await toError(r);
     yield* parseSseSmartChatEvents(r);

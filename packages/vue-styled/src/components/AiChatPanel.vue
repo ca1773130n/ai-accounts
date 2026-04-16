@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { computed, watchEffect } from 'vue';
 import { useSmartChat, useSmartScroll } from '@ai-accounts/vue-headless';
 import ChatBubble from './ChatBubble.vue';
 import ChatControls from './ChatControls.vue';
 import ChatInput from './ChatInput.vue';
 import AllModeResponses from './AllModeResponses.vue';
 import CompoundSynthesis from './CompoundSynthesis.vue';
+import FinalizationBanner from './FinalizationBanner.vue';
+import ProcessGroup from './ProcessGroup.vue';
 
 const props = withDefaults(defineProps<{
   density?: 'minimal' | 'detailed';
@@ -14,15 +17,43 @@ const props = withDefaults(defineProps<{
   welcomeTitle?: string;
   welcomeSubtitle?: string;
   readOnly?: boolean;
+  entityLabel?: string;
+  bannerTitle?: string;
+  bannerButtonLabel?: string;
+  configParser?: (content: string) => Record<string, unknown> | null;
+  showProcessGroups?: boolean;
+  showActions?: boolean;
 }>(), {
   density: 'minimal',
   placeholder: 'Type a message...',
   welcomeTitle: 'AI Chat',
   welcomeSubtitle: 'Send a message to get started',
+  showProcessGroups: undefined as unknown as boolean,
+  showActions: undefined as unknown as boolean,
 });
+
+const resolvedShowProcessGroups = computed(() =>
+  props.showProcessGroups ?? (props.density === 'detailed'),
+);
+const resolvedShowActions = computed(() =>
+  props.showActions ?? (props.density === 'detailed'),
+);
+
+const emit = defineEmits<{
+  finalize: [config: Record<string, unknown> | null];
+}>();
 
 const chat = useSmartChat();
 const scroll = useSmartScroll();
+
+watchEffect(() => {
+  chat.setConfigParser(props.configParser ?? null);
+});
+
+async function handleFinalize() {
+  const cfg = await chat.finalize();
+  emit('finalize', cfg);
+}
 </script>
 
 <template>
@@ -54,6 +85,8 @@ const scroll = useSmartScroll();
         :role="msg.role"
         :content="msg.content"
         :timestamp="msg.created_at"
+        :show-actions="resolvedShowActions"
+        :all-messages="chat.messages.value"
       />
 
       <!-- Single-mode streaming bubble -->
@@ -75,6 +108,40 @@ const scroll = useSmartScroll();
       <CompoundSynthesis
         v-if="chat.synthesisState.value"
         :state="chat.synthesisState.value"
+      />
+
+      <!-- Process groups (tool calls, reasoning, code execution) -->
+      <div
+        v-if="resolvedShowProcessGroups && chat.processGroups.groups.value.size > 0"
+        class="process-groups"
+      >
+        <ProcessGroup
+          v-for="[id, group] in chat.processGroups.groups.value"
+          :key="id"
+          :id="group.id"
+          :type="group.type"
+          :label="group.label"
+          :timestamp="group.timestamp"
+          :is-expanded="group.isExpanded"
+          @toggle="chat.processGroups.toggleGroup(id)"
+        >
+          <pre>{{ group.content }}</pre>
+        </ProcessGroup>
+      </div>
+
+      <!-- Finalization banner -->
+      <slot
+        v-if="$slots.finalization"
+        name="finalization"
+        :state="{ canFinalize: chat.canFinalize, isFinalizing: chat.isFinalizing }"
+      />
+      <FinalizationBanner
+        v-else-if="chat.canFinalize.value && entityLabel"
+        :title="bannerTitle ?? 'Ready to finalize'"
+        :button-label="bannerButtonLabel ?? 'Finalize'"
+        :entity-label="entityLabel"
+        :is-finalizing="chat.isFinalizing.value"
+        @finalize="handleFinalize"
       />
 
       <!-- Scroll anchor -->

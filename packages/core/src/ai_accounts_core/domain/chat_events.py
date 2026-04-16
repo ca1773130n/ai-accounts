@@ -15,3 +15,11 @@ class CompoundEvent(msgspec.Struct, frozen=True, kw_only=True):
     primary_backend: str | None = None
     backends_collected: tuple[str, ...] | None = None
     error: str | None = None
+
+
+class ToolCallEvent(msgspec.Struct, frozen=True, kw_only=True):
+    kind: str = "tool_call"
+    id: str = ""
+    name: str | None = None
+    arguments: str | None = None
+    group_type: str = "tool_call"  # "tool_call" | "reasoning" | "code_execution"

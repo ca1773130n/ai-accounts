@@ -309,8 +309,9 @@ class FakeBackend:
         isolation_env_var=None,
     )
 
-    def __init__(self) -> None:
+    def __init__(self, *, tool_call: dict | None = None) -> None:
         self.calls: list[tuple[str, Any]] = []
+        self._tool_call = tool_call
 
     def begin_login(
         self,
@@ -351,6 +352,8 @@ class FakeBackend:
     ) -> AsyncIterator[Any]:
         from ai_accounts_core.protocols.backend import ChatStreamEvent
         self.calls.append(("chat", request))
+        if self._tool_call is not None:
+            yield ChatStreamEvent(kind="tool_call", payload=self._tool_call)
         yield ChatStreamEvent(kind="token", payload="Hello ")
         yield ChatStreamEvent(kind="token", payload="world!")
         yield ChatStreamEvent(kind="done", payload={"tokens_in": 10, "tokens_out": 2, "model": "fake-1"})

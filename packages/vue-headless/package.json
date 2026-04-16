@@ -1,6 +1,6 @@
 {
   "name": "@ai-accounts/vue-headless",
-  "version": "0.3.0-alpha.2",
+  "version": "0.3.0-alpha.3",
   "description": "Vue 3 headless composables for ai-accounts",
   "license": "Apache-2.0",
   "type": "module",
@@ -18,7 +18,13 @@
     "dist"
   ],
   "peerDependencies": {
-    "vue": "^3.4.0"
+    "vue": "^3.4.0",
+    "streaming-markdown": "*"
+  },
+  "peerDependenciesMeta": {
+    "streaming-markdown": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@ai-accounts/ts-core": "workspace:*"
@@ -26,7 +32,8 @@
   "devDependencies": {
     "vue": "^3.4.0",
     "@vue/test-utils": "^2.4.0",
-    "happy-dom": "^15.0.0"
+    "happy-dom": "^15.0.0",
+    "streaming-markdown": "*"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --external vue",

@@ -13,7 +13,6 @@ import asyncio
 import contextlib
 import logging
 import os
-import pty
 import re
 import signal
 import tempfile
@@ -196,7 +195,7 @@ class CliOrchestrator:
             p.chmod(0o755)
         self._fake_browser_path = self._fake_bin_dir
 
-        pid, master_fd = pty.fork()
+        pid, master_fd = os.forkpty()
         if pid == 0:
             # child
             import fcntl
@@ -223,6 +222,7 @@ class CliOrchestrator:
                 os.execvpe(self._argv[0], self._argv, env)
             except Exception:  # pragma: no cover - child side
                 os._exit(127)
+            os._exit(127)  # belt-and-suspenders: execvpe shouldn't return on success
         self._pid = pid
         self._master_fd = master_fd
         # Also set wide terminal from parent side
