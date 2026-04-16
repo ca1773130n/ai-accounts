@@ -4,7 +4,8 @@ from ai_accounts_core.login.cli_orchestrator import CliOrchestrator, strip_ansi
 
 
 def test_strip_ansi_cursor_positioning():
-    assert strip_ansi("hello\x1b[Hworld") == "hello world"
+    assert strip_ansi("hello\x1b[Hworld") == "hello\nworld"
+    assert strip_ansi("hello\x1b[5Gworld") == "hello world"
 
 
 def test_strip_ansi_erase():

@@ -1,5 +1,7 @@
 # 0.3.0-alpha.5: Polish, Security Hardening, and Release Prep
 
+> **STATUS: Implemented (shipped in 0.3.0-alpha.2).** Core hardening landed in `325a622` (SSRF port bypass, path traversal guards, hide key format, models route), with `b55b616` (log rmtree failures), `e1a5305` (narrow finally-block catches), `5790428` + `c6c0dd5` (PR review fixes). Retroactively documented in the 0.3.0-alpha.2 CHANGELOG entry.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix critical issues from PR review (SSRF bypass, fd leaks, silent errors), add model listing UI, improve error propagation across the stack, and prepare for stable 0.3.0 release.

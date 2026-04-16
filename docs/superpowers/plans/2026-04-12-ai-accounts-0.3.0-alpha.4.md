@@ -1,5 +1,7 @@
 # 0.3.0-alpha.4: PTY Session System Implementation Plan
 
+> **STATUS: Implemented (shipped in 0.3.0-alpha.2).** This plan's scope landed in commits `1b0da66`, `820a41f`, `53e54e3`, followed by reliability fixes (`a1d4885`, `12d2ef9`, `7269510`, etc.). Retroactively documented in the 0.3.0-alpha.2 CHANGELOG entry. Tests: `packages/core/tests/pty/`, `packages/core/tests/services/test_pty_service.py`, `packages/litestar/tests/test_pty_routes.py` (7 passing).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add real-time PTY (pseudo-terminal) sessions to ai-accounts — spawn interactive CLI sessions via backend credentials, stream binary frames over WebSocket, persist frame history for detach/reattach, and provide a Vue xterm.js terminal component.
