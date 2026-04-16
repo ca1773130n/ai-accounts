@@ -48,4 +48,17 @@ describe('useProcessGroups', () => {
     toggleGroup('tc_1')
     expect(groups.value.get('tc_1')?.isExpanded).toBe(false)
   })
+
+  it('interleaves argument deltas from multiple tool calls without mixing', () => {
+    const { groups, processToolCallDelta } = useProcessGroups()
+    processToolCallDelta({ id: 'tc_1', name: 'read_file' })
+    processToolCallDelta({ id: 'tc_2', name: 'search' })
+    processToolCallDelta({ id: 'tc_1', arguments: '{"path":' })
+    processToolCallDelta({ id: 'tc_2', arguments: '{"q":"a"' })
+    processToolCallDelta({ id: 'tc_1', arguments: '"/etc/hosts"}' })
+    processToolCallDelta({ id: 'tc_2', arguments: '}' })
+    expect(groups.value.get('tc_1')?.content).toBe('{"path":"/etc/hosts"}')
+    expect(groups.value.get('tc_2')?.content).toBe('{"q":"a"}')
+    expect(groups.value.size).toBe(2)
+  })
 })

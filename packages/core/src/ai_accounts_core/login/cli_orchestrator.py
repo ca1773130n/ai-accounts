@@ -222,6 +222,7 @@ class CliOrchestrator:
                 os.execvpe(self._argv[0], self._argv, env)
             except Exception:  # pragma: no cover - child side
                 os._exit(127)
+            os._exit(127)  # belt-and-suspenders: execvpe shouldn't return on success
         self._pid = pid
         self._master_fd = master_fd
         # Also set wide terminal from parent side

@@ -163,8 +163,16 @@ class ChatOrchestrator:
             try:
                 first_backend = await self._scheduler._accounts.get(first_bid)
                 primary = first_backend.kind
-            except Exception:
-                primary = "claude"  # fallback
+            except Exception as exc:
+                logger.exception(
+                    "compound synthesis: failed to resolve primary kind from first responder %s",
+                    first_bid,
+                )
+                yield CompoundEvent(
+                    kind="synthesis_error",
+                    error=f"Could not resolve synthesis backend: {type(exc).__name__}: {exc}",
+                )
+                return
         yield CompoundEvent(
             kind="synthesis_start",
             primary_backend=primary,

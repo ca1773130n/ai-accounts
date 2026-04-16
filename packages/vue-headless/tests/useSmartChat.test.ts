@@ -14,9 +14,16 @@ vi.mock('../src/composables/useAiAccounts', () => ({
     client: {
       createChatSession: vi.fn().mockResolvedValue({ id: 'cht-1', backend_id: 'bkd-1', model: 'fake-1', title: null, created_at: '2026-04-13T00:00:00Z' }),
       getConversation: vi.fn().mockResolvedValue({ id: 'cht-1', messages: [] }),
-      sendChat: vi.fn().mockImplementation(async function*() {
+      sendChat: vi.fn().mockImplementation(async function*(_req: unknown, opts?: { signal?: AbortSignal }) {
         if (mockStall) {
-          await new Promise(() => {}); // never resolves
+          await new Promise<void>((_, reject) => {
+            const onAbort = () => reject(new DOMException('aborted', 'AbortError'));
+            if (opts?.signal?.aborted) {
+              onAbort();
+              return;
+            }
+            opts?.signal?.addEventListener('abort', onAbort, { once: true });
+          });
         }
         for (const ev of mockEvents) yield ev;
       }),
@@ -78,11 +85,14 @@ describe('useSmartChat', () => {
       const { createSession, send, error, isStreaming } = useSmartChat();
       await createSession('bkd-1', 'fake-1');
       const p = send('Hi');
-      // Advance just past the 65s heartbeat window.
-      await vi.advanceTimersByTimeAsync(66_000);
-      expect(error.value).toBe('Connection stale');
+      // Advance just past the 90s heartbeat window.
+      await vi.advanceTimersByTimeAsync(91_000);
+      expect(error.value).toMatch(/Connection lost/);
       expect(isStreaming.value).toBe(false);
-      void p;
+      // The watchdog aborts the in-flight fetch — awaiting the pending promise
+      // should resolve without raising, leaving the heartbeat message intact.
+      await p;
+      expect(error.value).toMatch(/Connection lost/);
     } finally {
       vi.useRealTimers();
     }

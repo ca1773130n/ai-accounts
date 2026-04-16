@@ -14,7 +14,7 @@ from ai_accounts_core.services.chat_state import ChatStateService
 
 logger = logging.getLogger(__name__)
 
-HEARTBEAT_INTERVAL_SECONDS = 30.0
+HEARTBEAT_INTERVAL_SECONDS = 20.0
 
 
 class _SendRequest(msgspec.Struct, kw_only=True):
@@ -29,12 +29,10 @@ class _SendRequest(msgspec.Struct, kw_only=True):
 def _parse_last_event_id(raw: str | None) -> int:
     if not raw:
         return 0
-    raw = raw.strip()
-    if raw.isdigit():
-        try:
-            return int(raw)
-        except ValueError:
-            return 0
+    stripped = raw.strip()
+    if stripped.isdigit():
+        return int(stripped)
+    logger.warning("chat_send: malformed Last-Event-ID header %r — treating as fresh connection", raw)
     return 0
 
 
@@ -80,18 +78,23 @@ class ChatSendController(Controller):
 
         async def sse():
             session_id = data.session_id
-            # init fresh session log for this connection (replay first if reconnect)
+            # Reconnect: replay retained events first, then ensure session
+            # exists for new events. If the session was evicted server-side
+            # since the client's last_event_id, seed the seq counter from
+            # last_event_id so fresh events keep a monotonic id — otherwise
+            # the client's dedup would silently drop them.
             if last_event_id > 0:
-                # replay any prior events before re-init wipes them
                 replayed = chat_state.replay(session_id, last_event_id)
                 for ev in replayed:
                     yield _format_sse(ev, ev.get("_seq"))
+                if not chat_state.get_event_log(session_id):
+                    logger.info(
+                        "chat_send: session %s had no retained log at reconnect (last_event_id=%d); seeding seq",
+                        session_id,
+                        last_event_id,
+                    )
+                    chat_state.init_session(session_id, start_seq=last_event_id)
             else:
-                chat_state.init_session(session_id)
-
-            # If this is a reconnection but we have no retained session,
-            # initialize a new one so forward events get tagged.
-            if not chat_state.get_event_log(session_id):
                 chat_state.init_session(session_id)
 
             queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
@@ -154,8 +157,14 @@ class ChatSendController(Controller):
                 producer_task.cancel()
                 try:
                     await producer_task
-                except (asyncio.CancelledError, Exception):
+                except asyncio.CancelledError:
                     pass
+                except Exception:
+                    logger.exception(
+                        "chat_send: producer cleanup raised for session=%s mode=%s",
+                        data.session_id,
+                        data.mode,
+                    )
                 chat_state.remove_session(session_id)
 
         return Stream(

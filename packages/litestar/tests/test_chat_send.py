@@ -154,3 +154,68 @@ async def test_chat_send_streams_tool_call(tool_client: AsyncTestClient) -> None
     assert tool_events[0]["id"] == "call_abc"
     assert tool_events[0]["name"] == "search"
     assert tool_events[0]["group_type"] == "tool_call"
+
+
+def _parse_sse_events(text: str) -> list[dict]:
+    events = []
+    for block in text.split("\n\n"):
+        for line in block.strip().split("\n"):
+            if line.startswith("data:"):
+                raw = line.removeprefix("data:").strip()
+                if raw:
+                    events.append(json.loads(raw))
+    return events
+
+
+@pytest.mark.asyncio
+async def test_chat_send_reconnect_with_last_event_id_seeds_seq(
+    client: AsyncTestClient,
+) -> None:
+    """After session eviction, a reconnect with Last-Event-ID must seed the
+    seq counter so new events stay strictly greater than the client's
+    lastSeq — otherwise client-side dedup would silently drop them."""
+    _, session_id = await _setup_backend_and_session(client)
+
+    # First request — server tags events with _seq 1..N, then remove_session() on close
+    first = await client.post(
+        "/api/v1/chat/send",
+        json={"session_id": session_id, "content": "hi", "mode": "single"},
+    )
+    assert first.status_code == 200
+    first_events = _parse_sse_events(first.text)
+    max_seq = max((e.get("_seq", 0) for e in first_events), default=0)
+    assert max_seq >= 1
+
+    # Reconnect: simulate client with Last-Event-ID == max_seq. Session was
+    # evicted on first close, so server has no retained log and must seed
+    # seq from the header rather than restarting at 1.
+    second = await client.post(
+        "/api/v1/chat/send",
+        headers={"Last-Event-ID": str(max_seq)},
+        json={"session_id": session_id, "content": "again", "mode": "single"},
+    )
+    assert second.status_code == 200
+    second_events = _parse_sse_events(second.text)
+    forward_seqs = [e.get("_seq") for e in second_events if e.get("_seq") is not None]
+    assert forward_seqs, "reconnect must emit tagged forward events"
+    assert all(s > max_seq for s in forward_seqs), (
+        f"forward seqs {forward_seqs} must all be > last_event_id {max_seq}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_chat_send_malformed_last_event_id_treated_as_fresh(
+    client: AsyncTestClient,
+) -> None:
+    """Malformed Last-Event-ID headers must not crash — fall back to seq=1
+    for the new session (and log a warning, verified by the successful 200)."""
+    _, session_id = await _setup_backend_and_session(client)
+    resp = await client.post(
+        "/api/v1/chat/send",
+        headers={"Last-Event-ID": "not-a-number"},
+        json={"session_id": session_id, "content": "hi", "mode": "single"},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    seqs = [e.get("_seq") for e in events if e.get("_seq") is not None]
+    assert seqs and seqs[0] == 1

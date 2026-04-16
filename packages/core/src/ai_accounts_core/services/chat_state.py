@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import collections
+import logging
 import threading
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ChatStateService:
@@ -13,9 +16,14 @@ class ChatStateService:
         self._sessions: dict[str, _SessionState] = {}
         self._lock = threading.Lock()
 
-    def init_session(self, session_id: str) -> None:
+    def init_session(self, session_id: str, *, start_seq: int = 0) -> None:
+        """Create or reset a session state. `start_seq` seeds the seq counter;
+        used on reconnect after eviction so new events don't collide with a
+        client's retained `lastSeq`."""
         with self._lock:
-            self._sessions[session_id] = _SessionState(max_events=self._max_events)
+            self._sessions[session_id] = _SessionState(
+                max_events=self._max_events, start_seq=start_seq
+            )
 
     def remove_session(self, session_id: str) -> None:
         with self._lock:
@@ -25,6 +33,11 @@ class ChatStateService:
         with self._lock:
             state = self._sessions.get(session_id)
             if state is None:
+                logger.warning(
+                    "chat_state.push_event for unknown session %s — event dropped from log (kind=%s)",
+                    session_id,
+                    event.get("kind"),
+                )
                 return -1
             return state.push(event)
 
@@ -49,9 +62,9 @@ class ChatStateService:
 
 
 class _SessionState:
-    def __init__(self, *, max_events: int) -> None:
+    def __init__(self, *, max_events: int, start_seq: int = 0) -> None:
         self.log: collections.deque[dict[str, Any]] = collections.deque(maxlen=max_events)
-        self.seq: int = 0
+        self.seq: int = start_seq
 
     def push(self, event: dict[str, Any]) -> int:
         self.seq += 1
