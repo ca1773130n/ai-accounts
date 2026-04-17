@@ -41,7 +41,12 @@ from ai_accounts_core.protocols.backend import (
     PtyRequest,
 )
 
-_CODEX_URL_RE = re.compile(r"https://chatgpt\.com/auth/\S+")
+# Codex CLI may print auth URLs on either chatgpt.com/auth/... (older) or
+# auth.openai.com/... (newer device-code flow). Ported from Agented 78d270c:
+# the PTY output detector must catch both hosts so the frontend can auto-open.
+_CODEX_URL_RE = re.compile(
+    r"https://(?:chatgpt\.com/auth/|auth\.openai\.com/)\S+"
+)
 _CODEX_USER_CODE_RE = re.compile(r"code[:\s]+([A-Z0-9]{4}-?[A-Z0-9]{4})", re.IGNORECASE)
 _CODEX_SUCCESS_MARKERS = ("Successfully logged in", "Authentication complete")
 _CODEX_FAILURE_MARKERS = ("error:", "failed", "Error")
