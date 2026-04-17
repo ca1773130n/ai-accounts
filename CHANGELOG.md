@@ -2,6 +2,39 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.2 — 2026-04-17
+
+Stable release rolling up all 0.3.2-alpha.1 work plus post-release audit closures.
+
+### Added
+- **Claude v2 auth** (`ai-accounts-core`, `ClaudeBackend`) — `begin_login("cli_browser")` now uses `claude auth login --claudeai --email <email>` when an `email` is configured, falling back to the v1 interactive `/login` flow otherwise. v2 uses the public `platform.claude.com/oauth/code/callback` redirect (no localhost binding), so it works on remote boxes without a paste-callback workaround. `--email` also pre-fills Google's account picker. `ClaudeBackend.metadata` advertises `email` as an optional input on the `cli_browser` flow.
+- **Codex OAuth URL detection** (`ai-accounts-core`, `CodexBackend`) — `_CODEX_URL_RE` now matches both `chatgpt.com/auth/*` and `auth.openai.com/*`, so the interactive-login state machine emits `UrlPrompt` immediately for either host.
+- **PTY child orphan protection** (`ai-accounts-core`) — `PR_SET_PDEATHSIG` now set in both `cli_orchestrator.os.forkpty()` and `pty/handle.os.fork()` child branches. Linux-only via `prctl`; macOS silently no-ops (accepted platform limitation). Closes **RISKS-AND-BUGS H-5**.
+
+### Fixed
+- **Gemini OAuth: `client_secret` + peek-don't-pop PKCE state** (`ai-accounts-core`). The token-exchange POST to `oauth2.googleapis.com` now includes `client_secret` (required by Google for the web-client credential type Gemini CLI uses — publicly embedded in Gemini CLI, treated as a configuration constant). `_GeminiDirectOAuthSession.events()` now retries on token-exchange failure up to 3 times, keeping the PKCE `code_verifier`/`state` alive across attempts — so a transient Google 5xx or a typo in the auth code no longer wipes PKCE state and forces a hard re-login.
+- **IPv6 callback** (`ai-accounts-core`, `forward_cliproxy_callback`) — now tries `[::1]` first, then `127.0.0.1`, then `localhost`. Claude CLI v2.1.92+ binds the local callback server to IPv6 loopback on macOS with IPv6-first stacks; cliproxyapi still listens on IPv4. Trying IPv6 first and falling back preserves both paths.
+- **Claude URL capture hardening** — URL regex now matches `platform.claude.com` alongside `claude.ai` / `console.anthropic.com`, so the interactive login picks up v2 OAuth URLs.
+- **`AccountService.delete`: `rmtree` failures logged** (`ai-accounts-core`) — `shutil.rmtree(isolation_dir, ignore_errors=True)` replaced with a `try/except OSError` that logs a warning, so stale credential directories can no longer accumulate invisibly on permission/filesystem issues. Closes **SILENT-FAILURES H-04**.
+- **`_ACTIVE_PROCS` keyed on UUID** (`ai-accounts-litestar`, `routes/cliproxy.py`) — replaced `str(id(proc))` with `uuid.uuid4().hex`. Python object-id reuse after GC can no longer overwrite a live reaper entry. Closes **RISKS-AND-BUGS L-2**.
+- **cliproxy fake-browser temp dir cleanup on every exit path** (`ai-accounts-core`, `cliproxy/manager.py`) — `CliproxyLoginInfo` carries a new `fake_dir` field; the three previously-leaky error paths in `start_cliproxy_login` and the reaper `finally` in `routes/cliproxy.py` all clean it up. Extends **SILENT H-04 / M-10** closure.
+
+### Removed
+- Stale `feat/0.3.0-alpha.1`, `feat/0.3.0-alpha.2-4`, `feat/smart-chat-panel`, `feat/usage-scheduler`, `fix/claude-login-config-and-menu-ui` branches pruned on origin. No code impact; housekeeping only.
+
+### Documentation
+- `docs/superpowers/MAINTENANCE.md` refreshed to 0.3.x reality — version refs updated, obsolete "chat() / pty() raise NotImplementedError" tech-debt section removed (those shipped in 0.3.0-alpha.2/4), proper release history table, and two new operator-facing sections for the **0.3.1 auth middleware** (5.6) and **schema-migration system** (5.7).
+- `docs/superpowers/RISKS-AND-BUGS.md` and `SILENT-FAILURES.md` gained "Status at 0.3.1" blocks with per-item FIXED / PARTIAL / OPEN annotations grounded in real file:line refs. 13 RISKS items now closed (up from 11 in 0.3.1); C-5 reclassified as architectural tradeoff tracked for 0.4.0; H-07 reclassified as accepted top-level-handler design.
+- New plan file: `docs/superpowers/plans/2026-04-17-ai-accounts-0.3.2-alpha.1.md` documents the Agented-parity motivation, per-commit scope, and release checklist.
+
+---
+
+## 0.3.2-alpha.1 — 2026-04-17
+
+Prerelease. Superseded by 0.3.2 stable above — see that entry for the full scope.
+
+---
+
 ## 0.3.1 — 2026-04-17
 
 Security hardening, schema-migration root-cause fix, and cleanup of issues found by an automated code review pass.
