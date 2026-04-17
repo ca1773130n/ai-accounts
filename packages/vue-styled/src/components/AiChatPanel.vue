@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, watchEffect } from 'vue';
-import { useSmartChat, useSmartScroll } from '@ai-accounts/vue-headless';
+import { computed, ref, watchEffect, onMounted } from 'vue';
+import { useSmartChat, useSmartScroll, useAiAccounts } from '@ai-accounts/vue-headless';
+import type { BackendDTO, BackendOption } from '@ai-accounts/ts-core';
 import ChatBubble from './ChatBubble.vue';
 import ChatControls from './ChatControls.vue';
 import ChatInput from './ChatInput.vue';
@@ -45,10 +46,61 @@ const emit = defineEmits<{
 
 const chat = useSmartChat();
 const scroll = useSmartScroll();
+const { client } = useAiAccounts();
+const backends = ref<BackendDTO[]>([]);
+const backendOptions = computed<BackendOption[]>(() =>
+  Array.from(new Set(backends.value.map(b => b.kind))).map(kind => {
+    const forKind = backends.value.filter(b => b.kind === kind);
+    return { kind, displayName: kind, accounts: forKind.map(b => b.id), models: [] };
+  }),
+);
 
 watchEffect(() => {
   chat.setConfigParser(props.configParser ?? null);
 });
+
+onMounted(async () => {
+  try {
+    const result = await client.listBackends();
+    backends.value = result.items ?? [];
+  } catch (e) {
+    // listBackends may fail before sidecar is ready; ignore — user can retry by sending
+  }
+});
+
+function pickBackendFor(kind: string | null): BackendDTO | null {
+  const pool = kind ? backends.value.filter(b => b.kind === kind) : backends.value;
+  return pool.find(b => b.status === 'ready') ?? pool[0] ?? null;
+}
+
+async function handleSend(content: string) {
+  if (!chat.sessionId.value) {
+    // Refresh backends if none loaded yet
+    if (backends.value.length === 0) {
+      try {
+        const result = await client.listBackends();
+        backends.value = result.items ?? [];
+      } catch {
+        chat.error.value = 'Unable to load backends from sidecar';
+        return;
+      }
+    }
+    const preferredKind = chat.selectedBackend.value ?? props.defaultBackend ?? null;
+    const backend = pickBackendFor(preferredKind);
+    if (!backend) {
+      chat.error.value = 'No backend available — add an account first';
+      return;
+    }
+    const model = chat.selectedModel.value ?? props.defaultModel ?? '';
+    try {
+      await chat.createSession(backend.id, model);
+    } catch (e) {
+      chat.error.value = e instanceof Error ? e.message : String(e);
+      return;
+    }
+  }
+  await chat.send(content);
+}
 
 async function handleFinalize() {
   const cfg = await chat.finalize();
@@ -64,7 +116,7 @@ async function handleFinalize() {
       :chat-mode="chat.chatMode.value"
       :selected-backend="chat.selectedBackend.value"
       :selected-model="chat.selectedModel.value"
-      :backends="[]"
+      :backends="backendOptions"
       @update:chat-mode="chat.setMode"
       @update:selected-backend="chat.selectBackend"
       @update:selected-model="(v: string | null) => chat.selectedModel.value = v"
@@ -167,7 +219,7 @@ async function handleFinalize() {
       v-if="!readOnly"
       :placeholder="placeholder"
       :is-streaming="chat.isStreaming.value"
-      @send="chat.send"
+      @send="handleSend"
     />
   </div>
 </template>
