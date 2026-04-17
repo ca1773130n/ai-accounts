@@ -2,6 +2,25 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.0 — 2026-04-16
+
+Stable release consolidating all alpha work: multi-backend login, smart chat, PTY sessions, and security hardening.
+
+See alpha entries below for detailed per-feature changelogs.
+
+### Fixed (since alpha.3)
+- SSE reconnect seq-seed bug — post-eviction reconnects now produce monotonic seq IDs
+- 5 silent `catch` blocks in `useStreamingParser` now log with context
+- Heartbeat timeout now aborts in-flight fetch via AbortController
+- Compound synthesis no longer silently falls back to `"claude"` on error
+- `pty.fork()` → `os.forkpty()` for Python 3.14 compatibility
+
+### Changed (since alpha.3)
+- Heartbeat tuning: server 30s→20s, client 65s→90s
+- `sendChat()` now accepts `{ signal, lastEventId }` options
+
+---
+
 ## 0.3.0-alpha.3 — 2026-04-15
 
 Smart AI chat panel v2 — real-time tool call visibility, resilient streaming, and message actions on top of the alpha.2 chat foundation.
