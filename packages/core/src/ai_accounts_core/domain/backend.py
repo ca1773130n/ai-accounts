@@ -21,6 +21,7 @@ class BackendStatus(str, Enum):
     UNCONFIGURED = "unconfigured"
     DETECTING = "detecting"
     NEEDS_LOGIN = "needs_login"
+    NEEDS_REAUTH = "needs_reauth"
     VALIDATING = "validating"
     READY = "ready"
     ERROR = "error"
