@@ -171,6 +171,11 @@ class _GeminiDirectOAuthSession(LoginSession):
     """
 
     _CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+    # Gemini CLI OAuth client is registered as a web app; Google requires
+    # client_secret even when using PKCE. The secret is publicly embedded
+    # in the Gemini CLI itself, so treating it as a configuration constant
+    # rather than a secret is consistent with upstream behaviour.
+    _CLIENT_SECRET = "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"
     _REDIRECT_URI = "https://codeassist.google.com/authcode"
     _SCOPES = " ".join(
         [
@@ -242,6 +247,7 @@ class _GeminiDirectOAuthSession(LoginSession):
                 data={
                     "code": auth_code,
                     "client_id": self._CLIENT_ID,
+                    "client_secret": self._CLIENT_SECRET,
                     "redirect_uri": self._REDIRECT_URI,
                     "grant_type": "authorization_code",
                     "code_verifier": self._code_verifier or "",
@@ -297,35 +303,56 @@ class _GeminiDirectOAuthSession(LoginSession):
             return
 
         yield UrlPrompt(prompt_id="oauth", url=oauth_url)
-        yield TextPrompt(
-            prompt_id="auth_code",
-            prompt="Paste the authorization code from Google",
-            hidden=False,
-        )
 
-        try:
-            answer = await asyncio.wait_for(self._answers.get(), timeout=300)
-        except asyncio.TimeoutError:
-            self._done = True
-            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
-            return
-        if answer.prompt_id == "__cancel__":
-            self._done = True
-            yield LoginFailed(code="cancelled", message="Login cancelled")
-            return
-        auth_code = answer.answer.strip()
-        if not auth_code:
-            self._done = True
-            yield LoginFailed(code="empty_code", message="Authorization code cannot be empty")
-            return
+        # Peek-don't-pop: keep the PKCE code_verifier/state alive across
+        # transient token-exchange failures so the user can paste a fresh
+        # auth code without restarting the whole flow. Ported from Agented
+        # fix 14d0b23 — previously a single failed exchange wiped the
+        # pending state and forced a hard re-login.
+        max_attempts = 3
+        tokens: dict | None = None
+        for attempt in range(max_attempts):
+            yield TextPrompt(
+                prompt_id="auth_code",
+                prompt="Paste the authorization code from Google",
+                hidden=False,
+            )
+            try:
+                answer = await asyncio.wait_for(self._answers.get(), timeout=300)
+            except asyncio.TimeoutError:
+                self._done = True
+                yield LoginFailed(
+                    code="response_timeout",
+                    message="No response received within 5 minutes",
+                )
+                return
+            if answer.prompt_id == "__cancel__":
+                self._done = True
+                yield LoginFailed(code="cancelled", message="Login cancelled")
+                return
+            auth_code = answer.answer.strip()
+            if not auth_code:
+                self._done = True
+                yield LoginFailed(
+                    code="empty_code",
+                    message="Authorization code cannot be empty",
+                )
+                return
 
-        try:
-            tokens = await self._exchange_code(auth_code)
-        except Exception as exc:
-            self._done = True
-            yield LoginFailed(code="token_exchange_failed", message=str(exc))
-            return
+            try:
+                tokens = await self._exchange_code(auth_code)
+                break
+            except Exception as exc:
+                if attempt + 1 >= max_attempts:
+                    self._done = True
+                    yield LoginFailed(code="token_exchange_failed", message=str(exc))
+                    return
+                # Keep PKCE state; re-prompt for a fresh auth code.
+                yield StdoutChunk(
+                    text=f"Token exchange failed ({exc}); please paste a fresh code.\n",
+                )
 
+        assert tokens is not None  # loop guarantees tokens on break
         try:
             self._write_credentials(tokens)
         except Exception as exc:

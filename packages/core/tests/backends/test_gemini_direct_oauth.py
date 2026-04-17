@@ -158,16 +158,207 @@ async def test_direct_oauth_reports_token_exchange_failure(tmp_path: Path):
         async def post(self, *args, **kwargs):
             return _FailResponse()
 
+    # Session now retries up to 3 times on token-exchange failure
+    # (peek-don't-pop PKCE state). Submit 3 bad codes to exhaust retries.
+    async def _drain_with_retries(session, bad_codes: list[str]) -> list[LoginEvent]:
+        events: list[LoginEvent] = []
+        agen = session.events()
+        attempts = 0
+        async for ev in agen:
+            events.append(ev)
+            if isinstance(ev, TextPrompt) and attempts < len(bad_codes):
+                await session.respond(
+                    PromptAnswer(prompt_id="auth_code", answer=bad_codes[attempts])
+                )
+                attempts += 1
+        return events
+
     with patch("httpx.AsyncClient", _FakeAsyncClient):
-        events_task = asyncio.create_task(_drain(session))
-        await asyncio.sleep(0)
-        await session.respond(PromptAnswer(prompt_id="auth_code", answer="bad-code"))
-        events = await events_task
+        events = await _drain_with_retries(session, ["bad1", "bad2", "bad3"])
 
     failures = [e for e in events if isinstance(e, LoginFailed)]
     assert len(failures) == 1
     assert failures[0].code == "token_exchange_failed"
     assert "invalid_grant" in failures[0].message
+
+
+@pytest.mark.asyncio
+async def test_token_exchange_posts_client_secret(tmp_path: Path):
+    """Google requires client_secret for web-client credentials even with PKCE."""
+    backend = GeminiBackend()
+    session = backend.begin_login(
+        flow_kind="direct_oauth",
+        config={"email": "user@example.test", "config_path": str(tmp_path / "cfg")},
+        vault_ctx={},
+        isolation_dir=tmp_path,
+    )
+
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {
+                "access_token": "ya29.fake",
+                "refresh_token": "1//fake",
+                "token_type": "Bearer",
+                "id_token": "id",
+                "expires_in": 3600,
+            }
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            pass
+
+        async def post(self, url, data=None, **kwargs):
+            captured["url"] = url
+            captured["data"] = data
+            return _FakeResponse()
+
+    with patch("httpx.AsyncClient", _FakeAsyncClient):
+        events_task = asyncio.create_task(_drain(session))
+        await asyncio.sleep(0)
+        await session.respond(PromptAnswer(prompt_id="auth_code", answer="good"))
+        await events_task
+
+    assert captured["url"] == "https://oauth2.googleapis.com/token"
+    assert "client_secret" in captured["data"]
+    assert captured["data"]["client_secret"].startswith("GOCSPX-")
+    assert captured["data"]["client_id"].endswith(".apps.googleusercontent.com")
+
+
+@pytest.mark.asyncio
+async def test_pkce_state_survives_transient_failure(tmp_path: Path):
+    """Peek-don't-pop: a failed token exchange must not wipe PKCE state —
+    the next paste attempt must reuse the same code_verifier."""
+    backend = GeminiBackend()
+    session = backend.begin_login(
+        flow_kind="direct_oauth",
+        config={"email": "user@example.test", "config_path": str(tmp_path / "cfg")},
+        vault_ctx={},
+        isolation_dir=tmp_path,
+    )
+
+    verifiers_seen: list[str] = []
+    call_count = {"n": 0}
+
+    class _Resp:
+        def __init__(self, status: int, body: dict) -> None:
+            self.status_code = status
+            self.headers = {"content-type": "application/json"}
+            self._body = body
+
+        def json(self) -> dict:
+            return self._body
+
+        @property
+        def text(self) -> str:
+            return json.dumps(self._body)
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            pass
+
+        async def post(self, url, data=None, **kwargs):
+            verifiers_seen.append(data["code_verifier"])
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return _Resp(400, {"error_description": "invalid_grant"})
+            return _Resp(
+                200,
+                {
+                    "access_token": "ya29.ok",
+                    "refresh_token": "1//ok",
+                    "token_type": "Bearer",
+                    "id_token": "id",
+                    "expires_in": 3600,
+                },
+            )
+
+    async def _drive() -> list[LoginEvent]:
+        events: list[LoginEvent] = []
+        codes = iter(["first_bad", "second_good"])
+        async for ev in session.events():
+            events.append(ev)
+            if isinstance(ev, TextPrompt):
+                nxt = next(codes, None)
+                if nxt is not None:
+                    await session.respond(
+                        PromptAnswer(prompt_id="auth_code", answer=nxt)
+                    )
+        return events
+
+    with patch("httpx.AsyncClient", _FakeAsyncClient):
+        events = await _drive()
+
+    # Both exchange calls must reuse the same PKCE verifier
+    assert len(verifiers_seen) == 2
+    assert verifiers_seen[0] == verifiers_seen[1]
+    completes = [e for e in events if isinstance(e, LoginComplete)]
+    assert len(completes) == 1
+
+
+@pytest.mark.asyncio
+async def test_post_success_state_not_retrievable(tmp_path: Path):
+    """After successful exchange, session is done and cannot be re-driven."""
+    backend = GeminiBackend()
+    session = backend.begin_login(
+        flow_kind="direct_oauth",
+        config={"email": "u@example.test", "config_path": str(tmp_path / "cfg")},
+        vault_ctx={},
+        isolation_dir=tmp_path,
+    )
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {
+                "access_token": "ya29.ok",
+                "refresh_token": "1//ok",
+                "token_type": "Bearer",
+                "id_token": "id",
+                "expires_in": 3600,
+            }
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            pass
+
+        async def post(self, *args, **kwargs):
+            return _FakeResponse()
+
+    with patch("httpx.AsyncClient", _FakeAsyncClient):
+        events_task = asyncio.create_task(_drain(session))
+        await asyncio.sleep(0)
+        await session.respond(PromptAnswer(prompt_id="auth_code", answer="good"))
+        await events_task
+
+    assert session.done is True
+    # Further respond() calls are silently ignored post-completion
+    await session.respond(PromptAnswer(prompt_id="auth_code", answer="again"))
+    assert session.done is True
 
 
 def test_validate_config_path_rejects_traversal(tmp_path: Path):
