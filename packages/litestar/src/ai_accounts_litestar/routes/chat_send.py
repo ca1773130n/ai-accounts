@@ -84,8 +84,20 @@ class ChatSendController(Controller):
             # last_event_id so fresh events keep a monotonic id — otherwise
             # the client's dedup would silently drop them.
             if last_event_id > 0:
-                replayed = chat_state.replay(session_id, last_event_id)
-                for ev in replayed:
+                result = chat_state.replay_with_gap(session_id, last_event_id)
+                if result.gap:
+                    # Events between the client's cursor and what we retained
+                    # have been evicted. Emit an explicit gap marker so the
+                    # client can re-sync rather than silently miss history.
+                    gap_event = {
+                        "kind": "gap",
+                        "payload": {
+                            "last_seen_seq": last_event_id,
+                            "next_seq": result.events[0]["_seq"] if result.events else None,
+                        },
+                    }
+                    yield _format_sse(gap_event, None)
+                for ev in result.events:
                     yield _format_sse(ev, ev.get("_seq"))
                 if not chat_state.get_event_log(session_id):
                     logger.info(

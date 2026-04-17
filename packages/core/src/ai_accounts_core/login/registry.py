@@ -1,8 +1,11 @@
 """In-memory LoginSession registry with TTL sweep.
 
 Sessions live in the sidecar process for the duration of the login.
-Each session is keyed by its own ``session_id``. Sessions that exceed
-``ttl_seconds`` since registration are purged by ``sweep()``.
+Each session is keyed by its own ``session_id`` and bound to the
+``backend_id`` it was created for. Route handlers must verify both IDs
+match before acting on a session — otherwise a leaked session_id could be
+used to attach to another backend's login stream or misroute the
+resulting credential.
 
 Concurrency note: all mutation goes through an ``asyncio.Lock`` so the
 SSE route handler can safely race with /respond and /cancel.
@@ -23,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _Entry:
     session: LoginSession
+    backend_id: str
     registered_at: float
 
 
@@ -33,22 +37,52 @@ class LoginSessionRegistry:
         self._lock = asyncio.Lock()
         self._pending_cancels: set[asyncio.Task[None]] = set()
 
-    async def register(self, session: LoginSession) -> None:
+    async def register(self, session: LoginSession, *, backend_id: str) -> None:
         async with self._lock:
             if session.session_id in self._entries:
                 raise ValueError(f"session {session.session_id!r} already registered")
-            self._entries[session.session_id] = _Entry(session, time.monotonic())
+            self._entries[session.session_id] = _Entry(
+                session=session,
+                backend_id=backend_id,
+                registered_at=time.monotonic(),
+            )
             logger.info(
-                "login session registered: sid=%s kind=%s flow=%s",
+                "login session registered: sid=%s backend_id=%s kind=%s flow=%s",
                 session.session_id,
+                backend_id,
                 session.backend_kind,
                 session.flow_kind,
             )
 
-    async def get(self, session_id: str) -> LoginSession | None:
+    async def get(
+        self, session_id: str, *, backend_id: str | None = None
+    ) -> LoginSession | None:
+        """Return the session iff it exists and, when ``backend_id`` is given,
+        it matches the backend the session was registered against.
+
+        Always pass ``backend_id`` from route handlers — omitting it is only
+        appropriate for registry-internal bookkeeping. Mismatched backend_id
+        returns None (same shape as not-found) so handlers cannot distinguish
+        "wrong backend" from "no such session" to avoid probing attacks.
+        """
         async with self._lock:
             entry = self._entries.get(session_id)
-            return entry.session if entry else None
+            if entry is None:
+                return None
+            if backend_id is not None and entry.backend_id != backend_id:
+                logger.warning(
+                    "login session %s backend mismatch: registered=%s requested=%s",
+                    session_id,
+                    entry.backend_id,
+                    backend_id,
+                )
+                return None
+            return entry.session
+
+    async def backend_id_for(self, session_id: str) -> str | None:
+        async with self._lock:
+            entry = self._entries.get(session_id)
+            return entry.backend_id if entry else None
 
     async def remove(self, session_id: str) -> None:
         async with self._lock:

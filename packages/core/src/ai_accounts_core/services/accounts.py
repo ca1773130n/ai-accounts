@@ -204,8 +204,12 @@ class AccountService:
             vault_ctx={"backend_id": backend_id, "kind": backend.kind},
             isolation_dir=isolation_dir,
         )
-        await self._login_registry.register(session)
-        logger.info("begin_login: session registered sid=%s", session.session_id)
+        await self._login_registry.register(session, backend_id=backend_id)
+        logger.info(
+            "begin_login: session registered sid=%s backend_id=%s",
+            session.session_id,
+            backend_id,
+        )
         return session
 
     async def store_credential(

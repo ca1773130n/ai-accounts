@@ -30,15 +30,16 @@ import BackendPicker from './BackendPicker.vue';
 
 // ---------------------------------------------------------------------------
 // Simple i18n stub — vue-styled is router/i18n-agnostic. Hosts can pass a
-// `t` prop later; for now we use English strings inline.
+// `translate` prop to supply their own translator (e.g. wrapping vue-i18n).
+// Falls back to hard-coded English when no translator is provided.
 // ---------------------------------------------------------------------------
-const t = (_key: string, fallback?: string | Record<string, unknown>): string => {
+type Translator = (key: string, params?: Record<string, unknown>) => string;
+
+const defaultT = (_key: string, fallback?: string | Record<string, unknown>): string => {
   if (typeof fallback === 'string') return fallback;
   if (fallback && typeof fallback === 'object') {
-    // Handle simple interpolation fallbacks like t('x', { backend: 'Claude' })
     return '';
   }
-  // Hard-coded English copy looked up by key suffix
   const map: Record<string, string> = {
     'accountWizard.addAccount': 'Add Account',
     'accountWizard.stepSubscription': 'Subscription',
@@ -93,7 +94,18 @@ const props = defineProps<{
   backendName?: string;
   /** Allow showing a "skip" button on the subscription step. */
   allowSkip?: boolean;
+  /**
+   * Optional translator. Receives a dotted key like `accountWizard.addAccount`
+   * and an optional params object for interpolation. If not provided, falls
+   * back to hard-coded English strings.
+   */
+  translate?: Translator;
 }>();
+
+const t: Translator = (key, params) => {
+  if (props.translate) return props.translate(key, params);
+  return defaultT(key, params as string | Record<string, unknown>);
+};
 
 const emit = defineEmits<{
   close: [];
@@ -414,10 +426,14 @@ onUnmounted(() => {
 // reflect its state in the legacy template shape.
 const loginStatus = computed<'idle' | 'connecting' | 'streaming' | 'completed' | 'error'>(() => {
   switch (loginSession.status.value) {
-    case 'running':
-      return loginSession.urlPrompt.value || loginSession.stdoutLines.value.length > 0
-        ? 'streaming'
-        : 'connecting';
+    case 'running': {
+      const hasAnyPrompt =
+        loginSession.urlPrompt.value ||
+        loginSession.textPrompt.value ||
+        loginSession.menuPrompt.value ||
+        loginSession.stdoutLines.value.length > 0;
+      return hasAnyPrompt ? 'streaming' : 'connecting';
+    }
     case 'complete':
       return 'completed';
     case 'failed':

@@ -78,6 +78,20 @@ def test_production_mode_rejects_fake_vault(tmp_path, monkeypatch):
         create_app(config)
 
 
+def test_production_mode_rejects_none_auth(real_vault, tmp_path):
+    config = AiAccountsConfig(
+        env="production",
+        storage=SqliteStorage(str(tmp_path / "a.db")),
+        vault=real_vault,
+        auth=None,
+        backends=(ClaudeBackend(),),
+        cors_origins=("https://example.com",),
+        backend_dirs_path=tmp_path / "backend_dirs",
+    )
+    with pytest.raises(RuntimeError, match="auth is unset"):
+        create_app(config)
+
+
 def test_development_mode_allows_all(tmp_path):
     config = AiAccountsConfig(
         env="development",

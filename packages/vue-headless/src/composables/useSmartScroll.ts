@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted, type Ref } from 'vue';
+import { ref, watch, onUnmounted, type Ref } from 'vue';
 
 export interface UseSmartScrollReturn {
   containerRef: Ref<HTMLElement | null>;
@@ -23,25 +23,42 @@ export function useSmartScroll(): UseSmartScrollReturn {
   }
 
   function scrollToBottom() {
-    containerRef.value?.scrollTo({ top: containerRef.value.scrollHeight, behavior: 'smooth' });
-  }
-
-  let observer: MutationObserver | null = null;
-
-  onMounted(() => {
     const el = containerRef.value;
     if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }
+
+  let attached: HTMLElement | null = null;
+  let observer: MutationObserver | null = null;
+
+  function detach() {
+    if (attached) attached.removeEventListener('scroll', check);
+    if (observer) observer.disconnect();
+    attached = null;
+    observer = null;
+  }
+
+  function attach(el: HTMLElement) {
     el.addEventListener('scroll', check, { passive: true });
     observer = new MutationObserver(() => {
       if (isNearBottom.value) scrollToBottom();
     });
-    observer.observe(el, { childList: true, subtree: true });
-  });
+    // `characterData: true` is required because streaming token updates
+    // often mutate existing text nodes rather than insert children.
+    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    attached = el;
+  }
 
-  onUnmounted(() => {
-    containerRef.value?.removeEventListener('scroll', check);
-    observer?.disconnect();
-  });
+  watch(
+    containerRef,
+    (el) => {
+      detach();
+      if (el) attach(el);
+    },
+    { immediate: true, flush: 'post' },
+  );
+
+  onUnmounted(detach);
 
   return { containerRef, isNearBottom, showScrollButton, scrollToBottom };
 }

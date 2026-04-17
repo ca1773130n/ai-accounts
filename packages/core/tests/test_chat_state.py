@@ -68,6 +68,42 @@ def test_init_session_with_start_seq_seeds_counter():
     assert second == 44
 
 
+def test_replay_with_gap_signals_eviction():
+    """When client cursor predates the oldest retained seq, replay_with_gap
+    reports gap=True so the client can resync instead of silently missing."""
+    svc = ChatStateService(max_events=5)
+    svc.init_session("s1")
+    for i in range(10):
+        svc.push_event("s1", {"kind": "token", "payload": str(i)})
+    result = svc.replay_with_gap("s1", last_seq=2)
+    assert result.gap is True
+    assert len(result.events) == 5
+    assert result.events[0]["_seq"] == 6
+
+
+def test_replay_with_gap_no_gap_when_contiguous():
+    svc = ChatStateService()
+    svc.init_session("s1")
+    for i in range(5):
+        svc.push_event("s1", {"kind": "token", "payload": str(i)})
+    result = svc.replay_with_gap("s1", last_seq=3)
+    assert result.gap is False
+    assert len(result.events) == 2
+
+
+def test_replay_returns_deep_copies_not_aliases():
+    """Mutating a replayed event must not corrupt the retained log."""
+    svc = ChatStateService()
+    svc.init_session("s1")
+    svc.push_event("s1", {"kind": "token", "payload": {"nested": "value"}})
+    replayed = svc.replay("s1", last_seq=0)
+    replayed[0]["payload"]["nested"] = "mutated"
+    replayed[0]["_seq"] = 999
+    log = svc.get_event_log("s1")
+    assert log[0]["payload"]["nested"] == "value"
+    assert log[0]["_seq"] == 1
+
+
 def test_push_on_unknown_session_logs_warning(caplog):
     """push_event on a missing session must log so orphaned events aren't silent."""
     import logging

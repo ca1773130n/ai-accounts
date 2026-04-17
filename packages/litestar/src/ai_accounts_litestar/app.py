@@ -5,6 +5,7 @@ from typing import Any
 from litestar import Litestar, get
 from litestar.config.cors import CORSConfig
 from litestar.di import Provide
+from litestar.middleware import DefineMiddleware
 
 from ai_accounts_core import __version__ as core_version
 from ai_accounts_core.adapters.auth_noauth import NoAuth
@@ -19,6 +20,7 @@ from ai_accounts_core.services.pty import PtyService
 from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
 from ai_accounts_core.services.scheduler import AccountScheduler
 
+from .auth_middleware import AuthMiddleware
 from .config import AiAccountsConfig
 from .errors import service_error_handler
 from .routes.backends import BackendsController
@@ -75,7 +77,9 @@ def _enforce_production_guards(config: AiAccountsConfig) -> None:
             f"vault is a test fake ({vault_cls}); use EnvKeyVault or a KMS adapter"
         )
 
-    if isinstance(config.auth, NoAuth):
+    if config.auth is None:
+        violations.append("auth is unset; configure ApiKeyAuth or an OIDC adapter")
+    elif isinstance(config.auth, NoAuth):
         violations.append("auth is NoAuth; use ApiKeyAuth or an OIDC adapter")
 
     if "*" in config.cors_origins:
@@ -170,6 +174,18 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         CORSConfig(allow_origins=list(config.cors_origins)) if config.cors_origins else None
     )
 
+    # Wire the configured auth provider as app-level middleware. Without this,
+    # ``config.auth`` would only be *checked* at startup but never consulted per
+    # request, leaving the API effectively unauthenticated. The production
+    # guard above refuses to start with ``auth=None``, so skipping the
+    # middleware here is only possible in development — dev convenience, not
+    # a production path.
+    middleware_list: list[Any] = []
+    if config.auth is not None:
+        middleware_list.append(
+            DefineMiddleware(AuthMiddleware, auth_provider=config.auth)
+        )
+
     sweep_task_holder: list[asyncio.Task[None]] = []
 
     async def _startup(_app: Litestar) -> None:
@@ -200,6 +216,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         ],
         dependencies=dependencies,
         cors_config=cors_config,
+        middleware=middleware_list,
         exception_handlers={ServiceError: service_error_handler},
         on_startup=[_startup],
         on_shutdown=[_shutdown],

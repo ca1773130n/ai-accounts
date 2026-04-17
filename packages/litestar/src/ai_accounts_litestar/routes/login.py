@@ -40,6 +40,12 @@ class _CancelRequest(msgspec.Struct, kw_only=True):
     session_id: str
 
 
+def _not_found(session_id: str) -> NotFoundException:
+    # Intentionally does not distinguish "wrong backend" from "no such
+    # session" so attackers cannot probe for session IDs across backends.
+    return NotFoundException(detail=f"session {session_id} not found")
+
+
 class LoginController(Controller):
     path = "/api/v1/backends/{backend_id:str}/login"
     tags = ["login"]
@@ -68,9 +74,14 @@ class LoginController(Controller):
         session_id: str,
         account_service: AccountService,
     ) -> ServerSentEvent:
-        session = await account_service.login_registry.get(session_id)
+        # Enforce that the session was registered for *this* backend_id.
+        # Without this, any leaked session_id could be used to attach to
+        # another backend's login stream or misroute the resulting credential.
+        session = await account_service.login_registry.get(
+            session_id, backend_id=backend_id
+        )
         if session is None:
-            raise NotFoundException(detail=f"session {session_id} not found")
+            raise _not_found(session_id)
 
         registry = account_service.login_registry
 
@@ -101,12 +112,29 @@ class LoginController(Controller):
                                 "auto-stored credential for %s after login",
                                 backend_id,
                             )
-                        except Exception:
+                        except Exception as exc:
+                            # Don't leave the client believing login succeeded
+                            # while the backend is actually unusable. Emit an
+                            # explicit terminal error event so the UI can
+                            # surface the failure.
                             logger.warning(
                                 "failed to auto-store credential for %s",
                                 backend_id,
                                 exc_info=True,
                             )
+                            err_payload = {
+                                "type": "failed",
+                                "code": "credential_store_failed",
+                                "message": (
+                                    f"login completed but credential "
+                                    f"persistence/validation failed: "
+                                    f"{type(exc).__name__}: {exc}"
+                                ),
+                            }
+                            yield {
+                                "event": "login",
+                                "data": msgspec.json.encode(err_payload).decode(),
+                            }
             finally:
                 await session.cancel()
                 await registry.remove(session_id)
@@ -120,9 +148,11 @@ class LoginController(Controller):
         data: _RespondRequest,
         account_service: AccountService,
     ) -> None:
-        session = await account_service.login_registry.get(data.session_id)
+        session = await account_service.login_registry.get(
+            data.session_id, backend_id=backend_id
+        )
         if session is None:
-            raise NotFoundException(detail=f"session {data.session_id} not found")
+            raise _not_found(data.session_id)
         await session.respond(PromptAnswer(prompt_id=data.prompt_id, answer=data.answer))
 
     @post("/cancel", status_code=HTTP_204_NO_CONTENT)
@@ -132,8 +162,13 @@ class LoginController(Controller):
         data: _CancelRequest,
         account_service: AccountService,
     ) -> None:
-        session = await account_service.login_registry.get(data.session_id)
+        session = await account_service.login_registry.get(
+            data.session_id, backend_id=backend_id
+        )
         if session is None:
+            # Cancel is idempotent; an already-gone session is not an error
+            # for a correctly-scoped client. A backend mismatch is silently
+            # ignored (same shape) to avoid probing across backends.
             return
         await session.cancel()
         await account_service.login_registry.remove(data.session_id)
