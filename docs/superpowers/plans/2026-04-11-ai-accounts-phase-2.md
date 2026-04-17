@@ -1447,7 +1447,8 @@ Template branches (rendered via `v-if`/`v-else-if` on `wiz.state.value`):
 5. **`oauth_challenge`** / **`oauth_polling`** — show the verification URL (as a clickable `<a target="_blank" rel="noopener">`), the user_code with a "Copy" button, and "Waiting for you to sign in in your browser…" spinner. Also a "Cancel" button → `wiz.cancelOAuth`.
 6. **`validating`** — spinner "Validating…"
 7. **`done`** — success slot
-8. **`error`** — `{{ wiz.error.value }}` + "Try again" button → `onRetry`
+<!-- prettier-ignore -->
+8. **`error`** — <span v-pre>`{{ wiz.error.value }}`</span> + "Try again" button → `onRetry`
 
 Scoped `<style>` block uses existing `--aia-*` vars. Classes: `.aia-onboarding`, `.aia-onboarding__kind-grid`, `.aia-kind-card`, `.aia-kind-card--installed`, `.aia-kind-card--missing`, `.aia-onboarding__tabs`, `.aia-tab`, `.aia-tab--active`, `.aia-onboarding__oauth-challenge`, `.aia-code-display`, `.aia-copy-btn`, etc.
 
@@ -1810,7 +1811,7 @@ git commit -m "chore: upgrade ai-accounts to 0.2.0 in Agented"
 
 ---
 
-## Task 18: Swap OnboardingAutomationPage.vue for <OnboardingFlow>
+## Task 18: Swap OnboardingAutomationPage.vue for `<OnboardingFlow>`
 
 **Files:**
 - Modify: `frontend/src/views/OnboardingAutomationPage.vue` (maybe)
