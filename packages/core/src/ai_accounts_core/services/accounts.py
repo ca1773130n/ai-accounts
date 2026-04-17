@@ -222,7 +222,16 @@ class AccountService:
         await repo.delete(backend.id)
         isolation_dir = self._isolation_dir(backend.id)
         if isolation_dir.exists():
-            shutil.rmtree(isolation_dir, ignore_errors=True)
+            try:
+                shutil.rmtree(isolation_dir)
+            except OSError as exc:
+                # Closes SILENT-FAILURES.md H-04: previously
+                # `ignore_errors=True` masked permission/filesystem problems
+                # so operators never noticed stale credential directories
+                # lingering on disk.
+                logger.warning(
+                    "failed to delete isolation dir %s: %s", isolation_dir, exc
+                )
 
     async def detect(self, backend_id: str) -> DetectResult:
         backend = await self.get(backend_id)

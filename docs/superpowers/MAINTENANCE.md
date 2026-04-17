@@ -1,16 +1,21 @@
 # ai-accounts Maintenance Guide
 
-Last updated: 2026-04-11
+Last updated: 2026-04-17 (0.3.1 release)
 
 This guide covers operational knowledge for maintaining the ai-accounts system
-across the `ai-accounts` monorepo (branch `feat/0.3.0-alpha.1`) and the
-`Agented` consumer (branch `main`).
+across the `ai-accounts` monorepo (branch `main`) and the `Agented` consumer
+(branch `main`).
+
+**Latest published release: 0.3.1** (npm + PyPI). See the `## 0.3.1 —
+2026-04-17` entry in `CHANGELOG.md` for the security + correctness fixes it
+contains (auth middleware, login session binding, schema migrations, SSE
+framing, concurrency fixes).
 
 ---
 
 ## 1. Dependency Inventory
 
-### 1.1 Python: ai-accounts-core (0.3.0a2)
+### 1.1 Python: ai-accounts-core (0.3.1)
 
 | Dependency      | Constraint   | Notes |
 |-----------------|-------------|-------|
@@ -19,11 +24,11 @@ across the `ai-accounts` monorepo (branch `feat/0.3.0-alpha.1`) and the
 | `cryptography`  | `>=43.0`    | Mature, stable. (c) No upper bound -- major bumps occasionally drop old Python versions. |
 | `httpx`         | `>=0.27`    | (a) Pre-1.0. (c) No upper bound. (d) Also used by Agented backend (`>=0.28.1`) and duplicated conceptually with JS `fetch` in ts-core. |
 
-### 1.2 Python: ai-accounts-litestar (0.3.0a2)
+### 1.2 Python: ai-accounts-litestar (0.3.1)
 
 | Dependency                | Constraint              | Notes |
 |---------------------------|------------------------|-------|
-| `ai-accounts-core`        | workspace (dev), `==0.3.0a2` (Agented) | (b) Pinned exactly in Agented's pyproject.toml -- must bump on every release. |
+| `ai-accounts-core`        | workspace (dev), `==0.3.1` (Agented) | (b) Pinned exactly in Agented's pyproject.toml -- must bump on every release. |
 | `litestar[standard]`      | `>=2.12`               | (c) No upper bound. Litestar is pre-1.0 historically but now >= 2.x and stable. |
 
 ### 1.3 Python: Workspace dev dependencies (root pyproject.toml)
@@ -42,18 +47,18 @@ across the `ai-accounts` monorepo (branch `feat/0.3.0-alpha.1`) and the
 
 | Dependency                 | Constraint       | Notes |
 |---------------------------|-----------------|-------|
-| `ai-accounts-core`        | `==0.3.0a2`     | (b) Exactly pinned. Must be bumped with each ai-accounts release. |
-| `ai-accounts-litestar`    | `==0.3.0a2`     | (b) Exactly pinned. Same. |
+| `ai-accounts-core`        | `==0.3.1`     | (b) Exactly pinned. Must be bumped with each ai-accounts release. |
+| `ai-accounts-litestar`    | `==0.3.1`     | (b) Exactly pinned. Same. |
 | `cryptography`            | `>=41.0.0`      | Also a transitive dep of ai-accounts-core (>=43.0). The lower bound here (41.0) is less restrictive -- ai-accounts-core's >=43.0 wins at resolve time, but the discrepancy should be harmonized. |
 | `httpx`                   | `>=0.28.1`      | Overlaps with ai-accounts-core's >=0.27. |
 | `litestar`                | Transitive only  | Pulled in by ai-accounts-litestar. |
 
-### 1.5 TypeScript: @ai-accounts/ts-core (0.3.0-alpha.2)
+### 1.5 TypeScript: @ai-accounts/ts-core (0.3.1)
 
 No runtime dependencies. Zero-dep package that uses the platform `fetch` API.
 Build-time: `tsup`, `typescript`, `vitest`.
 
-### 1.6 TypeScript: @ai-accounts/vue-headless (0.3.0-alpha.2)
+### 1.6 TypeScript: @ai-accounts/vue-headless (0.3.1)
 
 | Dependency                | Constraint        | Notes |
 |---------------------------|------------------|-------|
@@ -62,7 +67,7 @@ Build-time: `tsup`, `typescript`, `vitest`.
 
 Dev: `@vue/test-utils ^2.4.0`, `happy-dom ^15.0.0` (a: pre-1.0).
 
-### 1.7 TypeScript: @ai-accounts/vue-styled (0.3.0-alpha.2)
+### 1.7 TypeScript: @ai-accounts/vue-styled (0.3.1)
 
 | Dependency                    | Constraint        | Notes |
 |-------------------------------|------------------|-------|
@@ -91,9 +96,9 @@ Dev-only: `@changesets/cli ^2.30.0`, `@types/node ^22.0.0`,
 - `happy-dom` (15.0+) -- JS test env
 
 **(b) Pinned too tightly:**
-- Agented pins `ai-accounts-core==0.3.0a2` and `ai-accounts-litestar==0.3.0a2` exactly.
+- Agented pins `ai-accounts-core==0.3.1` and `ai-accounts-litestar==0.3.1` exactly.
   Every ai-accounts release requires a corresponding Agented pyproject.toml bump.
-  Consider using `~=0.3.0a2` (compatible release) once stable.
+  Consider using `~=0.3.1` (compatible release) once stable.
 
 **(c) Missing upper bounds:**
 - Every ai-accounts Python dependency uses only a floor (`>=`). A new major
@@ -111,68 +116,55 @@ Dev-only: `@changesets/cli ^2.30.0`, `@types/node ^22.0.0`,
 
 ## 2. Upgrade Paths
 
-### 2.1 Current state: 0.3.0-alpha.2
+### 2.1 Current state: 0.3.1 (stable)
 
-Alpha.1 shipped the wizard + login layer. Alpha.2 is the current published
-version on PyPI/npm. Per the spec at
-`docs/superpowers/specs/2026-04-11-ai-accounts-0.3.0-design.md`:
+The alpha sequence is complete. 0.3.0 stable shipped 2026-04-16; 0.3.1
+followed 2026-04-17 with security and correctness patches. Active
+pre-work for 0.3.2 lives on `feat/0.3.2-agented-parity`.
 
-### 2.2 Alpha sequence
+### 2.2 Release history
 
-| Alpha   | Scope                     | Status       |
-|---------|---------------------------|-------------|
-| alpha.1 | Wizard + Login (SSE)      | Shipped     |
-| alpha.2 | Chat (conversations, SSE) | Published (packages versioned), code not yet in ai-accounts repo |
-| alpha.3 | PTY (WebSocket sessions)  | Planned     |
+| Version       | Date       | Scope |
+|---------------|------------|-------|
+| 0.1.0 – 0.2.2 | –          | Early alpha / PoC. 0.2.x is deprecation-only on npm/PyPI. |
+| 0.3.0-alpha.1 | 2026-04-11 | Wizard + Login (SSE) |
+| 0.3.0-alpha.2 | 2026-04-12 | Chat (conversations, SSE) |
+| 0.3.0-alpha.3 | 2026-04-13 | Smart chat v2 (tool calls, process groups, resilient streaming) |
+| 0.3.0-alpha.4 | 2026-04-14 | PTY (WebSocket sessions, xterm.js) |
+| 0.3.0-alpha.5 | 2026-04-15 | Polish + security hardening |
+| 0.3.0         | 2026-04-16 | Stable consolidation of alphas |
+| 0.3.1         | 2026-04-17 | Auth middleware wired, login session binding, schema migrations, SSE framing, concurrency |
 
-**alpha.2 deliverables (chat):**
-- `ai-accounts-sessions-core` package (new): `ConversationService`, `MessageStore`, SSE helpers
-- SQLite schema additions: `conversations`, `messages` tables (already present in schema.sql as `chat_sessions` / `chat_messages`)
-- Routes: `/api/v1/conversations/*`
-- `@ai-accounts/vue-sessions/ChatPanel.vue`, `ChatMessage.vue`
-- Agented milestone: BackendDetailPage chat drawer uses packaged `<ChatPanel>`
+### 2.3 Versioning policy for 0.3.x
 
-**alpha.3 deliverables (PTY):**
-- `ai-accounts-sessions-core/pty/` -- port of Agented's `pty_service.py`
-- Litestar WebSocket handler at `/ws/pty/{session_id}`
-- ts-core `PtySocket` client (reconnect, backpressure)
-- `@ai-accounts/vue-sessions/TerminalView.vue` with xterm.js
-- Vite proxy config needs `ws: true` for `/ws/*`
-- CORS config for WebSocket origins (see section 5.4)
+- **Additive changes** (new event kinds, optional fields, routes, tables)
+  allowed in 0.3.x patches. SQLite schema changes must land as new entries
+  in
+  `packages/core/src/ai_accounts_core/adapters/storage_sqlite/migrations.py`
+  (see section 5.6).
+- **Breaking changes** require 0.4.0.
+- **Contract surface** frozen in 0.3.0: REST routes under `/api/v1/*`,
+  `SmartChatEvent` / `ChatDelta` / `LoginEvent` shapes, `BackendProtocol`
+  method signatures, SQLite table schemas.
 
-### 2.3 What can change in alphas vs stable
+### 2.4 0.3.1 → 0.3.2 (in-flight on `feat/0.3.2-agented-parity`)
 
-**Alphas (0.3.0-alpha.N):**
-- Any type, route, event name, or protocol method may change
-- Wire protocol version stays at 1 but fields may be added/removed
-- SQLite schema may gain tables/columns (no destructive migrations yet)
-- Python `BackendProtocol` signature may evolve (it did between alpha.1 and alpha.2)
+Known pre-work on branch:
+- Claude v2 auth: `--claudeai` flag + email-based login, IPv6 callback,
+  URL capture hardening (commit `48af9f6`).
+- Additional `Agented`-parity fixes expected before tagging.
 
-**Stable (0.3.0):**
-- Contract freeze point. Everything listed in section 6 becomes the stable API.
-- Breaking changes require 0.4.0.
-- Additive changes (new event types, new optional fields, new routes) are allowed in 0.3.x patches.
+### 2.5 0.3.x → 0.4.0
 
-### 2.4 0.3.0-alpha.2 -> 0.3.0 stable
-
-1. Complete alpha.3 (PTY) implementation
-2. Freeze all contracts: types, events, protocols, routes
-3. Fix the `__version__` mismatch (`core/__init__.py` still says `"0.2.2"` but packages are versioned `0.3.0a2`)
-4. Run full Agented verification (`just build`, backend pytest, frontend vitest)
-5. Manual E2E: fresh clone -> onboarding -> Claude /login -> chat -> interactive terminal
-6. Finalize docs, changelog, migration guide
-7. Yank 0.2.x npm/PyPI tags with deprecation notice
-8. Publish 0.3.0 to npm and PyPI
-
-### 2.5 0.3.0 -> 0.4.0
-
-Per the spec, 0.4.0 is the next major version allowing breaking changes.
-Potential scope:
-- Multi-user auth (OIDC adapter)
-- Cloud storage adapters (Postgres, DynamoDB)
-- Telemetry / structured metrics
-- Schema migrations with version tracking
-- Vault key rotation implementation (currently `NotImplementedError`)
+0.4.0 is the next major version allowing breaking changes. Candidate scope:
+- Multi-user auth (OIDC adapter, joining existing `ApiKeyAuth` / `NoAuth`)
+- Cloud storage adapters (Postgres, DynamoDB) — today only `SqliteStorage`
+- Vault key rotation (today `EnvKeyVault.current_key_id()` returns a
+  constant; rotation needs schema changes to track multiple key versions)
+- Structured telemetry / metrics endpoint
+- WebSocket auth upgrade: the 0.3.1 middleware closes WS with `4401` on
+  missing principal but doesn't validate subprotocol tokens — OIDC-style
+  WS handshake goes here.
 
 ---
 
@@ -191,7 +183,7 @@ Potential scope:
 | `domain/chat.py` | Tested via `test_sqlite_storage.py` | No dedicated domain-level tests. |
 | `domain/principal.py` | Tested via `test_auth_adapters.py` | No dedicated tests. |
 | `services/onboarding.py` | `test_onboarding_service.py` + `test_onboarding_routes.py` | Covered. |
-| `backends/claude.py` | `test_claude_backend.py` + `backends/test_claude_login.py` | `chat()` and `pty()` raise `NotImplementedError` -- tested that they do, but no real coverage. |
+| `backends/claude.py` | `test_claude_backend.py` + `backends/test_claude_login.py` | `chat()` and `pty()` implemented since 0.3.0-alpha.2/4; integration coverage via `test_accounts_begin_login.py` + end-to-end chat tests. Unit-level coverage of the `chat()` streaming path is still thin. |
 | `backends/codex.py` | `test_codex_backend.py` + `backends/test_codex_login.py` | Same as claude. |
 | `backends/gemini.py` | `test_gemini_backend.py` + `backends/test_gemini_login.py` + `backends/test_gemini_direct_oauth.py` | Same as claude. Direct OAuth session has dedicated tests. |
 | `backends/opencode.py` | `test_opencode_backend.py` + `backends/test_opencode_login.py` | Same as claude. |
@@ -290,7 +282,7 @@ alpha.1 rewrite (hence the xfail in Agented's integration test).
 ```
 
 **Known issue:** `core/__init__.py` has `__version__ = "0.2.2"` while the
-package is actually version `0.3.0a2`. The health endpoint reports the stale
+package is actually version `0.3.1`. The health endpoint reports the stale
 version string.
 
 ### 4.2 Current logging patterns
@@ -466,6 +458,56 @@ published version pin, even when running against local code. This is intentional
 **Override location:** Set `AI_ACCOUNTS_PATH=/abs/path` before the just command
 if your ai-accounts clone is not at `../ai-accounts`.
 
+### 5.6 Auth middleware (new in 0.3.1)
+
+`AiAccountsConfig.auth` is now enforced per-request by
+`packages/litestar/src/ai_accounts_litestar/auth_middleware.py`. In 0.3.0
+and earlier, this field was only *validated* at startup — no middleware
+was installed, so the API was effectively unauthenticated even with
+`ApiKeyAuth` configured. Operators upgrading from 0.3.0 must re-verify:
+
+- **Exempt routes**: `/health` and `/schema*` (OpenAPI) bypass the
+  middleware. Every other path requires `auth.authenticate()` to return
+  a non-None principal.
+- **Response shape on failure**: HTTP 401 JSON `{"error": {"code":
+  "unauthorized", "message": "authentication required"}}`. WebSocket
+  connections get `close(4401)`.
+- **Principal access**: handlers can read `scope["state"]["principal"]`
+  if they need the authenticated identity.
+- **Production guard**: `env="production"` now refuses `auth=None` (not
+  just `NoAuth`). Dev deployments may omit `auth` — the middleware is
+  simply not installed in that case.
+
+**Upgrade note (Agented and similar consumers)**: any client previously
+relying on the missing-middleware behavior must now send a valid bearer
+token (`Authorization: Bearer <AI_ACCOUNTS_API_KEY>`) with every
+request, or configure `NoAuth()` explicitly for dev.
+
+### 5.7 Schema migrations (new in 0.3.1)
+
+SQLite schema changes are now handled by
+`packages/core/src/ai_accounts_core/adapters/storage_sqlite/migrations.py`.
+Previously `SqliteStorage.migrate()` ran `schema.sql` under
+`CREATE TABLE IF NOT EXISTS` only — a pattern that silently left old
+databases missing any column added after they were first created (the
+pre-0.3.0 `rate_limited_until`, `rate_limit_reason`, `last_used_at`,
+`last_polled_at` columns being the case that prompted this fix).
+
+**How to add a future migration:**
+
+1. Bump `CURRENT_VERSION` in `migrations.py`.
+2. Append a `Migration(version=N, description=..., statements=(...))` to
+   the `MIGRATIONS` tuple. Write each statement defensively (`ADD COLUMN`
+   is tolerated via the `duplicate column` exception path).
+3. Update `schema.sql` to reflect the new baseline so fresh installs
+   skip the migration walk.
+4. Add a test under `packages/core/tests/test_storage_migrations.py`
+   asserting a pre-migration DB reaches the new state after `migrate()`.
+
+Fresh installs run `schema.sql` once and record `CURRENT_VERSION`;
+pre-existing databases walk `MIGRATIONS` from their recorded version up
+to current. Both paths are idempotent.
+
 ---
 
 ## 6. Breaking Change Surface (Stable Contract at 0.3.0)
@@ -592,20 +634,11 @@ these requires a 0.4.0 release.
 
 ### 7.1 `NotImplementedError` stubs
 
-All four backends + FakeBackend raise `NotImplementedError` for `chat()` and `pty()`:
-
-| File | Line | Message |
-|------|------|---------|
-| `packages/core/src/ai_accounts_core/backends/claude.py` | 273 | "chat lands in Phase 3" |
-| `packages/core/src/ai_accounts_core/backends/claude.py` | 282 | "pty lands in Phase 4" |
-| `packages/core/src/ai_accounts_core/backends/opencode.py` | 258 | "chat lands in Phase 3" |
-| `packages/core/src/ai_accounts_core/backends/opencode.py` | 267 | "pty lands in Phase 4" |
-| `packages/core/src/ai_accounts_core/backends/gemini.py` | 457 | "chat lands in Phase 3" |
-| `packages/core/src/ai_accounts_core/backends/gemini.py` | 466 | "pty lands in Phase 4" |
-| `packages/core/src/ai_accounts_core/backends/codex.py` | 363 | "chat lands in Phase 3" |
-| `packages/core/src/ai_accounts_core/backends/codex.py` | 372 | "pty lands in Phase 4" |
-| `packages/core/src/ai_accounts_core/testing/fakes.py` | 284 | "chat lands in Phase 3" |
-| `packages/core/src/ai_accounts_core/testing/fakes.py` | 287 | "pty lands in Phase 4" |
+**Resolved as of 0.3.0**: `chat()` and `pty()` are implemented across all
+four real backends (`claude`, `opencode`, `gemini`, `codex`) and their
+`FakeBackend` counterpart. The "chat lands in Phase 3 / pty lands in
+Phase 4" stubs are gone — see `CHANGELOG.md` entries for 0.3.0-alpha.2
+(chat) and 0.3.0-alpha.4 (PTY).
 
 ### 7.2 Vault key rotation not implemented
 
@@ -637,7 +670,7 @@ All four backends + FakeBackend raise `NotImplementedError` for `chat()` and `pt
 
 | File | Line | Context |
 |------|------|---------|
-| `packages/core/src/ai_accounts_core/__init__.py` | 3 | `__version__ = "0.2.2"` -- stale, should be `"0.3.0a2"` to match `pyproject.toml`. The `/health` endpoint reports this stale version. |
+| `packages/core/src/ai_accounts_core/__init__.py` | 3 | `__version__ = "0.2.2"` -- stale, should be `"0.3.1"` to match `pyproject.toml`. The `/health` endpoint reports this stale version. |
 
 ### 7.7 Missing WAL mode
 

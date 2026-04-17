@@ -202,6 +202,18 @@ class CliOrchestrator:
             import struct
             import termios
 
+            # Closes RISKS-AND-BUGS H-5: ensure the child is killed if the
+            # parent crashes before reaching wait(). prctl(PR_SET_PDEATHSIG)
+            # is Linux-only; macOS silently no-ops via the OSError branch,
+            # which we accept as a platform limitation.
+            try:
+                import ctypes
+
+                libc = ctypes.CDLL("libc.so.6", use_errno=True)
+                libc.prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG = 1
+            except (OSError, AttributeError):
+                pass
+
             # Set wide terminal (500 cols) so OAuth URLs don't wrap
             winsize = struct.pack("HHHH", 50, 500, 0, 0)
             try:

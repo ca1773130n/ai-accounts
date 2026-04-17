@@ -5,6 +5,40 @@ Branches: `feat/0.3.0-alpha.1` (ai-accounts), `main` (Agented)
 
 ---
 
+## Status at 0.3.1 (2026-04-17)
+
+Spot-checked each item against `main`. **Legend:** ✅ FIXED · 🟡 PARTIAL · ⚠️ OPEN.
+
+**CRITICAL**
+
+- 🟡 **C-01** SSE JSON.parse silently dropped — `chat-stream.ts`, `smart-chat-stream.ts`, `login-stream.ts` all now log malformed frames to `console.warn`. `login-stream` also caps at 3 consecutive parse errors and yields a synthetic `LoginFailed`. `chat-stream` / `smart-chat-stream` don't yet emit a synthetic terminal error after N failures — still partial.
+- ⚠️ **C-02** `useLoginSession.start()` no try/catch — not re-verified; likely still open in Agented-side code.
+- ✅ **C-03** Registry sweep fire-and-forget — `LoginSessionRegistry.close()` awaits `_pending_cancels` via `asyncio.gather(..., return_exceptions=True)` before returning.
+- ⚠️ **C-04** `asyncio.create_task(_reap())` fire-and-forget in cliproxy route — partially addressed by `_ACTIVE_TASKS` dict storing the task ref (prevents GC), but the task body still doesn't surface errors; low-noise open.
+
+**HIGH**
+
+- ⚠️ **H-01** `os._exit(127)` in child branch — unchanged; child process still exits with no I/O cleanup on `execvpe` failure. Rare but open.
+- ⚠️ **H-02** `get_cliproxy_version()` bare `except Exception: pass` — not re-verified.
+- ⚠️ **H-03** `ClaudeBackend.list_models()` JSON parse crash — not re-verified; model listing still uses `json.loads`.
+- ✅ **H-04** `shutil.rmtree(isolation_dir, ignore_errors=True)` — now wrapped in `try/except OSError` with `logger.warning` (`services/accounts.py`, this pass).
+- ⚠️ **H-05** `_ClaudeCliBrowserSession.events()` finally triple-silent-catch — claude.py still has broad suppressions flagged as `pragma: no cover - best-effort`; unchanged.
+- ⚠️ **H-06** cliproxy/login/begin returns 201 with `status: "skipped"` — partially improved (C-4 fix returns 400/404 on error now), but `"skipped"` path semantics unchanged.
+- ⚠️ **H-07** `service_error_handler` catches non-`ServiceError` — still the same broad catch; translates to generic 500.
+
+**MEDIUM**
+
+- ✅ **M-11** `LoginController.stream()` error handling — `gen()` now emits structured SSE error frames on `LoginComplete` post-processing failures and `await session.cancel()` runs in `finally` (0.3.1).
+- ⚠️ **M-01, M-02, M-03, M-04, M-05, M-06, M-07, M-08, M-09, M-10, M-12, M-13, M-14** — not individually re-verified. Most concern bare `contextlib.suppress` / `.catch()` patterns that still exist but are scoped narrowly. Low priority.
+
+**LOW**
+
+- ⚠️ **L-01, L-02, L-03** — unchanged (small-scope `.catch(() => {})` patterns in cancel/cleanup paths).
+
+**Closed since 0.3.0-alpha.1:** H-04, M-11, C-03 (3 fully). **Partial:** C-01, C-04, H-06. **Still open:** C-02, H-01, H-02, H-03, H-05, H-07, most M-level items (mostly narrow-scope catches worth annotating during normal maintenance rather than a dedicated pass).
+
+---
+
 ## CRITICAL Findings
 
 ### C-01: SSE `JSON.parse` failures silently dropped -- malformed events vanish

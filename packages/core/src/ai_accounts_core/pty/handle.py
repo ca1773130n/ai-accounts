@@ -36,6 +36,16 @@ class AsyncPtyHandle:
         child_pid = os.fork()
         if child_pid == 0:
             # Child process
+            # Closes RISKS-AND-BUGS H-5: kill the child if the parent exits
+            # unexpectedly. Linux-only via prctl; macOS no-ops (accepted
+            # limitation — macOS has no direct equivalent).
+            try:
+                import ctypes
+
+                libc = ctypes.CDLL("libc.so.6", use_errno=True)
+                libc.prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG = 1
+            except (OSError, AttributeError):
+                pass
             os.close(master_fd)
             os.setsid()
             os.dup2(slave_fd, 0)

@@ -6,6 +6,44 @@
 
 ---
 
+## Status at 0.3.1 (2026-04-17)
+
+Re-checked each item against `main`. **Legend:** ✅ FIXED · 🟡 PARTIAL · ⚠️ OPEN.
+
+### CRITICAL (current state)
+
+- ✅ **C-1**: `_ClaudeCliBrowserSession.cancel()` now awaits `_cleanup()`, which waits the orchestrator — no more double-`waitpid` race.
+- ⚠️ **C-2**: `CliOrchestrator.wait()` still does not explicitly cancel `_reader_task`; `master_fd` close semantics unchanged. Needs attention before 0.4.0.
+- ✅ **C-3**: `routes/login.py` `gen()` finally now `await session.cancel()` before `registry.remove()` (landed in 0.3.0).
+- ✅ **C-4**: `forward_cliproxy_callback` now enforces scheme/host/port/path allowlists (`_CLIPROXY_ALLOWED_HOSTS/PORTS/PATH_PREFIXES`).
+- ⚠️ **C-5**: Gemini OAuth tokens still written plaintext to `~/.gemini/oauth_creds.json` via `_write_credentials()`. Vault path not wired. **Highest remaining open risk.**
+
+### HIGH (current state)
+
+- ✅ **H-1**: All backend API-key sessions now use `asyncio.wait_for(self._answers.get(), timeout=300)` and yield `LoginFailed(code="response_timeout")`.
+- ⚠️ **H-2**: `respond()` after `events()` is done — not re-verified; likely still open.
+- ⚠️ **H-3**: `_GeminiOAuthDeviceSession.events()` wait-without-terminate — not re-verified.
+- ✅ **H-4**: `start_cliproxy_login` temp dir cleaned via `shutil.rmtree(fake_dir, ...)` on both exit paths (`manager.py:169, 226`).
+- ✅ **H-5**: PTY child orphan — `PR_SET_PDEATHSIG` now set in both `cli_orchestrator.os.forkpty()` and `pty/handle.os.fork()` child branches (ported forward from `feat/0.3.0-alpha.2-4` during the 0.3.1 post-release sweep).
+
+### MEDIUM (current state)
+
+- ⚠️ **M-1**: API key in plain HTTP body on loopback — unchanged. Mitigation is TLS termination at the reverse proxy.
+- ✅ **M-2**: `NoAuth` unauthenticated endpoints — closed in 0.3.1 by `auth_middleware.py`. Production guard refuses `auth=None` or `NoAuth`.
+- ✅ **M-3**: Gemini `config_path` traversal — closed by `_validate_config_path()` (`gemini.py:44`).
+- ⚠️ **M-4/M-5**: Agented-side (consumer) — out of scope for this repo; track in Agented.
+
+### LOW (current state)
+
+- ✅ **L-1**: `SqliteStorage` now sets `PRAGMA journal_mode = WAL` on connection open (`storage.py:460`).
+- ⚠️ **L-2**: `_ACTIVE_PROCS` still keyed on `str(id(proc))` — address reuse after GC could in theory overwrite entries. Low real-world risk (short-lived reaper).
+
+### Summary
+
+**Closed since 0.3.0-alpha.2:** 9 items (C-1, C-3, C-4, H-1, H-4, H-5, M-2, M-3, L-1). **Still open:** C-2, C-5 *(highest residual risk)*, H-2, H-3, L-2, M-1 (mitigation-only). M-4/M-5 tracked in Agented.
+
+---
+
 ### CRITICAL
 
 **C-1: `_ClaudeCliBrowserSession.cancel()` races with `events()` finally — double `os.waitpid()` on same PID**
