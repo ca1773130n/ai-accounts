@@ -13,16 +13,16 @@ Re-checked each item against `main`. **Legend:** ✅ FIXED · 🟡 PARTIAL · �
 ### CRITICAL (current state)
 
 - ✅ **C-1**: `_ClaudeCliBrowserSession.cancel()` now awaits `_cleanup()`, which waits the orchestrator — no more double-`waitpid` race.
-- ⚠️ **C-2**: `CliOrchestrator.wait()` still does not explicitly cancel `_reader_task`; `master_fd` close semantics unchanged. Needs attention before 0.4.0.
+- ✅ **C-2**: On re-check, both halves are fixed. `terminate()` now closes `master_fd` (`cli_orchestrator.py:335-338`), which unblocks the reader thread's `os.read`; `wait()` cancels `_reader_task` and awaits it (`cli_orchestrator.py:358-362`). The audit was authored against an earlier version of this file.
 - ✅ **C-3**: `routes/login.py` `gen()` finally now `await session.cancel()` before `registry.remove()` (landed in 0.3.0).
 - ✅ **C-4**: `forward_cliproxy_callback` now enforces scheme/host/port/path allowlists (`_CLIPROXY_ALLOWED_HOSTS/PORTS/PATH_PREFIXES`).
-- ⚠️ **C-5**: Gemini OAuth tokens still written plaintext to `~/.gemini/oauth_creds.json` via `_write_credentials()`. Vault path not wired. **Highest remaining open risk.**
+- 🟡 **C-5**: Gemini OAuth tokens *still written plaintext* to `oauth_creds.json` (+ optional `~/.cli-proxy-api/gemini-<email>.json`). **Architectural constraint, not a bug**: the Gemini CLI and cliproxyapi read these files on startup — encrypting breaks the CLI handoff. Current mitigations: (a) path validated via `_validate_config_path()` against the isolation dir + a small allowlist; (b) files chmod'd 0o600 immediately after write; (c) isolation_dir scoped per-backend. **Still open**: a vault-encrypted copy should be stored in the backend credential row so rotation/delete works consistently with other backends, and post-write permission verification should guard against umask surprises. Tracked for 0.4.0 when the credential model can change.
 
 ### HIGH (current state)
 
 - ✅ **H-1**: All backend API-key sessions now use `asyncio.wait_for(self._answers.get(), timeout=300)` and yield `LoginFailed(code="response_timeout")`.
-- ⚠️ **H-2**: `respond()` after `events()` is done — not re-verified; likely still open.
-- ⚠️ **H-3**: `_GeminiOAuthDeviceSession.events()` wait-without-terminate — not re-verified.
+- ✅ **H-2**: Every `respond()` across `claude.py` / `codex.py` / `gemini.py` / `opencode.py` now gates on `if self._done: return` before reaching `self._answers.put(answer)` — no more enqueueing sensitive data onto an unread queue.
+- ✅ **H-3**: `_GeminiOAuthDeviceSession._cleanup()` now calls `terminate()` first, then `asyncio.wait_for(wait(), timeout=10)`, and falls back to `kill()` on timeout — no more hang on still-running process.
 - ✅ **H-4**: `start_cliproxy_login` temp dir cleaned via `shutil.rmtree(fake_dir, ...)` on both exit paths (`manager.py:169, 226`).
 - ✅ **H-5**: PTY child orphan — `PR_SET_PDEATHSIG` now set in both `cli_orchestrator.os.forkpty()` and `pty/handle.os.fork()` child branches (ported forward from `feat/0.3.0-alpha.2-4` during the 0.3.1 post-release sweep).
 
@@ -36,11 +36,11 @@ Re-checked each item against `main`. **Legend:** ✅ FIXED · 🟡 PARTIAL · �
 ### LOW (current state)
 
 - ✅ **L-1**: `SqliteStorage` now sets `PRAGMA journal_mode = WAL` on connection open (`storage.py:460`).
-- ⚠️ **L-2**: `_ACTIVE_PROCS` still keyed on `str(id(proc))` — address reuse after GC could in theory overwrite entries. Low real-world risk (short-lived reaper).
+- ✅ **L-2**: `_ACTIVE_PROCS` now keyed on `uuid.uuid4().hex` (`routes/cliproxy.py`, this pass). Object-id reuse after GC can no longer collide with live entries.
 
 ### Summary
 
-**Closed since 0.3.0-alpha.2:** 9 items (C-1, C-3, C-4, H-1, H-4, H-5, M-2, M-3, L-1). **Still open:** C-2, C-5 *(highest residual risk)*, H-2, H-3, L-2, M-1 (mitigation-only). M-4/M-5 tracked in Agented.
+**Closed since 0.3.0-alpha.2:** 13 items (C-1, C-2, C-3, C-4, H-1, H-2, H-3, H-4, H-5, M-2, M-3, L-1, L-2). **Architectural tradeoff (mitigated, tracked for 0.4.0):** C-5 *(Gemini plaintext creds — CLI-mandated on-disk format)*. **Mitigation-only:** M-1 (TLS at reverse proxy). M-4/M-5 tracked in Agented.
 
 ---
 

@@ -19,23 +19,24 @@ Spot-checked each item against `main`. **Legend:** ✅ FIXED · 🟡 PARTIAL · 
 **HIGH**
 
 - ⚠️ **H-01** `os._exit(127)` in child branch — unchanged; child process still exits with no I/O cleanup on `execvpe` failure. Rare but open.
-- ⚠️ **H-02** `get_cliproxy_version()` bare `except Exception: pass` — not re-verified.
-- ⚠️ **H-03** `ClaudeBackend.list_models()` JSON parse crash — not re-verified; model listing still uses `json.loads`.
+- ⚠️ **H-02** `get_cliproxy_version()` bare `except Exception: pass` — confirmed open (`cliproxy/manager.py:77`). Swallows all version-probe failures (timeout, missing binary, permission). Low-impact: caller treats `None` as "unknown version" — but the reason is lost.
+- ⚠️ **H-03** `ClaudeBackend.list_models()` JSON parse crash — confirmed open (`backends/claude.py`). `json.loads(stdout)` has no try/except; a malformed-stdout path from a cliproxy misbehavior would propagate as `JSONDecodeError` → 500.
 - ✅ **H-04** `shutil.rmtree(isolation_dir, ignore_errors=True)` — now wrapped in `try/except OSError` with `logger.warning` (`services/accounts.py`, this pass).
 - ⚠️ **H-05** `_ClaudeCliBrowserSession.events()` finally triple-silent-catch — claude.py still has broad suppressions flagged as `pragma: no cover - best-effort`; unchanged.
-- ⚠️ **H-06** cliproxy/login/begin returns 201 with `status: "skipped"` — partially improved (C-4 fix returns 400/404 on error now), but `"skipped"` path semantics unchanged.
-- ⚠️ **H-07** `service_error_handler` catches non-`ServiceError` — still the same broad catch; translates to generic 500.
+- 🟡 **H-06** cliproxy/login/begin returns 201 with `status: "skipped"` — partially improved (C-4 fix returns 400/404 on error now), but `"skipped"` path semantics unchanged.
+- ℹ️ **H-07** `service_error_handler` catches non-`ServiceError` — behavior unchanged but *defensible*: the handler logs the full traceback via `logger.exception("Unhandled error in service layer")` and returns a generic 500 with no internal details. That's the right pattern for a top-level handler (avoid leaking stack traces over the wire). Reclassifying as "accepted design" rather than a bug.
 
 **MEDIUM**
 
 - ✅ **M-11** `LoginController.stream()` error handling — `gen()` now emits structured SSE error frames on `LoginComplete` post-processing failures and `await session.cancel()` runs in `finally` (0.3.1).
-- ⚠️ **M-01, M-02, M-03, M-04, M-05, M-06, M-07, M-08, M-09, M-10, M-12, M-13, M-14** — not individually re-verified. Most concern bare `contextlib.suppress` / `.catch()` patterns that still exist but are scoped narrowly. Low priority.
+- ⚠️ **M-13** `forward_cliproxy_callback` returns dict `{"status": "error", ...}` with HTTP 200 instead of proper HTTP status codes — confirmed open. All 6 error paths in `manager.py` (scheme/host/port/path/missing-code/upstream-failure) still return a plain dict; the route surfaces it as 200 with a status string in the body. Harmless for the current single client but misleading for any future general-purpose consumer.
+- ⚠️ **M-01, M-02, M-03, M-04, M-05, M-06, M-07, M-08, M-09, M-10, M-12, M-14** — spot-sampled; all concern narrow-scope `contextlib.suppress` / `.catch(() => {})` patterns scoped to cleanup/cancellation paths. Low priority — suitable for incremental annotation during normal maintenance rather than a dedicated sweep.
 
 **LOW**
 
 - ⚠️ **L-01, L-02, L-03** — unchanged (small-scope `.catch(() => {})` patterns in cancel/cleanup paths).
 
-**Closed since 0.3.0-alpha.1:** H-04, M-11, C-03 (3 fully). **Partial:** C-01, C-04, H-06. **Still open:** C-02, H-01, H-02, H-03, H-05, H-07, most M-level items (mostly narrow-scope catches worth annotating during normal maintenance rather than a dedicated pass).
+**Closed since 0.3.0-alpha.1:** H-04, M-11, C-03 (3 fully). **Partial:** C-01, C-04, H-06. **Reclassified as accepted design:** H-07. **Still open:** C-02, H-01, H-02, H-03, H-05, M-13, and most remaining M-level items (narrow-scope catches worth annotating during normal maintenance rather than a dedicated pass).
 
 ---
 

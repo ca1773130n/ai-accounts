@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import logging
 import shutil
+import uuid
 from pathlib import Path
 
 import msgspec
 from litestar import Controller, get, post
+from litestar.response import Response
 
 from ai_accounts_core.cliproxy import (
     CliproxyInstallResult,
@@ -55,9 +59,12 @@ class _CallbackForwardResponse(msgspec.Struct):
     message: str
 
 
+logger = logging.getLogger(__name__)
+
 # Keep a lightweight registry of running proxy-login subprocesses so callers
 # can extend their lifetime via the callback forward path.
 _ACTIVE_PROCS: dict[str, object] = {}
+_ACTIVE_TASKS: dict[str, asyncio.Task[None]] = {}
 
 
 class CliproxyController(Controller):
@@ -103,8 +110,14 @@ class CliproxyController(Controller):
             )
 
         if proc is not None:
-            proc_id = str(id(proc))
+            # Closes RISKS-AND-BUGS L-2: don't key on id(proc). Python can
+            # reuse an object's id after GC, so a long-running process
+            # cycling subprocesses could in theory overwrite a live entry.
+            # uuid4 gives us a per-process key that's stable for the entry's
+            # lifetime.
+            proc_id = uuid.uuid4().hex
             _ACTIVE_PROCS[proc_id] = proc
+            reap_info = info  # capture for closure
 
             async def _reap() -> None:
                 try:
@@ -114,6 +127,10 @@ class CliproxyController(Controller):
                     await proc.wait()
                 finally:
                     _ACTIVE_PROCS.pop(proc_id, None)
+                    if reap_info.fake_dir:
+                        import shutil as _shutil
+
+                        _shutil.rmtree(reap_info.fake_dir, ignore_errors=True)
 
             asyncio.create_task(_reap())
 

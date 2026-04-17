@@ -53,6 +53,7 @@ class CliproxyLoginInfo(msgspec.Struct):
     imported: bool = False
     output: str = ""
     error: str | None = None
+    fake_dir: str | None = None
 
 
 def is_cliproxy_installed() -> bool:
@@ -165,6 +166,7 @@ async def start_cliproxy_login(
             stderr=asyncio.subprocess.STDOUT,
         )
     except FileNotFoundError:
+        shutil.rmtree(fake_dir, ignore_errors=True)
         return None, CliproxyLoginInfo(error="cliproxyapi binary not found")
 
     output_chunks: list[str] = []
@@ -221,6 +223,7 @@ async def start_cliproxy_login(
             await proc.wait()
         except Exception:
             pass
+        shutil.rmtree(fake_dir, ignore_errors=True)
         return None, info
 
     if url is None and not imported:
@@ -229,9 +232,11 @@ async def start_cliproxy_login(
             await proc.wait()
         except Exception:
             pass
+        shutil.rmtree(fake_dir, ignore_errors=True)
         info.error = "could not capture OAuth URL"
         return None, info
 
+    info.fake_dir = str(fake_dir)
     return proc, info
 
 
