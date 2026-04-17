@@ -90,6 +90,9 @@ importers:
       happy-dom:
         specifier: ^15.0.0
         version: 15.11.7
+      streaming-markdown:
+        specifier: '*'
+        version: 0.2.15
       vue:
         specifier: ^3.4.0
         version: 3.5.32(typescript@5.9.3)
@@ -2137,6 +2140,10 @@ packages:
 
   std-env@3.10.0:
     resolution: {integrity: sha512-5GS12FdOZNliM5mAOxFRg7Ir0pWz8MdpYm6AY6VPkGpbA7ZzmbzNcBJQ0GPvvyWgcY7QAhCgf9Uy89I03faLkg==}
+
+  streaming-markdown@0.2.15:
+    resolution: {integrity: sha512-eSWjdvLSTznl2+FIzuxw1TRXwhjZiY1RfSygGCMpcNY8CrsaUM2zHtxe/JFcPoXCQxeO3TSJ72QMDIN5B/Ui1w==}
+    engines: {node: '>=20'}
 
   string-width@4.2.3:
     resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
@@ -4481,6 +4488,8 @@ snapshots:
   stackback@0.0.2: {}
 
   std-env@3.10.0: {}
+
+  streaming-markdown@0.2.15: {}
 
   string-width@4.2.3:
     dependencies:

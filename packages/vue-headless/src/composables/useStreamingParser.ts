@@ -26,8 +26,8 @@ async function resolveSmd(): Promise<SmdModule | null> {
   const injected = (globalThis as Record<string, unknown>).__smd
   if (injected) return injected as SmdModule
   try {
-    // @ts-expect-error - streaming-markdown is an optional peer dep; may not be installed or typed
-    const mod = (await import(/* @vite-ignore */ 'streaming-markdown')) as unknown
+    // streaming-markdown is an optional peer dep; may not be installed or typed.
+    const mod = (await import(/* @vite-ignore */ 'streaming-markdown' as string)) as unknown
     return mod as SmdModule
   } catch (err) {
     if (!smdResolutionWarned) {
