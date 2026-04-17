@@ -5,7 +5,6 @@ export { default as OnboardingFlow } from './components/OnboardingFlow.vue';
 export { default as LoginStream } from './components/LoginStream.vue';
 export { default as BackendPicker } from './components/BackendPicker.vue';
 export { default as AccountEditForm } from './components/AccountEditForm.vue';
-
 // Legacy — kept for backward compat; prefer AiChatPanel
 export { default as ChatPanel } from './components/ChatPanel.vue';
 export { default as ChatMessage } from './components/ChatMessage.vue';
@@ -21,5 +20,5 @@ export { default as ProcessGroup } from './components/ProcessGroup.vue';
 export { default as MessageActions } from './components/MessageActions.vue';
 export { default as FinalizationBanner } from './components/FinalizationBanner.vue';
 
-export const version = '0.3.0-alpha.2';
+export const version = '0.3.2-alpha.1';
 
