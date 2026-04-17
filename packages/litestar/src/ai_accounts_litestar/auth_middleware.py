@@ -23,22 +23,12 @@ development environments.
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
-from litestar.middleware import AbstractMiddleware
+from litestar.middleware import ASGIMiddleware
 from litestar.types import ASGIApp, Receive, Scope, Send
 
 from ai_accounts_core.protocols.auth import AuthProtocol, RequestContext
-
-_EXEMPT_PATTERNS = (
-    re.compile(r"^/health$"),
-    re.compile(r"^/schema(/|$)"),
-)
-
-
-def _is_exempt(path: str) -> bool:
-    return any(pat.match(path) for pat in _EXEMPT_PATTERNS)
 
 
 def _headers_from_scope(scope: Scope) -> dict[str, str]:
@@ -89,19 +79,23 @@ async def _send_json_response(
     await send({"type": "http.response.body", "body": payload, "more_body": False})
 
 
-class AuthMiddleware(AbstractMiddleware):
-    scopes = {"http", "websocket"}
+class AuthMiddleware(ASGIMiddleware):
+    scopes = ("http", "websocket")
+    # Liveness probes and spec fetches must stay reachable before auth is
+    # known. The pattern is a regex matched against the request path.
+    exclude_path_pattern = (r"^/health$", r"^/schema(/|$)")
 
-    def __init__(self, app: ASGIApp, *, auth_provider: AuthProtocol) -> None:
-        super().__init__(app)
+    def __init__(self, auth_provider: AuthProtocol) -> None:
         self._auth = auth_provider
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+    async def handle(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        next_app: ASGIApp,
+    ) -> None:
         path: str = scope.get("path", "") or ""
-        if _is_exempt(path):
-            await self.app(scope, receive, send)
-            return
-
         method: str = scope.get("method", "GET") or "GET"
         headers = _headers_from_scope(scope)
         query = _query_from_scope(scope)
@@ -129,4 +123,4 @@ class AuthMiddleware(AbstractMiddleware):
         # Expose the principal to downstream handlers.
         state = scope.setdefault("state", {})
         state["principal"] = principal
-        await self.app(scope, receive, send)
+        await next_app(scope, receive, send)

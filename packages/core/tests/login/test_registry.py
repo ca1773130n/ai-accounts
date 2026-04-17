@@ -34,8 +34,13 @@ class _Stub(LoginSession):
 async def test_register_and_get():
     reg = LoginSessionRegistry(ttl_seconds=60)
     s = _Stub("sess-1")
-    await reg.register(s)
+    await reg.register(s, backend_id="bkd-1")
     assert await reg.get("sess-1") is s
+    assert await reg.get("sess-1", backend_id="bkd-1") is s
+    # Wrong backend_id returns None (looks like not-found to attackers
+    # probing across backends).
+    assert await reg.get("sess-1", backend_id="bkd-other") is None
+    assert await reg.backend_id_for("sess-1") == "bkd-1"
 
 
 @pytest.mark.asyncio
@@ -47,7 +52,7 @@ async def test_get_missing_returns_none():
 @pytest.mark.asyncio
 async def test_expired_session_purged():
     reg = LoginSessionRegistry(ttl_seconds=0)
-    await reg.register(_Stub("sess-2"))
+    await reg.register(_Stub("sess-2"), backend_id="bkd-1")
     await asyncio.sleep(0.01)
     await reg.sweep()
     assert await reg.get("sess-2") is None
@@ -56,16 +61,16 @@ async def test_expired_session_purged():
 @pytest.mark.asyncio
 async def test_register_duplicate_raises():
     reg = LoginSessionRegistry(ttl_seconds=60)
-    await reg.register(_Stub("sess-dup"))
+    await reg.register(_Stub("sess-dup"), backend_id="bkd-1")
     with pytest.raises(ValueError, match="already registered"):
-        await reg.register(_Stub("sess-dup"))
+        await reg.register(_Stub("sess-dup"), backend_id="bkd-1")
 
 
 @pytest.mark.asyncio
 async def test_done_session_removable():
     reg = LoginSessionRegistry(ttl_seconds=60)
     s = _Stub("sess-3")
-    await reg.register(s)
+    await reg.register(s, backend_id="bkd-1")
     await s.cancel()
     await reg.remove("sess-3")
     assert await reg.get("sess-3") is None

@@ -24,8 +24,10 @@ from ai_accounts_core.protocols.storage import (
     UsageRepository,
 )
 
+from .migrations import CURRENT_VERSION, apply_migrations
+
 _SCHEMA = (Path(__file__).parent / "schema.sql").read_text()
-_CURRENT_VERSION = 1
+_CURRENT_VERSION = CURRENT_VERSION
 
 
 def _iso(dt: datetime) -> str:
@@ -460,16 +462,18 @@ class SqliteStorage:
         return self._conn
 
     async def migrate(self) -> None:
+        """Bring the database up to the current schema version.
+
+        Delegates to the versioned migrations module. Fresh databases get the
+        full baseline schema in one shot; existing databases at an older
+        version get each pending migration applied in order. This replaces
+        the earlier ``CREATE TABLE IF NOT EXISTS``-only approach that
+        silently left pre-existing tables with out-of-date columns (see the
+        pre-0.3.0 rate-limit-columns backfill that had to be hand-rolled
+        downstream).
+        """
         conn = await self._ensure_conn()
-        await conn.executescript(_SCHEMA)
-        async with conn.execute("SELECT COALESCE(MAX(version), 0) FROM schema_version") as cur:
-            row = await cur.fetchone()
-        current = row[0] if row else 0
-        if current < _CURRENT_VERSION:
-            await conn.execute(
-                "INSERT INTO schema_version (version) VALUES (?)", (_CURRENT_VERSION,)
-            )
-            await conn.commit()
+        await apply_migrations(conn, baseline_schema=_SCHEMA)
 
     async def backends(self) -> BackendRepository:
         return _SqliteBackendRepo(await self._ensure_conn())

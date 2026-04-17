@@ -47,6 +47,14 @@ vi.mock('@ai-accounts/vue-headless', () => {
       showScrollButton: ref(false),
       scrollToBottom: vi.fn(),
     }),
+    // AiChatPanel calls `useAiAccounts()` to get a client for listBackends()
+    // on mount. Tests don't care about the result — return an empty-list stub
+    // so mount() doesn't crash during `const { client } = useAiAccounts()`.
+    useAiAccounts: () => ({
+      client: {
+        listBackends: vi.fn().mockResolvedValue({ items: [] }),
+      },
+    }),
   };
 });
 

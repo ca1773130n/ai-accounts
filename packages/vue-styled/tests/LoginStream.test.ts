@@ -10,6 +10,10 @@ function mkSession(overrides: Record<string, unknown> = {}) {
     accountId: ref('bkd-1'),
     urlPrompt: ref(null),
     textPrompt: ref(null),
+    // Menu-prompt support was added to the component template (v-if on
+    // session.menuPrompt.value). Without this ref on the stub, every render
+    // throws `Cannot read properties of undefined (reading 'value')`.
+    menuPrompt: ref(null),
     stdoutLines: ref([]),
     errorCode: ref(null),
     errorMessage: ref(null),
@@ -65,7 +69,9 @@ describe('LoginStream', () => {
       stdoutLines: ref(['line 1\n', 'line 2\n']),
     });
     const w = mount(LoginStream, { props: { session: session as never } });
-    expect(w.find('pre.aia-stdout').text()).toContain('line 1');
-    expect(w.find('pre.aia-stdout').text()).toContain('line 2');
+    const output = w.find('.aia-terminal__output');
+    expect(output.exists()).toBe(true);
+    expect(output.text()).toContain('line 1');
+    expect(output.text()).toContain('line 2');
   });
 });

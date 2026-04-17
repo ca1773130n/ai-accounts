@@ -5,7 +5,6 @@ from typing import Any
 from litestar import Litestar, get
 from litestar.config.cors import CORSConfig
 from litestar.di import Provide
-from litestar.middleware import DefineMiddleware
 
 from ai_accounts_core import __version__ as core_version
 from ai_accounts_core.adapters.auth_noauth import NoAuth
@@ -182,9 +181,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     # a production path.
     middleware_list: list[Any] = []
     if config.auth is not None:
-        middleware_list.append(
-            DefineMiddleware(AuthMiddleware, auth_provider=config.auth)
-        )
+        middleware_list.append(AuthMiddleware(auth_provider=config.auth))
 
     sweep_task_holder: list[asyncio.Task[None]] = []
 
