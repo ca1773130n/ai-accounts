@@ -1,6 +1,6 @@
 {
   "name": "@ai-accounts/vue-styled",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Vue 3 styled components for ai-accounts",
   "license": "Apache-2.0",
   "type": "module",

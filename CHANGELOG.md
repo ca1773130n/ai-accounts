@@ -2,6 +2,30 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.1 — 2026-04-17
+
+Security hardening, schema-migration root-cause fix, and cleanup of issues found by an automated code review pass.
+
+### Security
+- **Auth middleware now actually enforces `config.auth`** (`ai-accounts-litestar`). Previously the configured `AuthProtocol` provider was only *checked* at startup — no middleware was installed, so every endpoint was effectively unauthenticated even with `ApiKeyAuth` configured. The new `AuthMiddleware` wraps every request (exempting `/health` and `/schema`), calls `authenticate()`, returns 401 on `None` principal, and exposes the principal via `scope["state"]["principal"]`. Production guard also now refuses to start with `auth=None`.
+- **Login sessions bound to `backend_id`** (`ai-accounts-core`, `ai-accounts-litestar`). `LoginSessionRegistry.register()` now requires a `backend_id=` kwarg; `get()` takes an optional `backend_id` verifier. All login routes (`/stream`, `/respond`, `/cancel`) pass the route's `backend_id` to the registry, closing three cross-backend attach / credential-misroute paths that a leaked `session_id` could have exploited. Mismatches look like not-found to prevent probing.
+- **Login auto-store/validate failures now emit an explicit SSE error frame** instead of being swallowed — clients no longer see "login complete" while the backend is actually unusable.
+
+### Fixed
+- **Real versioned schema migrations** (`ai-accounts-core`). `SqliteStorage.migrate()` previously used `CREATE TABLE IF NOT EXISTS` only, which silently left pre-existing tables with out-of-date columns when new columns were added. Pre-0.3.0 databases lacked `rate_limited_until`, `rate_limit_reason`, `last_used_at`, and `last_polled_at` on `backends`, forcing downstream consumers (notably HypePaper) to hand-roll backfill logic. New `migrations.py` module adds a versioned `MIGRATIONS` list, idempotent `ALTER TABLE` statements with duplicate-column tolerance, and a `CURRENT_VERSION=2` baseline. Fresh DBs run the baseline schema and jump to current; pre-0.3.0 DBs walk the migration list and self-heal.
+- **SSE framing bugs in the TypeScript clients** (`@ai-accounts/ts-core`). `chat-stream.ts` and `smart-chat-stream.ts` split event frames on `\n\n` only, dropped events on servers emitting CRLF, parsed each `data:` line independently (losing multi-line payloads), and never flushed the decoder + residual buffer on stream close. Unified into a single `parseSseFrames` helper in `sse-parser.ts` that handles CRLF/LF, multi-line `data:` joined with `\n`, EOF flush, and `response.body` null-guard.
+- **`ChatStateService` concurrency and mutation hazards** (`ai-accounts-core`). Single process-wide `threading.Lock` replaced with per-session locks so unrelated sessions no longer serialize on each other. Events returned from `replay()` / `get_event_log()` are now deep-copied — callers mutating a returned dict can no longer corrupt the retained log. New `replay_with_gap()` returns `ReplayResult(events, gap)` so callers detect eviction instead of silently missing history; `chat_send.py` emits an explicit `{kind: "gap"}` SSE event to reconnecting clients when this happens.
+- **`conversations.py` input validation + error translation** (`ai-accounts-litestar`). Added msgspec min/max length constraints on `backend_id`, `model`, `title`, and `content`. `KeyError` on unknown session now returns 404 instead of falling through to 500. The streaming endpoint preflights session existence before opening the SSE response and wraps in-stream errors into structured SSE error frames.
+- **`useSmartScroll` lifecycle** (`@ai-accounts/vue-headless`). Listeners and the `MutationObserver` previously attached only to the element present at mount; swapping `containerRef` left stale listeners on the old node and auto-scroll silently broke. Now watches `containerRef` with `flush: 'post'` and reattaches on change. Also observes `characterData: true` so streaming-token text-node mutations trigger auto-scroll.
+
+### Changed
+- **`AccountService.create` now dedups on re-run** (`ai-accounts-core`). Re-running the "Add Account" flow for the same underlying credentials no longer creates duplicate backend rows. Match keys in priority order: `(kind, config_path)` for CLI-managed creds, `(kind, api_key_env)` for API-key flows, `(kind, email)` as a last resort. When a match exists, `display_name` and `config` are merged into the existing row instead of spawning a duplicate.
+
+### Developer experience
+- Migrated auth middleware from deprecated `AbstractMiddleware` to `ASGIMiddleware` (litestar 2.15+), eliminating the deprecation warning.
+
+---
+
 ## 0.3.0 — 2026-04-16
 
 Stable release consolidating all alpha work: multi-backend login, smart chat, PTY sessions, and security hardening.
