@@ -40,6 +40,12 @@ def _now() -> datetime:
 _SENTINEL: object = object()
 
 
+def _as_str(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    return ""
+
+
 class AccountService:
     def __init__(
         self,
@@ -104,11 +110,28 @@ class AccountService:
     ) -> Backend:
         if kind not in self._backend_impls:
             raise BackendKindUnknown(f"unknown backend kind: {kind}")
+        cfg: dict[str, object] = dict(config or {})
+
+        # Dedup: if a backend row already exists for this (kind, config_path)
+        # pair (or (kind, email) for backends with no config_path), update it
+        # in place instead of creating a second row. Wizards that re-run the
+        # "Add Account" flow for the same underlying credentials should not
+        # accumulate duplicates.
+        existing = await self._find_matching_backend(kind, cfg)
+        if existing is not None:
+            merged_cfg = dict(existing.config)
+            merged_cfg.update(cfg)
+            return await self.update(
+                existing.id,
+                display_name=display_name,
+                config=merged_cfg,
+            )
+
         backend = Backend(
             id=new_id("bkd"),
             kind=kind,
             display_name=display_name,
-            config=config or {},
+            config=cfg,
             status=BackendStatus.UNCONFIGURED,
             created_at=_now(),
         )
@@ -116,6 +139,38 @@ class AccountService:
         await repo.create(backend)
         self._isolation_dir(backend.id).mkdir(parents=True, exist_ok=True)
         return backend
+
+    async def _find_matching_backend(
+        self, kind: str, config: dict[str, object]
+    ) -> Backend | None:
+        """Return an existing backend row that represents the same underlying
+        account, or None. Match key:
+          - (kind, config_path) when config_path is set (CLI-managed creds)
+          - (kind, api_key_env) when api_key_env is set (API-key flows)
+          - (kind, email) as a last resort
+        """
+        config_path = _as_str(config.get("config_path"))
+        api_key_env = _as_str(config.get("api_key_env"))
+        email = _as_str(config.get("email"))
+        if not (config_path or api_key_env or email):
+            return None
+        repo = await self._storage.backends()
+        existing = await repo.list()
+        for b in existing:
+            if b.kind != kind:
+                continue
+            b_path = _as_str(b.config.get("config_path"))
+            b_env = _as_str(b.config.get("api_key_env"))
+            b_email = _as_str(b.config.get("email"))
+            if config_path and b_path and config_path == b_path:
+                return b
+            if api_key_env and b_env and api_key_env == b_env:
+                return b
+            if email and b_email and email == b_email and not (
+                config_path or api_key_env or b_path or b_env
+            ):
+                return b
+        return None
 
     async def get(self, backend_id: str) -> Backend:
         repo = await self._storage.backends()
