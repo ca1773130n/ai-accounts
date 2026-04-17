@@ -264,20 +264,38 @@ async def forward_cliproxy_callback(callback_url: str) -> dict:
     if not code:
         return {"status": "error", "message": "No 'code' parameter found in URL"}
 
-    try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as http:
-            resp = await http.get(
-                f"http://127.0.0.1:{port}{parsed.path}",
-                params={"code": code, "state": state},
-            )
-        if resp.status_code < 400:
-            return {"status": "completed", "message": "Callback forwarded successfully"}
+    # Forward to the local callback server. Claude CLI v2.1.92+ binds its
+    # callback server to the IPv6 loopback ([::1]) on macOS when the system
+    # prefers IPv6, so we try IPv6 first and then fall back to IPv4 + plain
+    # hostname. cliproxyapi still listens on 127.0.0.1, so order matters:
+    # the first reachable host wins.
+    last_error: str | None = None
+    last_status: int | None = None
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as http:
+        for host in ("[::1]", "127.0.0.1", "localhost"):
+            try:
+                resp = await http.get(
+                    f"http://{host}:{port}{parsed.path}",
+                    params={"code": code, "state": state},
+                )
+            except Exception as exc:
+                last_error = str(exc)
+                continue
+            if resp.status_code < 400:
+                return {
+                    "status": "completed",
+                    "message": "Callback forwarded successfully",
+                }
+            last_status = resp.status_code
+    if last_status is not None:
         return {
             "status": "error",
-            "message": f"Callback server returned {resp.status_code}",
+            "message": f"Callback server returned {last_status}",
         }
-    except Exception as exc:
-        return {"status": "error", "message": f"Failed to reach callback server: {exc}"}
+    return {
+        "status": "error",
+        "message": f"Failed to reach callback server: {last_error or 'unknown error'}",
+    }
 
 
 _CLIPROXY_CONFIG = Path.home() / ".cli-proxy-api" / "config.yaml"

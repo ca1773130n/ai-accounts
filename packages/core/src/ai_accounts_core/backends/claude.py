@@ -44,7 +44,7 @@ from ai_accounts_core.protocols.backend import (
 )
 
 _CLAUDE_CONSOLE_URL_RE = re.compile(
-    r"https://(?:claude\.ai|console\.anthropic\.com)/\S+"
+    r"https://(?:claude\.ai|console\.anthropic\.com|platform\.claude\.com)/\S+"
 )
 
 
@@ -53,10 +53,20 @@ _CLAUDE_CONSOLE_URL_RE = re.compile(
 class _ClaudeCliBrowserSession(LoginSession):
     """Interactive ``claude`` login session.
 
-    Handles Claude Code's first-run TUI (theme picker, menus) before the
-    OAuth URL appears. The interactive loop in
-    :func:`run_interactive_cli_login` waits for REPL idle, then sends
-    ``/login`` to trigger the browser-based auth.
+    Supports two login flavors:
+
+    * **v2** (preferred when an email is supplied): runs
+      ``claude auth login --claudeai --email <email>`` as a direct,
+      non-interactive command.  This uses the public
+      ``platform.claude.com/oauth/code/callback`` redirect and avoids any
+      localhost callback port, so it works on remote machines.  The
+      ``--email`` flag pre-fills the Google account picker so users do not
+      accidentally authenticate with the wrong identity.
+    * **v1 fallback** (no email supplied): launches bare ``claude`` and
+      waits for the first-run TUI (theme picker) to settle, then sends the
+      ``/login`` slash-command into the REPL.  Kept for backward
+      compatibility with Claude CLI < 2.x and flows that cannot collect an
+      email up-front.
     """
 
     ACTION_COMMAND = "/login"
@@ -120,8 +130,23 @@ class _ClaudeCliBrowserSession(LoginSession):
             config_dir.mkdir(parents=True, exist_ok=True)
         else:
             config_dir = self._isolation_dir
+
+        # Claude CLI v2 supports `claude auth login --claudeai --email <email>`
+        # as a non-interactive one-shot that prints the OAuth URL and waits
+        # for the paste-back code. When an email is supplied we use v2 and
+        # skip the REPL bootstrap + /login slash-command entirely.
+        email = (self._config.get("email") or "").strip()
+        if email:
+            argv = ["claude", "auth", "login", "--claudeai", "--email", email]
+            action_command: str | None = None
+            progress_label = "Starting claude auth login"
+        else:
+            argv = ["claude"]
+            action_command = self.ACTION_COMMAND
+            progress_label = "Starting claude /login"
+
         self._orchestrator = CliOrchestrator(
-            argv=["claude"],
+            argv=argv,
             env={"CLAUDE_CONFIG_DIR": str(config_dir)},
             cwd=self._isolation_dir,
         )
@@ -136,8 +161,8 @@ class _ClaudeCliBrowserSession(LoginSession):
             async for event in run_interactive_cli_login(
                 orchestrator=self._orchestrator,
                 answers=self._answers,
-                progress_label="Starting claude /login",
-                action_command=self.ACTION_COMMAND,
+                progress_label=progress_label,
+                action_command=action_command,
                 url_regex=_CLAUDE_CONSOLE_URL_RE,
             ):
                 # Send Enter to dismiss "Press Enter to continue"
@@ -237,8 +262,17 @@ class ClaudeBackend:
             LoginFlowSpec(
                 kind="cli_browser",
                 display_name="Sign in with browser",
-                description="Run `claude /login` and authenticate in your browser",
-                requires_inputs=[],
+                description=(
+                    "Run `claude auth login --claudeai --email <email>` (v2) "
+                    "or fall back to interactive `claude` + `/login` (v1)"
+                ),
+                requires_inputs=[
+                    InputSpec(
+                        name="email",
+                        label="Email (optional — prefills Claude sign-in page)",
+                        kind="email",
+                    ),
+                ],
             ),
             LoginFlowSpec(
                 kind="api_key",
