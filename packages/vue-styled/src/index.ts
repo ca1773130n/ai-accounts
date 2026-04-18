@@ -23,5 +23,5 @@ export { default as FinalizationBanner } from './components/FinalizationBanner.v
 // Helpers
 export { forceFreshAccountPrompt } from './components/forceFreshAccountPrompt';
 
-export const version = '0.3.2-alpha.1';
+export const version = '0.3.3';
 
