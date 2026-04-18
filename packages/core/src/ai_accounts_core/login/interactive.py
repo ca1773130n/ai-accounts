@@ -226,8 +226,12 @@ async def run_interactive_cli_login(
             m = None
             if url_regex is not None:
                 m = url_regex.search(chunk)
+                if m is not None:
+                    logger.info("URL detected via backend regex: %s", m.group(0)[:200])
             if m is None:
                 m = _URL_IN_OUTPUT_RE.search(chunk)
+                if m is not None:
+                    logger.info("URL detected via generic regex: %s", m.group(0)[:200])
             if m is not None:
                 url_already_emitted = True
                 yield UrlPrompt(prompt_id="auth", url=m.group(0))

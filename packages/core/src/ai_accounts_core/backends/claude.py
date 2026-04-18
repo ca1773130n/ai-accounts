@@ -44,7 +44,7 @@ from ai_accounts_core.protocols.backend import (
 )
 
 _CLAUDE_CONSOLE_URL_RE = re.compile(
-    r"https://(?:claude\.ai|console\.anthropic\.com|platform\.claude\.com)/\S+"
+    r"https://(?:claude\.ai|claude\.com|console\.anthropic\.com|platform\.claude\.com)/\S+"
 )
 
 
