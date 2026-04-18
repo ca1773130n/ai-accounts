@@ -56,6 +56,21 @@ _TEXT_PROMPT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# OAuth errors emitted by the CLI after we write a code. These should
+# fail the login so the wizard surfaces an error instead of hanging.
+_OAUTH_ERROR_RE = re.compile(
+    r"(?:"
+    r"OAuth\s+error"
+    r"|invalid\s+(?:grant|code|token|credentials)"
+    r"|authorization\s+code\s+(?:is\s+)?invalid"
+    r"|code\s+(?:has\s+)?expired"
+    r"|(?:HTTP|status\s+code)\s+4\d\d"
+    r"|401\s+Unauthorized"
+    r"|403\s+Forbidden"
+    r")",
+    re.IGNORECASE,
+)
+
 from ai_accounts_core.login.events import (
     LoginComplete,
     LoginEvent,
@@ -242,6 +257,20 @@ async def run_interactive_cli_login(
             logger.info("LOGIN SUCCESS DETECTED in chunk: %r", chunk[:200])
             login_success_seen = True
             login_success_time = now
+
+        # OAuth error detection — fails the login fast so the wizard
+        # doesn't sit forever after the user pastes an invalid code.
+        if _OAUTH_ERROR_RE.search(chunk):
+            error_line = next(
+                (ln.strip() for ln in chunk.splitlines() if _OAUTH_ERROR_RE.search(ln)),
+                chunk.strip()[:200],
+            )
+            logger.info("OAuth error detected in chunk: %r", error_line[:200])
+            yield LoginFailed(
+                code="oauth_error",
+                message=error_line[:200] or "OAuth verification failed",
+            )
+            return
 
         # Text input prompt detection — check every chunk, not during idle,
         # because Claude shows a spinner animation while waiting for input

@@ -188,12 +188,20 @@ class _ClaudeCliBrowserSession(LoginSession):
         write the paste code directly unblocks the user without waiting
         for the regex-detected textPrompt event.
         """
+        import logging
+        _logger = logging.getLogger("ai_accounts_core.backends.claude")
         if self._done or self._orchestrator is None:
+            _logger.warning("write_eager skipped: done=%s, orchestrator=%s",
+                            self._done, self._orchestrator is not None)
             return
         payload = text.strip() + "\r"
+        _logger.info("write_eager: writing %d bytes to PTY (preview=%r)",
+                     len(payload), payload[:20])
         try:
             await self._orchestrator.write(payload.encode())
-        except Exception:
+            _logger.info("write_eager: write succeeded")
+        except Exception as exc:
+            _logger.exception("write_eager: write failed: %s", exc)
             return
 
     async def cancel(self) -> None:

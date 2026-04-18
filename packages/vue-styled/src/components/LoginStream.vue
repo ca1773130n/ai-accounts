@@ -23,9 +23,17 @@ const eagerCode = ref('');
 const eagerStatus = ref<'idle' | 'queued' | 'sent'>('idle');
 let queuedCode: string | null = null;
 
+// True between code submit and terminal login status (complete/failed).
+// Shows a "Verifying..." indicator so the wizard doesn't look frozen
+// while Claude CLI validates the OAuth code against the provider.
+const verifying = computed(() =>
+  eagerStatus.value === 'sent' && props.session.status.value === 'running'
+);
+
 async function submit() {
   const value = answer.value;
   answer.value = '';
+  eagerStatus.value = 'sent';
   await props.session.respond(value);
 }
 
@@ -196,6 +204,14 @@ function dismissIncognitoHint() {
            callback page, and the paste-input timing is unreliable across
            CLI versions. Submitting here writes the code to the PTY the
            same way the textPrompt response does. -->
+      <!-- Verifying indicator: shown after the user submits a code and
+           the CLI is validating it with the OAuth provider. Gives the
+           wizard visible progress so it doesn't look frozen. -->
+      <div v-if="verifying" class="aia-verifying">
+        <span class="aia-verifying__spinner"></span>
+        <span class="aia-verifying__text">Verifying authorization code…</span>
+      </div>
+
       <form v-if="!session.textPrompt.value && eagerStatus !== 'sent'" class="aia-text-section aia-text-section--eager" @submit.prevent="submitEagerCode">
         <label class="aia-text-section__label">
           After signing in, paste the authorization code here:
@@ -363,6 +379,30 @@ function dismissIncognitoHint() {
   background: rgba(34, 197, 94, 0.12);
   border-color: rgba(34, 197, 94, 0.45);
   color: #4ade80;
+}
+.aia-verifying {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-top: 10px;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 6px;
+  background: rgba(139, 92, 246, 0.08);
+  color: var(--aia-fg, #fafafa);
+  font-size: 13px;
+}
+.aia-verifying__spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(139, 92, 246, 0.3);
+  border-top-color: #a78bfa;
+  border-radius: 50%;
+  animation: aia-verifying-spin 0.7s linear infinite;
+}
+@keyframes aia-verifying-spin {
+  to { transform: rotate(360deg); }
 }
 .aia-incognito-hint {
   position: relative;
