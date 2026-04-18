@@ -19,12 +19,51 @@ const props = withDefaults(
 );
 
 const answer = ref('');
+const eagerCode = ref('');
+const eagerStatus = ref<'idle' | 'queued' | 'sent'>('idle');
+let queuedCode: string | null = null;
 
 async function submit() {
   const value = answer.value;
   answer.value = '';
   await props.session.respond(value);
 }
+
+/**
+ * Eager submit: user pastes the OAuth code as soon as they get it
+ * from the browser, BEFORE the CLI emits its "Paste code here if
+ * prompted >" text prompt. Claude v2's `auth login --claudeai`
+ * takes ~10 seconds to print the paste prompt after the OAuth URL,
+ * and users expect immediate input. We queue the code locally and
+ * auto-flush when the real textPrompt arrives.
+ */
+async function submitEagerCode() {
+  const value = eagerCode.value.trim();
+  if (!value) return;
+  queuedCode = value;
+  eagerCode.value = '';
+  // If the CLI already emitted the prompt, respond now.
+  if (props.session.textPrompt.value) {
+    queuedCode = null;
+    eagerStatus.value = 'sent';
+    await props.session.respond(value);
+    return;
+  }
+  eagerStatus.value = 'queued';
+}
+
+// Auto-flush the queued code once the CLI's text prompt arrives.
+watch(
+  () => props.session.textPrompt.value,
+  async (prompt) => {
+    if (prompt && queuedCode) {
+      const code = queuedCode;
+      queuedCode = null;
+      eagerStatus.value = 'sent';
+      await props.session.respond(code);
+    }
+  },
+);
 
 async function selectMenuOption(number: number) {
   await props.session.respond(String(number));
@@ -149,6 +188,35 @@ function dismissIncognitoHint() {
         <span class="aia-device-code__label">Your device code:</span>
         <code class="aia-device-code__value">{{ session.urlPrompt.value.user_code }}</code>
       </div>
+
+      <!-- Eager paste-code input. Shown as soon as the OAuth URL arrives,
+           before the underlying CLI has had a chance to emit its own
+           "Paste code here if prompted >" prompt. CLIs like Claude v2
+           always require the user to paste the code back from the OAuth
+           callback page, and the paste-input timing is unreliable across
+           CLI versions. Submitting here writes the code to the PTY the
+           same way the textPrompt response does. -->
+      <form v-if="!session.textPrompt.value && eagerStatus !== 'sent'" class="aia-text-section aia-text-section--eager" @submit.prevent="submitEagerCode">
+        <label class="aia-text-section__label">
+          After signing in, paste the authorization code here:
+          <span v-if="eagerStatus === 'queued'" class="aia-text-section__queued">(queued — waiting for CLI prompt)</span>
+        </label>
+        <div class="aia-text-section__row">
+          <span class="aia-text-section__prompt">&gt;</span>
+          <input
+            v-model="eagerCode"
+            class="aia-text-section__input"
+            type="text"
+            placeholder="Paste code from browser…"
+            autocomplete="off"
+            autofocus
+            :disabled="eagerStatus === 'queued'"
+          />
+          <button type="submit" class="aia-text-section__btn" :disabled="!eagerCode.trim() || eagerStatus === 'queued'">
+            {{ eagerStatus === 'queued' ? 'Waiting…' : 'Send' }}
+          </button>
+        </div>
+      </form>
     </div>
 
     <!-- Menu Options -->
@@ -444,6 +512,12 @@ function dismissIncognitoHint() {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+.aia-text-section__queued {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #fbbf24;
+  font-weight: normal;
 }
 .aia-text-section__label {
   font-size: 0.8125rem;
