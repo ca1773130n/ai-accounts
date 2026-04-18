@@ -13,7 +13,12 @@ export async function* parseSseLoginEvents(
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      // Normalize CRLF -> LF. Litestar's ServerSentEvent emits frames
+      // separated by `\r\n\r\n` (SSE spec allows both CRLF and LF forms),
+      // but the frame split below looks for `\n\n`. Without this
+      // normalization the parser yields nothing and the login wizard hangs
+      // on "Starting login session...".
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
 
       while (true) {
         const sep = buffer.indexOf('\n\n');
