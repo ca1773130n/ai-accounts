@@ -53,6 +53,12 @@ const defaultT = (_key: string, fallback?: string | Record<string, unknown>): st
     'accountWizard.noSkipDesc': 'I will set this up later',
     'accountWizard.accountName': 'Account name',
     'accountWizard.accountNamePlaceholder': 'e.g., Personal, Work',
+    'accountWizard.accountNameHint':
+      '(optional — leave blank to use the default config directory)',
+    'accountWizard.copyForIncognito': 'Copy for Incognito',
+    'accountWizard.copiedLabel': 'Copied!',
+    'accountWizard.incognitoHint':
+      'Press \u2318\u21E7N (Mac) or Ctrl+Shift+N (Windows/Linux) to open an incognito window, then paste the URL.',
     'accountWizard.email': 'Email',
     'accountWizard.emailPlaceholder': 'name@example.com',
     'accountWizard.emailHelp': 'Optional — used to tag the account',
@@ -217,23 +223,49 @@ function generateSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
 }
 
+const DEFAULT_CONFIG_DIR_MAP: Record<string, string> = {
+  claude: '.claude',
+  codex: '.codex',
+  gemini: '.gemini',
+  opencode: '.opencode',
+};
+
+/**
+ * Returns the default per-kind config directory (e.g. ~/.claude) that is
+ * used when the user leaves the account name blank. Exposed so callers/tests
+ * can reuse the same mapping.
+ */
+function suggestDefaultConfigPath(kind: string | undefined): string {
+  const k = kind || '';
+  const base = DEFAULT_CONFIG_DIR_MAP[k] || (k ? `.${k}` : '.backend');
+  return `~/${base}`;
+}
+
 function suggestConfigPath() {
   if (configPathManuallyEdited.value) return;
   const name = accountName.value.trim();
   if (!name) {
-    configPath.value = '';
+    // Blank account name → default config directory (~/.claude, ~/.codex, …).
+    configPath.value = suggestDefaultConfigPath(backendKind.value);
     return;
   }
   const slug = generateSlug(name);
-  const dirMap: Record<string, string> = {
-    claude: '.claude',
-    codex: '.codex',
-    gemini: '.gemini',
-    opencode: '.opencode',
-  };
-  const kind = backendKind.value || '';
-  const base = dirMap[kind] || (kind ? `.${kind}` : '.backend');
+  const base =
+    DEFAULT_CONFIG_DIR_MAP[backendKind.value || ''] ||
+    (backendKind.value ? `.${backendKind.value}` : '.backend');
   configPath.value = `~/${base}-${slug}`;
+}
+
+/**
+ * When the user leaves the account name blank we still need a non-empty
+ * `display_name` for the DB row. We prefer the backend metadata's
+ * `display_name` (e.g. "Claude Code"); if that's unavailable we fall back
+ * to the literal string "default", matching Agented's behavior.
+ */
+function resolveDisplayName(fallback: string | undefined): string {
+  const trimmed = accountName.value.trim();
+  if (trimmed) return trimmed;
+  return (fallback && fallback.trim()) || 'default';
 }
 
 const apiKeyEnv = computed(() => {
@@ -327,11 +359,20 @@ onMounted(async () => {
     await backendRegistry.load();
   }
   checkCli();
+  // Pre-fill the default config path so it's visible even before the user
+  // types an account name. Ported from Agented f52c55a.
+  suggestConfigPath();
   setTourTarget('[data-tour="account-wizard"]');
   busEmit({ type: 'wizard.opened', backendKind: backendKind.value });
   // Kick off a CLIProxyAPI status check so the proxy step can render
   // install/register UI without a spinner lag.
   checkCliproxyStatus();
+});
+
+// Re-suggest the default path whenever the selected backend changes
+// (e.g. user picks a kind on the BackendPicker step).
+watch(backendKind, () => {
+  if (!configPathManuallyEdited.value) suggestConfigPath();
 });
 
 // Reset dir state when config path changes
@@ -364,7 +405,7 @@ async function startUnifiedLogin() {
     if (!draftAccountId.value) {
       const created = await client.createBackend({
         kind: meta.kind,
-        display_name: accountName.value.trim() || meta.display_name,
+        display_name: resolveDisplayName(meta.display_name),
         config: buildDraftConfig(),
       });
       draftAccountId.value = created.id;
@@ -599,13 +640,13 @@ async function saveAccount() {
 
     if (draftAccountId.value) {
       await client.updateBackend(draftAccountId.value, {
-        display_name: accountName.value.trim() || meta.display_name,
+        display_name: resolveDisplayName(meta.display_name),
         config,
       });
     } else {
       const created = await client.createBackend({
         kind: meta.kind,
-        display_name: accountName.value.trim() || meta.display_name,
+        display_name: resolveDisplayName(meta.display_name),
         config,
       });
       draftAccountId.value = created.id;
@@ -643,6 +684,9 @@ function addAnotherAccount() {
   draftAccountId.value = '';
   dirCreated.value = false;
   currentStep.value = 'subscription';
+  // Re-apply the default config dir so the hint is visible immediately
+  // for the next account (mirrors Agented f52c55a addAnotherAccount reset).
+  suggestConfigPath();
   emit('addAnother');
   if (backendKind.value) {
     busEmit({ type: 'wizard.step', backendKind: backendKind.value, step: 'add-another' });
@@ -749,6 +793,7 @@ function skipWizard() {
                 autofocus
                 @input="suggestConfigPath"
               />
+              <small class="account-name-hint">{{ t('accountWizard.accountNameHint') }}</small>
             </div>
             <div class="form-group">
               <label for="wiz-email">{{ t('accountWizard.email') }}</label>
@@ -895,7 +940,11 @@ function skipWizard() {
 
         <!-- Streaming — delegate to <LoginStream> (handles url/text prompts + stdout). -->
         <template v-else-if="loginStatus === 'streaming'">
-          <LoginStream :session="loginSession" />
+          <LoginStream
+            :session="loginSession"
+            :backend-kind="backendKind"
+            :email="email"
+          />
         </template>
 
         <!-- Completed -->

@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import LoginStream from '../src/components/LoginStream.vue';
 
 function mkSession(overrides: Record<string, unknown> = {}) {
@@ -62,6 +62,77 @@ describe('LoginStream', () => {
     });
     const w = mount(LoginStream, { props: { session: session as never } });
     expect(w.text()).toContain('claude not installed');
+  });
+
+  describe('force-fresh OAuth + incognito copy', () => {
+    beforeEach(() => {
+      // happy-dom clipboard stub
+      Object.defineProperty(globalThis.navigator, 'clipboard', {
+        value: { writeText: vi.fn().mockResolvedValue(undefined) },
+        configurable: true,
+      });
+      // Prevent auto-open from popping windows during tests
+      (globalThis as unknown as { open: unknown }).open = vi.fn();
+    });
+
+    it('rewrites Google OAuth URL with prompt=select_account and login_hint', () => {
+      const session = mkSession({
+        urlPrompt: ref({
+          type: 'url_prompt',
+          prompt_id: 'u',
+          url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=abc',
+        }),
+      });
+      const w = mount(LoginStream, {
+        props: { session: session as never, backendKind: 'gemini', email: 'alice@example.com' },
+      });
+      const anchor = w.find('a.aia-url-link');
+      const href = anchor.attributes('href')!;
+      const u = new URL(href);
+      expect(u.searchParams.get('prompt')).toBe('select_account consent');
+      expect(u.searchParams.get('login_hint')).toBe('alice@example.com');
+    });
+
+    it('rewrites Claude OAuth URL with prompt=login', () => {
+      const session = mkSession({
+        urlPrompt: ref({
+          type: 'url_prompt',
+          prompt_id: 'u',
+          url: 'https://claude.ai/oauth/authorize?state=s',
+        }),
+      });
+      const w = mount(LoginStream, {
+        props: { session: session as never, backendKind: 'claude', email: 'bob@example.com' },
+      });
+      const href = w.find('a.aia-url-link').attributes('href')!;
+      expect(new URL(href).searchParams.get('prompt')).toBe('login');
+      expect(new URL(href).searchParams.get('login_hint')).toBe('bob@example.com');
+    });
+
+    it('copies URL to clipboard on "Copy for Incognito" click and shows hint', async () => {
+      const session = mkSession({
+        urlPrompt: ref({
+          type: 'url_prompt',
+          prompt_id: 'u',
+          url: 'https://accounts.google.com/o/oauth2/v2/auth',
+        }),
+      });
+      const w = mount(LoginStream, {
+        props: { session: session as never, backendKind: 'gemini', email: '' },
+      });
+      const btn = w.find('button.aia-copy-incognito-btn');
+      expect(btn.exists()).toBe(true);
+      expect(w.find('.aia-incognito-hint').exists()).toBe(false);
+      await btn.trigger('click');
+      await nextTick();
+      // clipboard.writeText was called with the effective URL
+      const writeText = (navigator.clipboard as { writeText: ReturnType<typeof vi.fn> }).writeText;
+      expect(writeText).toHaveBeenCalledTimes(1);
+      const copied = writeText.mock.calls[0]![0] as string;
+      expect(copied).toContain('prompt=select_account+consent');
+      expect(w.find('.aia-incognito-hint').exists()).toBe(true);
+      expect(w.text()).toContain('incognito');
+    });
   });
 
   it('shows stdout scrollback', () => {
