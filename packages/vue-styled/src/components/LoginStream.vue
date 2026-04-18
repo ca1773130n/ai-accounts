@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { UseLoginSession } from '@ai-accounts/vue-headless';
+import { forceFreshAccountPrompt } from './forceFreshAccountPrompt';
 
 const props = withDefaults(
   defineProps<{
     session: UseLoginSession;
     showStdout?: boolean;
+    /**
+     * Backend kind — used to decide which OAuth flavor (Google vs Claude)
+     * to force into a fresh account-picker prompt.
+     */
+    backendKind?: string;
+    /** Optional email to pass as `login_hint` on the OAuth URL. */
+    email?: string;
   }>(),
-  { showStdout: true }
+  { showStdout: true, backendKind: '', email: '' }
 );
 
 const answer = ref('');
@@ -22,10 +30,30 @@ async function selectMenuOption(number: number) {
   await props.session.respond(String(number));
 }
 
-// Auto-open OAuth URLs in the user's browser when they arrive
+/**
+ * OAuth URL with force-fresh-prompt params appended. Mirrors Agented
+ * f52c55a: Google backends get `prompt=select_account consent`, Claude
+ * gets `prompt=login`; both get a `login_hint` when an email is known.
+ */
+const effectiveOauthUrl = computed(() => {
+  const raw = props.session.urlPrompt.value?.url;
+  if (!raw) return '';
+  const provider =
+    props.backendKind === 'gemini' || props.backendKind === 'codex'
+      ? 'google'
+      : props.backendKind === 'claude'
+        ? 'claude'
+        : 'none';
+  if (provider === 'none') return raw;
+  return forceFreshAccountPrompt(raw, props.email ?? '', provider);
+});
+
+// Auto-open OAuth URLs in the user's browser when they arrive.
+// We open the *effective* (force-fresh) URL so the correct account
+// picker is shown even when the user's default browser is signed in.
 let lastOpenedUrl = '';
 watch(
-  () => props.session.urlPrompt.value?.url,
+  () => effectiveOauthUrl.value,
   (url) => {
     if (url && url !== lastOpenedUrl) {
       lastOpenedUrl = url;
@@ -34,6 +62,38 @@ watch(
   },
   { immediate: true },
 );
+
+// ── Incognito URL copy ────────────────────────────────────────────────
+// Users may be signed into the wrong Google account in their default
+// browser. Copying the URL + pasting into an incognito window forces a
+// clean re-auth. The hint box is toggled on-click and dismissible.
+const urlCopied = ref(false);
+const showIncognitoHint = ref(false);
+let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function copyForIncognito() {
+  const url = effectiveOauthUrl.value;
+  if (!url) return;
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+    }
+    urlCopied.value = true;
+    showIncognitoHint.value = true;
+    if (copyTimer) clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => {
+      urlCopied.value = false;
+    }, 2500);
+  } catch {
+    // Clipboard may be unavailable (insecure origin, older browsers).
+    // Still surface the hint so the user can manually copy the link.
+    showIncognitoHint.value = true;
+  }
+}
+
+function dismissIncognitoHint() {
+  showIncognitoHint.value = false;
+}
 </script>
 
 <template>
@@ -48,9 +108,43 @@ watch(
         </svg>
         <span>A browser window should have opened. If not, click the link below:</span>
       </div>
-      <a :href="session.urlPrompt.value.url" target="_blank" rel="noopener" class="aia-url-link">
-        {{ session.urlPrompt.value.url }}
+      <a :href="effectiveOauthUrl" target="_blank" rel="noopener" class="aia-url-link">
+        {{ effectiveOauthUrl }}
       </a>
+
+      <!-- Copy for Incognito — lets users paste the URL into a clean session
+           when their default browser is signed into the wrong account. -->
+      <div class="aia-url-actions">
+        <button
+          type="button"
+          class="aia-copy-incognito-btn"
+          :class="{ 'aia-copy-incognito-btn--copied': urlCopied }"
+          :aria-pressed="showIncognitoHint"
+          @click="copyForIncognito"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+          </svg>
+          <span>{{ urlCopied ? 'Copied!' : 'Copy for Incognito' }}</span>
+        </button>
+      </div>
+
+      <div v-if="showIncognitoHint" class="aia-incognito-hint">
+        <button
+          type="button"
+          class="aia-incognito-hint__close"
+          aria-label="Dismiss"
+          @click="dismissIncognitoHint"
+        >&times;</button>
+        <strong class="aia-incognito-hint__title">Open in an incognito window</strong>
+        <p class="aia-incognito-hint__body">
+          Press <kbd>&#8984;</kbd><kbd>&#8679;</kbd><kbd>N</kbd> (Mac) or
+          <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>N</kbd> (Windows / Linux) to
+          open an incognito window, then paste the URL.
+        </p>
+      </div>
+
       <div v-if="session.urlPrompt.value.user_code" class="aia-device-code">
         <span class="aia-device-code__label">Your device code:</span>
         <code class="aia-device-code__value">{{ session.urlPrompt.value.user_code }}</code>
@@ -170,6 +264,87 @@ watch(
 }
 .aia-url-link:hover {
   border-color: var(--accent-cyan, var(--aia-primary, #60a5fa));
+}
+
+/* ── Incognito URL copy ── */
+.aia-url-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.aia-copy-incognito-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 6px;
+  color: #a78bfa;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.aia-copy-incognito-btn:hover {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.6);
+  color: #c4b5fd;
+}
+.aia-copy-incognito-btn--copied {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #4ade80;
+}
+.aia-incognito-hint {
+  position: relative;
+  padding: 0.75rem 2rem 0.75rem 0.875rem;
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  border-radius: 8px;
+  color: var(--text-primary, #e4e4e7);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.aia-incognito-hint__title {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: #c4b5fd;
+  font-weight: 600;
+  font-size: 0.8125rem;
+}
+.aia-incognito-hint__body {
+  margin: 0;
+  color: var(--text-secondary, #a1a1aa);
+}
+.aia-incognito-hint__body kbd {
+  display: inline-block;
+  margin: 0 0.125rem;
+  padding: 0.0625rem 0.375rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 4px;
+  font-family: var(--aia-font-mono, 'SF Mono', Monaco, monospace);
+  font-size: 0.75rem;
+  color: #c4b5fd;
+}
+.aia-incognito-hint__close {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.375rem;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary, #71717a);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.aia-incognito-hint__close:hover {
+  color: var(--text-primary, #e4e4e7);
 }
 .aia-device-code {
   display: flex;

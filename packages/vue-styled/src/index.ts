@@ -20,5 +20,8 @@ export { default as ProcessGroup } from './components/ProcessGroup.vue';
 export { default as MessageActions } from './components/MessageActions.vue';
 export { default as FinalizationBanner } from './components/FinalizationBanner.vue';
 
+// Helpers
+export { forceFreshAccountPrompt } from './components/forceFreshAccountPrompt';
+
 export const version = '0.3.2-alpha.1';
 
