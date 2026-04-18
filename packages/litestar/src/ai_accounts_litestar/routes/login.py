@@ -87,7 +87,26 @@ class LoginController(Controller):
 
         async def gen():
             try:
-                async for event in session.events():
+                # Replay the cached UrlPrompt to the subscriber FIRST, so
+                # reconnecting clients (refresh, network blip) immediately
+                # see the OAuth URL instead of waiting for the next live
+                # event. Live dedup happens on the client via the existing
+                # url_already_emitted flag in useLoginSession.
+                cached_url = session.last_url_prompt
+                if cached_url is not None:
+                    yield {
+                        "event": "login",
+                        "data": msgspec.json.encode(cached_url).decode(),
+                    }
+                async for event in session.events_with_replay():
+                    # Avoid emitting the same UrlPrompt back-to-back when
+                    # the live iterator's first event turns out to be the
+                    # one we just replayed.
+                    if (
+                        cached_url is not None
+                        and event is cached_url
+                    ):
+                        continue
                     yield {
                         "event": "login",
                         "data": msgspec.json.encode(event).decode(),
