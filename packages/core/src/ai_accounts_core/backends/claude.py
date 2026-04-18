@@ -181,6 +181,21 @@ class _ClaudeCliBrowserSession(LoginSession):
             return
         await self._answers.put(answer)
 
+    async def write_eager(self, text: str) -> None:
+        """Write directly to the CLI's stdin. Claude v2 `auth login` takes
+        ~10 seconds to emit its own 'Paste code here if prompted >' text
+        prompt, and occasionally skips it entirely. Allowing the wizard to
+        write the paste code directly unblocks the user without waiting
+        for the regex-detected textPrompt event.
+        """
+        if self._done or self._orchestrator is None:
+            return
+        payload = text.strip() + "\r"
+        try:
+            await self._orchestrator.write(payload.encode())
+        except Exception:
+            return
+
     async def cancel(self) -> None:
         await self._cleanup()
         self._done = True

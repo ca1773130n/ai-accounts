@@ -26,6 +26,11 @@ export type UseLoginSession = {
     inputs: Record<string, string>
   ) => Promise<void>;
   respond: (answer: string) => Promise<void>;
+  /**
+   * Write arbitrary text directly to the CLI's stdin. Used for eager
+   * paste-code input before the CLI has emitted its own text prompt.
+   */
+  writeEager: (text: string) => Promise<void>;
   cancel: () => Promise<void>;
 };
 
@@ -135,6 +140,11 @@ export function useLoginSession(): UseLoginSession {
     await client.respondLogin(accountId.value, sessionId.value, promptId, answer);
   }
 
+  async function writeEager(text: string): Promise<void> {
+    if (!sessionId.value || !accountId.value) return;
+    await client.writeEagerLogin(accountId.value, sessionId.value, text);
+  }
+
   async function cancel(): Promise<void> {
     if (!sessionId.value || !accountId.value) return;
     await client.cancelLogin(accountId.value, sessionId.value);
@@ -153,6 +163,7 @@ export function useLoginSession(): UseLoginSession {
     errorMessage,
     start,
     respond,
+    writeEager,
     cancel,
   };
 }

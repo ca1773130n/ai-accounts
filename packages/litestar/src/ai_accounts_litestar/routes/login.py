@@ -40,6 +40,13 @@ class _CancelRequest(msgspec.Struct, kw_only=True):
     session_id: str
 
 
+class _WriteEagerRequest(msgspec.Struct, kw_only=True):
+    """Body for POST /login/write: write arbitrary stdin to the CLI."""
+
+    session_id: str
+    text: str
+
+
 def _not_found(session_id: str) -> NotFoundException:
     # Intentionally does not distinguish "wrong backend" from "no such
     # session" so attackers cannot probe for session IDs across backends.
@@ -173,6 +180,25 @@ class LoginController(Controller):
         if session is None:
             raise _not_found(data.session_id)
         await session.respond(PromptAnswer(prompt_id=data.prompt_id, answer=data.answer))
+
+    @post("/write", status_code=HTTP_204_NO_CONTENT)
+    async def write_eager(
+        self,
+        backend_id: str,
+        data: _WriteEagerRequest,
+        account_service: AccountService,
+    ) -> None:
+        """Write text directly to the CLI's stdin.
+
+        Used for the AccountWizard's eager paste-code form, which submits
+        the OAuth code before the CLI has emitted its own textPrompt.
+        """
+        session = await account_service.login_registry.get(
+            data.session_id, backend_id=backend_id
+        )
+        if session is None:
+            raise _not_found(data.session_id)
+        await session.write_eager(data.text)
 
     @post("/cancel", status_code=HTTP_204_NO_CONTENT)
     async def cancel(

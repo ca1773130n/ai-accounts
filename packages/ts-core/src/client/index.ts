@@ -234,6 +234,29 @@ export class AiAccountsClient {
     if (!r.ok) throw await toError(r);
   }
 
+  /**
+   * Write arbitrary text to the CLI's stdin during an in-flight login
+   * session. Unlike respondLogin, this does NOT require an active
+   * textPrompt — used by the AccountWizard's eager paste-code form,
+   * which lets users submit the OAuth code before the CLI has emitted
+   * its own "Paste code here if prompted >" text prompt.
+   */
+  async writeEagerLogin(
+    accountId: string,
+    sessionId: string,
+    text: string
+  ): Promise<void> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/backends/${encodeURIComponent(accountId)}/login/write`,
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ session_id: sessionId, text }),
+      }
+    );
+    if (!r.ok) throw await toError(r);
+  }
+
   async cancelLogin(accountId: string, sessionId: string): Promise<void> {
     const r = await this._fetch(
       `${this.baseUrl}/api/v1/backends/${encodeURIComponent(accountId)}/login/cancel`,

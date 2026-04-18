@@ -33,26 +33,26 @@ async function submit() {
  * Eager submit: user pastes the OAuth code as soon as they get it
  * from the browser, BEFORE the CLI emits its "Paste code here if
  * prompted >" text prompt. Claude v2's `auth login --claudeai`
- * takes ~10 seconds to print the paste prompt after the OAuth URL,
- * and users expect immediate input. We queue the code locally and
- * auto-flush when the real textPrompt arrives.
+ * takes ~10 seconds to print the paste prompt — and sometimes never
+ * emits it at all. We bypass the textPrompt path entirely and write
+ * directly to the CLI's stdin via writeEager, which the CLI consumes
+ * once its internal read fires.
  */
 async function submitEagerCode() {
   const value = eagerCode.value.trim();
   if (!value) return;
-  queuedCode = value;
   eagerCode.value = '';
-  // If the CLI already emitted the prompt, respond now.
-  if (props.session.textPrompt.value) {
-    queuedCode = null;
-    eagerStatus.value = 'sent';
-    await props.session.respond(value);
-    return;
+  eagerStatus.value = 'sent';
+  try {
+    await props.session.writeEager(value);
+  } catch {
+    // If write fails, fall back to respond once a text prompt arrives.
+    queuedCode = value;
+    eagerStatus.value = 'queued';
   }
-  eagerStatus.value = 'queued';
 }
 
-// Auto-flush the queued code once the CLI's text prompt arrives.
+// Fallback: if writeEager isn't available and textPrompt arrives, flush.
 watch(
   () => props.session.textPrompt.value,
   async (prompt) => {

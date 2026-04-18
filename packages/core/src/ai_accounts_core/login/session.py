@@ -110,5 +110,14 @@ class LoginSession(ABC):
     @abstractmethod
     async def respond(self, answer: PromptAnswer) -> None: ...
 
+    async def write_eager(self, text: str) -> None:
+        """Write arbitrary text to the CLI's stdin, independent of any
+        active prompt. Used when a client (e.g. the AccountWizard's eager
+        paste-code form) wants to send input before the CLI has emitted
+        its own textPrompt. Default implementation is a no-op; backends
+        that run a PTY override this to call ``orchestrator.write``.
+        """
+        return None
+
     @abstractmethod
     async def cancel(self) -> None: ...
