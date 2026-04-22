@@ -58,8 +58,9 @@ _NUMBERED_OPTION_RE = re.compile(
 # Login success markers — fires force-complete path when seen in stdout.
 _LOGIN_SUCCESS_RE = re.compile(
     r"(?:"
-    r"successfully\s+(?:logged|authenticated|signed)"
-    r"|(?:now\s+)?logged\s+in\s+as\b"
+    r"successfully\s+(?:logged|authenticated|signed|acquired)"
+    r"|auth\s+code\s+was\s+successfully\s+acquired"
+    r"|(?:now\s+)?logged\s+in(?:\s+as\b|\.\s|\.$|:\s|\s+MCP\b)"
     r"|signed\s+in\s+(?:as|with)\b"
     r"|authentication\s+(?:successful|complete)"
     r"|login\s+(?:successful|complete)"

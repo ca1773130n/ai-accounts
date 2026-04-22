@@ -32,6 +32,13 @@ export type UseLoginSession = {
    */
   writeEager: (text: string) => Promise<void>;
   cancel: () => Promise<void>;
+  /**
+   * Return the composable to its initial idle state. Call this when
+   * reusing the same session instance for a new login (e.g. the wizard's
+   * "Add another account" flow) — otherwise `status` stays `'complete'`
+   * from the prior login and the auto-start guard short-circuits.
+   */
+  reset: () => void;
 };
 
 export function useLoginSession(): UseLoginSession {
@@ -151,6 +158,18 @@ export function useLoginSession(): UseLoginSession {
     status.value = 'cancelled';
   }
 
+  function reset(): void {
+    status.value = 'idle';
+    sessionId.value = null;
+    accountId.value = null;
+    urlPrompt.value = null;
+    textPrompt.value = null;
+    menuPrompt.value = null;
+    stdoutLines.value = [];
+    errorCode.value = null;
+    errorMessage.value = null;
+  }
+
   return {
     status,
     sessionId,
@@ -165,5 +184,6 @@ export function useLoginSession(): UseLoginSession {
     respond,
     writeEager,
     cancel,
+    reset,
   };
 }

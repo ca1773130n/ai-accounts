@@ -62,7 +62,8 @@ _OAUTH_ERROR_RE = re.compile(
     r"(?:"
     r"OAuth\s+error"
     r"|invalid\s+(?:grant|code|token|credentials)"
-    r"|authorization\s+code\s+(?:is\s+)?invalid"
+    r"|authorization\s+code\s+(?:is\s+)?(?:invalid|not\s+found)"
+    r"|login\s+failed"
     r"|code\s+(?:has\s+)?expired"
     r"|(?:HTTP|status\s+code)\s+4\d\d"
     r"|401\s+Unauthorized"
@@ -302,6 +303,24 @@ async def run_interactive_cli_login(
                     await orchestrator.write(
                         (answer.answer.strip() + "\r").encode()
                     )
+
+                    # Claude v2 TUI buffers "Login successful. Press Enter
+                    # to continue…" behind an internal redraw gate: the
+                    # success line never reaches stdout until a second
+                    # Enter arrives. Schedule a best-effort follow-up so
+                    # the login loop doesn't hang on the regex. On the
+                    # error path the extra Enter just dismisses
+                    # "Press Enter to retry" — harmless.
+                    async def _poke_tui_after_paste() -> None:
+                        await asyncio.sleep(5.0)
+                        try:
+                            await orchestrator.write(b"\r")
+                            logger.info("post-paste follow-up Enter sent")
+                        except Exception as exc:  # pragma: no cover
+                            logger.warning("post-paste follow-up failed: %s", exc)
+
+                    asyncio.create_task(_poke_tui_after_paste())
+
                     recent_lines = []
                     last_output_time = time.monotonic()
                     break  # Only handle one prompt per chunk

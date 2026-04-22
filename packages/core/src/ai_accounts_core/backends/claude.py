@@ -53,20 +53,18 @@ _CLAUDE_CONSOLE_URL_RE = re.compile(
 class _ClaudeCliBrowserSession(LoginSession):
     """Interactive ``claude`` login session.
 
-    Supports two login flavors:
+    Runs the REPL-based v1 flow (``claude`` + ``/login``) because it is the
+    only flow that accepts the OAuth code on stdin: after the TUI settles we
+    send ``/login``, the CLI prints ``Paste code here if prompted > ``, and
+    we forward the user-supplied code through the PTY.
 
-    * **v2** (preferred when an email is supplied): runs
-      ``claude auth login --claudeai --email <email>`` as a direct,
-      non-interactive command.  This uses the public
-      ``platform.claude.com/oauth/code/callback`` redirect and avoids any
-      localhost callback port, so it works on remote machines.  The
-      ``--email`` flag pre-fills the Google account picker so users do not
-      accidentally authenticate with the wrong identity.
-    * **v1 fallback** (no email supplied): launches bare ``claude`` and
-      waits for the first-run TUI (theme picker) to settle, then sends the
-      ``/login`` slash-command into the REPL.  Kept for backward
-      compatibility with Claude CLI < 2.x and flows that cannot collect an
-      email up-front.
+    The v2 ``claude auth login --claudeai --email <email>`` command exists
+    but **does not read stdin** — it expects an HTTP callback on a random
+    local port, and ``platform.claude.com`` can't reach that port from the
+    user's browser without coordinating the random port via JS.  We keep v1
+    as the primary flow; if/when Anthropic drops v1, we'll need to extract
+    the LISTEN port (``lsof -p PID -iTCP -sTCP:LISTEN``) and deliver the
+    code+state as ``GET http://localhost:PORT/?code=X&state=Y``.
     """
 
     ACTION_COMMAND = "/login"
@@ -131,19 +129,15 @@ class _ClaudeCliBrowserSession(LoginSession):
         else:
             config_dir = self._isolation_dir
 
-        # Claude CLI v2 supports `claude auth login --claudeai --email <email>`
-        # as a non-interactive one-shot that prints the OAuth URL and waits
-        # for the paste-back code. When an email is supplied we use v2 and
-        # skip the REPL bootstrap + /login slash-command entirely.
-        email = (self._config.get("email") or "").strip()
-        if email:
-            argv = ["claude", "auth", "login", "--claudeai", "--email", email]
-            action_command: str | None = None
-            progress_label = "Starting claude auth login"
-        else:
-            argv = ["claude"]
-            action_command = self.ACTION_COMMAND
-            progress_label = "Starting claude /login"
+        # Always use the v1 REPL + /login flow — it emits the
+        # "Paste code here if prompted > " prompt and accepts the code on
+        # stdin.  v2 (`claude auth login --claudeai`) does NOT read stdin
+        # and would leave the wizard stuck waiting for an HTTP callback we
+        # can't deliver.  The `email` config stays for forward-compat and
+        # is currently only surfaced in the wizard's UI copy.
+        argv = ["claude"]
+        action_command: str | None = self.ACTION_COMMAND
+        progress_label = "Starting claude /login"
 
         self._orchestrator = CliOrchestrator(
             argv=argv,
@@ -182,11 +176,15 @@ class _ClaudeCliBrowserSession(LoginSession):
         await self._answers.put(answer)
 
     async def write_eager(self, text: str) -> None:
-        """Write directly to the CLI's stdin. Claude v2 `auth login` takes
-        ~10 seconds to emit its own 'Paste code here if prompted >' text
-        prompt, and occasionally skips it entirely. Allowing the wizard to
-        write the paste code directly unblocks the user without waiting
-        for the regex-detected textPrompt event.
+        """Write directly to the CLI's stdin.
+
+        Writes the pasted OAuth code plus a submit ``\\r``. Claude v2.1's
+        TUI holds the "Login successful. Press Enter to continue…" message
+        behind an internal redraw gate — until another Enter is received
+        the success line is never flushed to stdout and our login loop
+        sits waiting on the regex.  We schedule a best-effort follow-up
+        ``\\r`` a few seconds later to unblock that redraw.  On the error
+        path the follow-up simply dismisses "Press Enter to retry".
         """
         import logging
         _logger = logging.getLogger("ai_accounts_core.backends.claude")
@@ -203,6 +201,18 @@ class _ClaudeCliBrowserSession(LoginSession):
         except Exception as exc:
             _logger.exception("write_eager: write failed: %s", exc)
             return
+
+        async def _followup_enter() -> None:
+            await asyncio.sleep(5.0)
+            if self._done or self._orchestrator is None:
+                return
+            try:
+                await self._orchestrator.write(b"\r")
+                _logger.info("write_eager: follow-up Enter sent to flush TUI")
+            except Exception as exc:  # pragma: no cover
+                _logger.warning("write_eager: follow-up Enter failed: %s", exc)
+
+        asyncio.create_task(_followup_enter())
 
     async def cancel(self) -> None:
         await self._cleanup()

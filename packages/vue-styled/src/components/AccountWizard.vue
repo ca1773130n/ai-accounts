@@ -681,6 +681,8 @@ function addAnotherAccount() {
   selectedPlan.value = '';
   isDefault.value = false;
   cleanupLogin();
+  loginSession.reset();
+  resetProxyLogin();
   draftAccountId.value = '';
   dirCreated.value = false;
   currentStep.value = 'subscription';
