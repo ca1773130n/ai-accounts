@@ -6,6 +6,13 @@ import { forceFreshAccountPrompt } from './forceFreshAccountPrompt';
 const props = withDefaults(
   defineProps<{
     session: UseLoginSession;
+    /**
+     * Render the raw CLI terminal output behind the wizard prompts.
+     * Defaults to ``false`` because end-users complained about the
+     * leaked Claude/Codex/Gemini CLI screen being noisy and confusing.
+     * Set to ``true`` from a debugging surface (e.g. an admin console)
+     * if you want to see what the underlying PTY is emitting.
+     */
     showStdout?: boolean;
     /**
      * Backend kind — used to decide which OAuth flavor (Google vs Claude)
@@ -15,7 +22,7 @@ const props = withDefaults(
     /** Optional email to pass as `login_hint` on the OAuth URL. */
     email?: string;
   }>(),
-  { showStdout: true, backendKind: '', email: '' }
+  { showStdout: false, backendKind: '', email: '' }
 );
 
 const answer = ref('');

@@ -164,14 +164,60 @@ const TOUR_TARGETS: Record<WizardStep, string | null> = {
   done: '[data-tour="wiz-done"]',
 };
 
-/** Short, human-readable hint for the spotlight tooltip. */
+/** Step-by-step hints for the host's tour tooltip. Each one names the
+ *  exact UI elements the user must interact with on this substep, in
+ *  the order they should be touched. The host tooltip renders this as
+ *  a multi-line block so the structure carries over verbatim. */
 const TOUR_GUIDES: Record<WizardStep, string> = {
-  subscription: 'Pick whether you already have an account, then fill name + email.',
-  cli: 'Create the per-account config directory, then click Continue.',
-  login: 'Pick a login method, sign in via the browser, paste the code here.',
-  proxy: 'Optional — register this account with the local API proxy, or Skip.',
-  plan: 'Pick your plan and Save the account.',
-  done: 'All set. Add another account or move to the next backend.',
+  subscription:
+    [
+      'Step 1 of 5 — Subscription.',
+      '1) Pick "네, 계정이 있어요" (Yes, I have an account).',
+      '2) Type a name in the "계정 이름" field (optional but recommended).',
+      '3) Type your account email in the "이메일" field — this pre-fills the Claude / Google sign-in page.',
+      '4) Click "계속하기" (Continue).',
+    ].join('\n'),
+  cli:
+    [
+      'Step 2 of 5 — CLI setup.',
+      '1) Confirm the "Claude CLI" badge says "CLI 설치됨" (installed).',
+      '2) Click "디렉토리 만들기" (Create directory) so this account has its own per-account config dir.',
+      '3) (Optional) Click "경로 직접 입력" if you want to enter a custom path.',
+      '4) Click "계속하기" (Continue) — the wizard launches the CLI in a hidden PTY.',
+    ].join('\n'),
+  login:
+    [
+      'Step 3 of 5 — Sign in.',
+      '1) Wait for the "Preparing sign-in…" spinner — the CLI is booting.',
+      '2) When the OAuth URL card appears, your browser auto-opens; if not, click the URL link.',
+      '3) On claude.com / accounts.google.com, sign in with the email you entered, then click "승인" (Authorize).',
+      '4) Copy the authorization code from the redirect page.',
+      '5) Paste it into the "Type here…" input and click "Send".',
+      '6) The "Verifying authorization code…" spinner runs ~5–10 s, then auto-advances.',
+    ].join('\n'),
+  proxy:
+    [
+      'Step 4 of 5 — API proxy (optional).',
+      '1) If CLIProxyAPI isn\'t installed, click "Install CLIProxyAPI" — wait for it to finish.',
+      '2) Click "Start proxy registration" to start the proxy OAuth.',
+      '3) A new browser tab opens; sign in, copy the localhost callback URL.',
+      '4) Paste the callback URL into the "proxy-callback-input" field, click "Submit".',
+      '5) Or click "건너뛰기" (Skip) if you don\'t want the proxy.',
+    ].join('\n'),
+  plan:
+    [
+      'Step 5 of 5 — Plan & save.',
+      '1) Review the summary card (name, email, config dir).',
+      '2) Pick your plan from the "플랜" dropdown — Claude Pro, Max, or API.',
+      '3) (Optional) Tick "기본 계정으로 설정" to make this the default for the backend.',
+      '4) Click "계정 저장" (Save account).',
+    ].join('\n'),
+  done:
+    [
+      'Done — account saved.',
+      '1) Click "다른 계정 추가" to add another account on this backend.',
+      '2) Or click "완료 — 다음 백엔드" to advance the tour to the next backend (Codex / Gemini / OpenCode).',
+    ].join('\n'),
 };
 
 // ---------------------------------------------------------------------------
@@ -1229,7 +1275,17 @@ function skipWizard() {
 </template>
 
 <style scoped>
+/* The wizard's CSS references --primary-color / --primary-hover but we
+ * don't ship a base stylesheet that defines them, and Agented (the
+ * primary host) only defines accent-cyan / accent-violet etc. Without
+ * a fallback, ``background: var(--primary-color)`` resolves to nothing
+ * and every .btn-primary inside the wizard renders as flat invisible
+ * text — exactly the "Start proxy registration looks like a link"
+ * complaint. Anchor the cascade on .wizard-container so any host can
+ * override by redefining these on a parent. */
 .wizard-container {
+  --primary-color: var(--accent-cyan, #00d4ff);
+  --primary-hover: var(--accent-violet, #8855ff);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-default);
   border-radius: 12px;
@@ -2122,11 +2178,21 @@ code.review-value {
 
 .btn-primary {
   background: var(--primary-color);
-  color: white;
+  color: var(--text-on-accent, #0a0a0f);
+  font-weight: 600;
+  border: 1px solid transparent;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--primary-hover);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 212, 255, 0.25);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .btn-primary:disabled {
