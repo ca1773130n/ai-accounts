@@ -235,8 +235,11 @@ function dismissIncognitoHint() {
            same way the textPrompt response does. -->
       <!-- Verifying indicator: shown after the user submits a code and
            the CLI is validating it with the OAuth provider. Gives the
-           wizard visible progress so it doesn't look frozen. -->
-      <div v-if="verifying" class="aia-verifying">
+           wizard visible progress so it doesn't look frozen. Carries
+           the same ``data-tour="wiz-login-paste"`` anchor so the host
+           tour spotlight has a stable target across the eager-form →
+           verifying → textPrompt-form transitions. -->
+      <div v-if="verifying" class="aia-verifying" data-tour="wiz-login-paste">
         <span class="aia-verifying__spinner"></span>
         <span class="aia-verifying__text">Verifying authorization code…</span>
       </div>
@@ -288,7 +291,7 @@ function dismissIncognitoHint() {
     </div>
 
     <!-- Text Input Prompt -->
-    <form v-if="session.textPrompt.value" class="aia-text-section" @submit.prevent="submit">
+    <form v-if="session.textPrompt.value" class="aia-text-section" data-tour="wiz-login-paste" @submit.prevent="submit">
       <label class="aia-text-section__label">{{ session.textPrompt.value.prompt }}</label>
       <div class="aia-text-section__row">
         <span class="aia-text-section__prompt">&gt;</span>
