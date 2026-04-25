@@ -89,6 +89,49 @@ const defaultT = (_key: string, fallback?: string | Record<string, unknown>): st
     'common.cancel': 'Cancel',
     'common.back': 'Back',
     'common.skip': 'Skip',
+    // Tour spotlight copy — kept here as English fallbacks. Hosts that
+    // pass a ``translate`` prop (e.g. Agented's vue-i18n bridge) get
+    // localized versions from their own locale files.
+    'accountWizard.tour.sub.yesno.title': 'Do you have an account?',
+    'accountWizard.tour.sub.yesno.message': 'Pick whether you already have an account on this backend.',
+    'accountWizard.tour.sub.name.title': 'Name this account',
+    'accountWizard.tour.sub.name.message': 'Type a label so you can tell accounts apart later (e.g. "Personal", "Work"). Optional — leave blank to use a default.',
+    'accountWizard.tour.sub.email.title': 'Account email',
+    'accountWizard.tour.sub.email.message': 'Type the email tied to the account. We pass it as a login_hint on the sign-in page.',
+    'accountWizard.tour.sub.next.title': 'Continue to CLI check',
+    'accountWizard.tour.sub.next.message': 'Click Continue — we verify the CLI is installed and move to step 2.',
+    'accountWizard.tour.cli.status.title': 'CLI install check',
+    'accountWizard.tour.cli.status.message': 'Confirm the CLI is installed. If it isn\'t, the "Install" button will fetch it for you.',
+    'accountWizard.tour.cli.path.title': 'Confirm the config directory',
+    'accountWizard.tour.cli.path.message': 'This is the per-account config dir. We auto-create it on the next step. Click "Customize" if you need a different path.',
+    'accountWizard.tour.cli.next.title': 'Launch the CLI',
+    'accountWizard.tour.cli.next.message': 'Click Continue — we launch the CLI behind the scenes and move to step 3 (Sign in).',
+    'accountWizard.tour.login.preparing.title': 'Preparing sign-in',
+    'accountWizard.tour.login.preparing.message': 'The CLI is booting in the background. Wait ~5 seconds for the OAuth URL to appear here; your browser opens automatically.',
+    'accountWizard.tour.login.authorize.title': 'Authorize in your browser',
+    'accountWizard.tour.login.authorize.message': 'If your browser didn\'t open, click this URL. Sign in with the email from step 1 and click Authorize.',
+    'accountWizard.tour.login.paste.title': 'Paste the authorization code',
+    'accountWizard.tour.login.paste.message': 'Copy the code from the redirect page and paste it here, then click Send. We verify it for ~5–10 s.',
+    'accountWizard.tour.proxy.install.title': 'Install CLIProxyAPI',
+    'accountWizard.tour.proxy.install.message': 'If the proxy isn\'t installed yet, click Install and wait. The proxy lets other tools reach this account through an OpenAI-compatible endpoint.',
+    'accountWizard.tour.proxy.start.title': 'Register with the proxy',
+    'accountWizard.tour.proxy.start.message': 'Click Start proxy registration to begin. A browser tab opens for the proxy OAuth.',
+    'accountWizard.tour.proxy.callback.title': 'Paste the callback URL',
+    'accountWizard.tour.proxy.callback.message': 'Copy the full localhost callback URL from your browser\'s address bar and paste it here, then click Submit. The redirect page may show "connection refused" — that\'s expected.',
+    'accountWizard.tour.proxy.skip.title': 'Skip the proxy',
+    'accountWizard.tour.proxy.skip.message': 'If you don\'t need the proxy, click Skip to jump to step 5.',
+    'accountWizard.tour.plan.review.title': 'Review',
+    'accountWizard.tour.plan.review.message': 'Check the values you entered. If anything looks wrong, click Back to fix it.',
+    'accountWizard.tour.plan.pick.title': 'Pick a plan',
+    'accountWizard.tour.plan.pick.message': 'Pro, Max, or API. The CLI told us which subscription it found in step 3 — override here if needed.',
+    'accountWizard.tour.plan.default.title': 'Make it the default? (optional)',
+    'accountWizard.tour.plan.default.message': 'Tick to mark this account as the backend\'s default.',
+    'accountWizard.tour.plan.save.title': 'Save the account',
+    'accountWizard.tour.plan.save.message': 'Click Save — the account is persisted and we move to the Done screen.',
+    'accountWizard.tour.done.add.title': 'Add another account?',
+    'accountWizard.tour.done.add.message': 'Click here to add another account on the same backend (e.g. a second Claude account).',
+    'accountWizard.tour.done.nextBackend.title': 'Move to the next backend',
+    'accountWizard.tour.done.nextBackend.message': 'Click here to advance the tour to the next backend (Codex / Gemini / OpenCode).',
   };
   return map[_key] ?? _key;
 };
@@ -166,11 +209,13 @@ const setTourTitle = inject<(title: string | null) => void>(
  *  (reading 'el')" out of Vue's renderer downstream. */
 interface TourSubstep {
   selector: string;
-  /** Header shown in the tooltip — defaults to the wizard step's own
-   *  title if omitted. Set per-substep so the user sees "Pick a name",
-   *  "Sign in", "Save the account" instead of a single generic title. */
-  title?: string;
-  message: string;
+  /** Translator key for the tooltip header (e.g. ``accountWizard.tour.sub.yesno.title``).
+   *  Resolved through the wizard's ``t()`` so it picks up the host
+   *  app's locale. The default-translator map below ships English
+   *  fallbacks so the wizard still works standalone. */
+  titleKey?: string;
+  /** Translator key for the tooltip body. */
+  messageKey: string;
   done?: () => boolean;
 }
 
@@ -556,118 +601,121 @@ const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
   subscription: [
     {
       selector: '[data-tour="wiz-sub-yesno"]',
-      title: 'Do you have an account?',
-      message: 'Pick whether you already have a Claude / Codex / Gemini account on this backend.',
+      titleKey: 'accountWizard.tour.sub.yesno.title',
+      messageKey: 'accountWizard.tour.sub.yesno.message',
       done: () => hasSubscription.value !== '',
     },
     {
       selector: '#wiz-name',
-      title: 'Name this account',
-      message: 'Type a label so you can tell accounts apart later (e.g. "Personal", "Work"). Optional — leave blank to use a default.',
+      titleKey: 'accountWizard.tour.sub.name.title',
+      messageKey: 'accountWizard.tour.sub.name.message',
       done: () => accountName.value.trim().length > 0,
     },
     {
       selector: '#wiz-email',
-      title: 'Account email',
-      message: 'Type the email tied to the account. We pass it as a login_hint on the Claude / Google sign-in page.',
+      titleKey: 'accountWizard.tour.sub.email.title',
+      messageKey: 'accountWizard.tour.sub.email.message',
       done: () => /.+@.+/.test(email.value),
     },
     {
       selector: '[data-tour="wiz-sub-next"]',
-      title: 'Continue to CLI check',
-      message: 'Click Continue — we verify the CLI is installed and move to step 2.',
+      titleKey: 'accountWizard.tour.sub.next.title',
+      messageKey: 'accountWizard.tour.sub.next.message',
     },
   ],
   cli: [
     {
       selector: '[data-tour="wiz-cli-status"]',
-      title: 'CLI install check',
-      message: 'Confirm the CLI is installed. If it isn\'t, the "Install" button next to it will fetch it for you.',
+      titleKey: 'accountWizard.tour.cli.status.title',
+      messageKey: 'accountWizard.tour.cli.status.message',
       done: () => cliInstalled.value,
     },
     {
       selector: '[data-tour="wiz-cli-path"]',
-      title: 'Confirm the config directory',
-      message: 'This is the per-account config dir. We auto-create it on the next step. Click "Customize" if you need a different path.',
+      titleKey: 'accountWizard.tour.cli.path.title',
+      messageKey: 'accountWizard.tour.cli.path.message',
     },
     {
       selector: '[data-tour="wiz-cli-next"]',
-      title: 'Launch the CLI',
-      message: 'Click Continue — we launch the CLI behind the scenes and move to step 3 (Sign in).',
+      titleKey: 'accountWizard.tour.cli.next.title',
+      messageKey: 'accountWizard.tour.cli.next.message',
     },
   ],
   login: [
     {
       selector: '[data-tour="wiz-login-stream"]',
-      title: 'Preparing sign-in',
-      message: 'The CLI is booting in the background. Wait ~5 seconds for the OAuth URL to appear here; your browser opens automatically.',
+      titleKey: 'accountWizard.tour.login.preparing.title',
+      messageKey: 'accountWizard.tour.login.preparing.message',
+      done: () => !!loginSession.urlPrompt.value,
     },
     {
       selector: '[data-tour="wiz-login-url"]',
-      title: 'Authorize in your browser',
-      message: 'If your browser didn\'t open, click this URL. Sign in with the email from step 1 and click "Authorize".',
+      titleKey: 'accountWizard.tour.login.authorize.title',
+      messageKey: 'accountWizard.tour.login.authorize.message',
+      done: () =>
+        !!loginSession.textPrompt.value || returnedFromOAuthTab.value,
     },
     {
       selector: '[data-tour="wiz-login-paste"]',
-      title: 'Paste the authorization code',
-      message: 'Copy the code from the redirect page and paste it here, then click Send. We verify it for ~5–10 s.',
+      titleKey: 'accountWizard.tour.login.paste.title',
+      messageKey: 'accountWizard.tour.login.paste.message',
     },
   ],
   proxy: [
     {
       selector: '[data-tour="wiz-proxy-install"]',
-      title: 'Install CLIProxyAPI',
-      message: 'If the proxy isn\'t installed yet, click Install and wait. The proxy lets other tools reach this account through an OpenAI-compatible endpoint.',
+      titleKey: 'accountWizard.tour.proxy.install.title',
+      messageKey: 'accountWizard.tour.proxy.install.message',
     },
     {
       selector: '[data-tour="wiz-proxy-start"]',
-      title: 'Register with the proxy',
-      message: 'Click "Start proxy registration" to begin. A browser tab opens for the proxy OAuth.',
+      titleKey: 'accountWizard.tour.proxy.start.title',
+      messageKey: 'accountWizard.tour.proxy.start.message',
     },
     {
       selector: '[data-tour="wiz-proxy-callback"]',
-      title: 'Paste the callback URL',
-      message: 'Copy the full localhost callback URL from your browser\'s address bar (the redirect page shows "connection refused" — that\'s expected) and paste it here, then click Submit.',
+      titleKey: 'accountWizard.tour.proxy.callback.title',
+      messageKey: 'accountWizard.tour.proxy.callback.message',
     },
     {
       selector: '[data-tour="wiz-proxy-skip"]',
-      title: 'Skip the proxy',
-      message: 'If you don\'t need the proxy, click Skip to jump to step 5.',
+      titleKey: 'accountWizard.tour.proxy.skip.title',
+      messageKey: 'accountWizard.tour.proxy.skip.message',
     },
   ],
   plan: [
     {
       selector: '[data-tour="wiz-plan-review"]',
-      title: 'Review',
-      message: 'Check the values you entered. If anything looks wrong, click Back to fix it.',
+      titleKey: 'accountWizard.tour.plan.review.title',
+      messageKey: 'accountWizard.tour.plan.review.message',
     },
     {
       selector: '#wiz-plan',
-      title: 'Pick a plan',
-      message: 'Pro, Max, or API. The CLI told us which subscription it found in step 3 — override here if needed.',
+      titleKey: 'accountWizard.tour.plan.pick.title',
+      messageKey: 'accountWizard.tour.plan.pick.message',
       done: () => selectedPlan.value !== '',
     },
     {
       selector: '[data-tour="wiz-plan-default"]',
-      title: 'Make it the default? (optional)',
-      message: 'Tick to mark this account as the backend\'s default.',
+      titleKey: 'accountWizard.tour.plan.default.title',
+      messageKey: 'accountWizard.tour.plan.default.message',
     },
     {
       selector: '[data-tour="wiz-plan-save"]',
-      title: 'Save the account',
-      message: 'Click Save — the account is persisted and we move to the Done screen.',
+      titleKey: 'accountWizard.tour.plan.save.title',
+      messageKey: 'accountWizard.tour.plan.save.message',
     },
   ],
   done: [
     {
       selector: '[data-tour="wiz-done-add"]',
-      title: 'Add another account?',
-      message: 'Click here to add another account on the same backend (e.g. a second Claude account).',
+      titleKey: 'accountWizard.tour.done.add.title',
+      messageKey: 'accountWizard.tour.done.add.message',
     },
     {
       selector: '[data-tour="wiz-done-next-backend"]',
-      title: 'Move to the next backend',
-      message: 'Click here to advance the tour to the next backend (Codex / Gemini / OpenCode).',
+      titleKey: 'accountWizard.tour.done.nextBackend.title',
+      messageKey: 'accountWizard.tour.done.nextBackend.message',
     },
   ],
 };
@@ -676,6 +724,33 @@ const tourSubstepIndex = ref(0);
 const activeTourSubstep = computed<TourSubstep | null>(() => {
   const list = TOUR_SUBSTEPS[currentStep.value] ?? [];
   return list[tourSubstepIndex.value] ?? null;
+});
+
+// Heuristic for "user opened the OAuth tab and came back": flips true
+// the next time this tab regains visibility AFTER the OAuth URL has
+// been shown. Used to advance the login spotlight from the URL substep
+// to the paste-code substep without waiting for the CLI's slower
+// "Paste code here >" prompt to appear.
+const returnedFromOAuthTab = ref(false);
+let lastDocumentHidden = false;
+function _trackVisibility() {
+  if (typeof document === 'undefined') return;
+  if (document.visibilityState === 'hidden') {
+    lastDocumentHidden = true;
+  } else if (document.visibilityState === 'visible' && lastDocumentHidden) {
+    if (currentStep.value === 'login' && loginSession.urlPrompt.value) {
+      returnedFromOAuthTab.value = true;
+    }
+    lastDocumentHidden = false;
+  }
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', _trackVisibility);
+}
+onUnmounted(() => {
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', _trackVisibility);
+  }
 });
 
 watch(
@@ -692,8 +767,8 @@ watch(
 watch(activeTourSubstep, (sub) => {
   if (sub) {
     setTourTarget(sub.selector);
-    setTourGuide(sub.message);
-    setTourTitle(sub.title ?? null);
+    setTourGuide(t(sub.messageKey));
+    setTourTitle(sub.titleKey ? t(sub.titleKey) : null);
   } else {
     setTourTarget(`[data-tour="wiz-${currentStep.value}"]`);
     setTourGuide(null);
@@ -702,9 +777,12 @@ watch(activeTourSubstep, (sub) => {
 });
 
 // Reset substep index whenever the wizard advances to a new step so the
-// spotlight starts at the first element of the new step.
+// spotlight starts at the first element of the new step. Also reset the
+// OAuth-tab return heuristic so an old visibility flip from a previous
+// session doesn't leak into a new login.
 watch(currentStep, () => {
   tourSubstepIndex.value = 0;
+  returnedFromOAuthTab.value = false;
 });
 
 // ---------------------------------------------------------------------------
