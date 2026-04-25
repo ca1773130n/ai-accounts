@@ -154,148 +154,17 @@ const setTourGuide = inject<(msg: string | null) => void>(
 /** A single substep — the spotlight anchors to ``selector`` and shows
  *  ``message`` in the tooltip balloon. ``done`` is a reactive predicate;
  *  when it becomes true, the spotlight advances automatically to the
- *  next substep. ``stepFallback`` falls back to the whole-step container
- *  if the per-element selector isn't yet in the DOM. */
+ *  next substep. The actual TOUR_SUBSTEPS table + watchers are wired up
+ *  AFTER every ref the predicates close over (see "Tour spotlight
+ *  wiring" later in this file) — registering watchers up here would
+ *  evaluate the source against refs that are still in the temporal
+ *  dead zone, which surfaces as "Cannot read properties of undefined
+ *  (reading 'el')" out of Vue's renderer downstream. */
 interface TourSubstep {
   selector: string;
   message: string;
   done?: () => boolean;
 }
-
-const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
-  subscription: [
-    {
-      selector: '[data-tour="wiz-sub-yesno"]',
-      message: 'Pick whether you already have a Claude / Codex / Gemini account on this backend.',
-      done: () => hasSubscription.value !== '',
-    },
-    {
-      selector: '#wiz-name',
-      message: 'Type a name to identify this account (e.g. "Personal", "Work"). Optional — leave blank to use a default.',
-      done: () => accountName.value.trim().length > 0,
-    },
-    {
-      selector: '#wiz-email',
-      message: 'Type the email tied to the account. We use it as a login_hint on the Claude / Google sign-in page.',
-      done: () => /.+@.+/.test(email.value),
-    },
-    {
-      selector: '[data-tour="wiz-sub-next"]',
-      message: 'Click here when you are done. We move to step 2 (CLI check).',
-    },
-  ],
-  cli: [
-    {
-      selector: '[data-tour="wiz-cli-status"]',
-      message: 'Confirm the CLI is installed. If it isn\'t, the "Install" button next to it will fetch it for you.',
-      done: () => cliInstalled.value,
-    },
-    {
-      selector: '[data-tour="wiz-cli-path"]',
-      message: 'Confirm the per-account config directory. We auto-create it on the next step. Click "Customize" if you need a different path.',
-    },
-    {
-      selector: '[data-tour="wiz-cli-next"]',
-      message: 'Click Continue — we launch the CLI behind the scenes and move to step 3 (Sign in).',
-    },
-  ],
-  login: [
-    {
-      selector: '[data-tour="wiz-login-stream"]',
-      message: 'The CLI is booting in the background. Wait ~5 seconds for the OAuth URL to appear here, then your browser opens automatically.',
-    },
-    {
-      selector: '[data-tour="wiz-login-url"]',
-      message: 'If your browser didn\'t open, click this URL. Sign in with the email from step 1 and click "Authorize".',
-    },
-    {
-      selector: '[data-tour="wiz-login-paste"]',
-      message: 'Copy the authorization code from the redirect page and paste it here, then click Send. We verify it for ~5–10 s.',
-    },
-  ],
-  proxy: [
-    {
-      selector: '[data-tour="wiz-proxy-install"]',
-      message: 'If CLIProxyAPI isn\'t installed yet, click Install and wait. The proxy lets other tools reach this account through an OpenAI-compatible endpoint.',
-    },
-    {
-      selector: '[data-tour="wiz-proxy-start"]',
-      message: 'Click "Start proxy registration" to begin. A browser tab opens for the proxy OAuth.',
-    },
-    {
-      selector: '[data-tour="wiz-proxy-callback"]',
-      message: 'Copy the full localhost callback URL from your browser\'s address bar (the redirect page will show "connection refused" — that\'s expected) and paste it here, then click Submit.',
-    },
-    {
-      selector: '[data-tour="wiz-proxy-skip"]',
-      message: 'If you don\'t need the proxy, click Skip to jump to step 5.',
-    },
-  ],
-  plan: [
-    {
-      selector: '[data-tour="wiz-plan-review"]',
-      message: 'Review the values you entered. If anything looks wrong, click Back to fix it.',
-    },
-    {
-      selector: '#wiz-plan',
-      message: 'Pick your plan — Pro, Max, or API. The CLI told us which subscription it found in step 3, but you can override here.',
-      done: () => selectedPlan.value !== '',
-    },
-    {
-      selector: '[data-tour="wiz-plan-default"]',
-      message: 'Optional — make this the default account for the backend.',
-    },
-    {
-      selector: '[data-tour="wiz-plan-save"]',
-      message: 'Click Save — the account is persisted and we move to the Done screen.',
-    },
-  ],
-  done: [
-    {
-      selector: '[data-tour="wiz-done-add"]',
-      message: 'Click here to add another account on the same backend (e.g. a second Claude account).',
-    },
-    {
-      selector: '[data-tour="wiz-done-next-backend"]',
-      message: 'Or click here to advance the tour to the next backend (Codex / Gemini / OpenCode).',
-    },
-  ],
-};
-
-/** Which substep within the current step is currently spotlighted. */
-const tourSubstepIndex = ref(0);
-
-/** The active substep's spotlight definition (or null when the step has none). */
-const activeTourSubstep = computed<TourSubstep | null>(() => {
-  const list = TOUR_SUBSTEPS[currentStep.value] ?? [];
-  return list[tourSubstepIndex.value] ?? null;
-});
-
-/** Auto-advance the substep when its ``done`` predicate flips true. */
-watch(
-  () => activeTourSubstep.value?.done?.() ?? false,
-  (isDone) => {
-    if (!isDone) return;
-    const list = TOUR_SUBSTEPS[currentStep.value] ?? [];
-    if (tourSubstepIndex.value < list.length - 1) {
-      tourSubstepIndex.value++;
-    }
-  },
-);
-
-/** Push the active spotlight + message to the host whenever it changes. */
-watch(
-  activeTourSubstep,
-  (sub) => {
-    if (sub) {
-      setTourTarget(sub.selector);
-      setTourGuide(sub.message);
-    } else {
-      setTourTarget(`[data-tour="wiz-${currentStep.value}"]`);
-      setTourGuide(null);
-    }
-  },
-);
 
 // ---------------------------------------------------------------------------
 // Wizard step management
@@ -547,11 +416,9 @@ watch(configPath, () => {
 const draftAccountId = ref<string>(''); // backend row id once created
 
 watch(currentStep, async (_step) => {
-  // Reset the per-element substep index so each step re-spotlights its
-  // first element. The activeTourSubstep watcher below pushes the
-  // selector + message to the host.
-  tourSubstepIndex.value = 0;
-  // Auto-start login when entering the login step
+  // The substep-reset and the spotlight pushes live in the dedicated
+  // tour-spotlight wiring further down (after every ref the predicates
+  // close over). Here we only auto-start login.
   if (currentStep.value === 'login' && loginSession.status.value === 'idle') {
     await startUnifiedLogin();
   }
@@ -666,6 +533,149 @@ const selectedPlan = ref('');
 const isDefault = ref(false);
 const isSaving = ref(false);
 const saveError = ref('');
+
+// ---------------------------------------------------------------------------
+// Tour spotlight wiring — declared HERE, after every ref the predicates
+// reference (hasSubscription, accountName, email, cliInstalled,
+// selectedPlan, currentStep). Putting this earlier in the file evaluates
+// the watch source while those refs are in their temporal dead zone, and
+// the resulting TDZ access surfaces as a Vue renderer crash
+// ("Cannot read properties of undefined (reading 'el')") rather than a
+// readable ReferenceError, because Vue catches the throw inside its own
+// errorHandler and continues patching against an undefined VNode.
+// ---------------------------------------------------------------------------
+const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
+  subscription: [
+    {
+      selector: '[data-tour="wiz-sub-yesno"]',
+      message: 'Pick whether you already have a Claude / Codex / Gemini account on this backend.',
+      done: () => hasSubscription.value !== '',
+    },
+    {
+      selector: '#wiz-name',
+      message: 'Type a name to identify this account (e.g. "Personal", "Work"). Optional — leave blank to use a default.',
+      done: () => accountName.value.trim().length > 0,
+    },
+    {
+      selector: '#wiz-email',
+      message: 'Type the email tied to the account. We use it as a login_hint on the Claude / Google sign-in page.',
+      done: () => /.+@.+/.test(email.value),
+    },
+    {
+      selector: '[data-tour="wiz-sub-next"]',
+      message: 'Click here when you are done. We move to step 2 (CLI check).',
+    },
+  ],
+  cli: [
+    {
+      selector: '[data-tour="wiz-cli-status"]',
+      message: 'Confirm the CLI is installed. If it isn\'t, the "Install" button next to it will fetch it for you.',
+      done: () => cliInstalled.value,
+    },
+    {
+      selector: '[data-tour="wiz-cli-path"]',
+      message: 'Confirm the per-account config directory. We auto-create it on the next step. Click "Customize" if you need a different path.',
+    },
+    {
+      selector: '[data-tour="wiz-cli-next"]',
+      message: 'Click Continue — we launch the CLI behind the scenes and move to step 3 (Sign in).',
+    },
+  ],
+  login: [
+    {
+      selector: '[data-tour="wiz-login-stream"]',
+      message: 'The CLI is booting in the background. Wait ~5 seconds for the OAuth URL to appear here, then your browser opens automatically.',
+    },
+    {
+      selector: '[data-tour="wiz-login-url"]',
+      message: 'If your browser didn\'t open, click this URL. Sign in with the email from step 1 and click "Authorize".',
+    },
+    {
+      selector: '[data-tour="wiz-login-paste"]',
+      message: 'Copy the authorization code from the redirect page and paste it here, then click Send. We verify it for ~5–10 s.',
+    },
+  ],
+  proxy: [
+    {
+      selector: '[data-tour="wiz-proxy-install"]',
+      message: 'If CLIProxyAPI isn\'t installed yet, click Install and wait. The proxy lets other tools reach this account through an OpenAI-compatible endpoint.',
+    },
+    {
+      selector: '[data-tour="wiz-proxy-start"]',
+      message: 'Click "Start proxy registration" to begin. A browser tab opens for the proxy OAuth.',
+    },
+    {
+      selector: '[data-tour="wiz-proxy-callback"]',
+      message: 'Copy the full localhost callback URL from your browser\'s address bar (the redirect page will show "connection refused" — that\'s expected) and paste it here, then click Submit.',
+    },
+    {
+      selector: '[data-tour="wiz-proxy-skip"]',
+      message: 'If you don\'t need the proxy, click Skip to jump to step 5.',
+    },
+  ],
+  plan: [
+    {
+      selector: '[data-tour="wiz-plan-review"]',
+      message: 'Review the values you entered. If anything looks wrong, click Back to fix it.',
+    },
+    {
+      selector: '#wiz-plan',
+      message: 'Pick your plan — Pro, Max, or API. The CLI told us which subscription it found in step 3, but you can override here.',
+      done: () => selectedPlan.value !== '',
+    },
+    {
+      selector: '[data-tour="wiz-plan-default"]',
+      message: 'Optional — make this the default account for the backend.',
+    },
+    {
+      selector: '[data-tour="wiz-plan-save"]',
+      message: 'Click Save — the account is persisted and we move to the Done screen.',
+    },
+  ],
+  done: [
+    {
+      selector: '[data-tour="wiz-done-add"]',
+      message: 'Click here to add another account on the same backend (e.g. a second Claude account).',
+    },
+    {
+      selector: '[data-tour="wiz-done-next-backend"]',
+      message: 'Or click here to advance the tour to the next backend (Codex / Gemini / OpenCode).',
+    },
+  ],
+};
+
+const tourSubstepIndex = ref(0);
+const activeTourSubstep = computed<TourSubstep | null>(() => {
+  const list = TOUR_SUBSTEPS[currentStep.value] ?? [];
+  return list[tourSubstepIndex.value] ?? null;
+});
+
+watch(
+  () => activeTourSubstep.value?.done?.() ?? false,
+  (isDone) => {
+    if (!isDone) return;
+    const list = TOUR_SUBSTEPS[currentStep.value] ?? [];
+    if (tourSubstepIndex.value < list.length - 1) {
+      tourSubstepIndex.value++;
+    }
+  },
+);
+
+watch(activeTourSubstep, (sub) => {
+  if (sub) {
+    setTourTarget(sub.selector);
+    setTourGuide(sub.message);
+  } else {
+    setTourTarget(`[data-tour="wiz-${currentStep.value}"]`);
+    setTourGuide(null);
+  }
+});
+
+// Reset substep index whenever the wizard advances to a new step so the
+// spotlight starts at the first element of the new step.
+watch(currentStep, () => {
+  tourSubstepIndex.value = 0;
+});
 
 // ---------------------------------------------------------------------------
 // CLIProxyAPI registration step (Step 3.5) — optional register-with-proxy
