@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import shutil
+import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -27,7 +28,11 @@ from ai_accounts_core.login import (
     TextPrompt,
 )
 from ai_accounts_core.login.cli_orchestrator import CliOrchestrator
-from ai_accounts_core.login.interactive import run_interactive_cli_login
+from ai_accounts_core.login.interactive import (
+    EAGER_FOLLOWUP_ENTER_SECONDS,
+    EagerCodeState as _EagerCodeState,
+    run_interactive_cli_login,
+)
 from ai_accounts_core.metadata import (
     BackendMetadata,
     InputSpec,
@@ -78,6 +83,11 @@ class _ClaudeCliBrowserSession(LoginSession):
         self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue()
         self._cleanup_lock = asyncio.Lock()
         self._credential: bytes | None = None
+        # Shared flag between ``write_eager`` and the interactive login
+        # loop's text-prompt handler — if the eager-paste form already
+        # wrote the OAuth code, the loop must not block on ``answers.get()``
+        # for the CLI's prompt the code already satisfied.
+        self._eager_state = _EagerCodeState()
 
     @property
     def credential(self) -> bytes | None:
@@ -114,17 +124,23 @@ class _ClaudeCliBrowserSession(LoginSession):
     async def events(self) -> AsyncIterator[LoginEvent]:
         # claude is launched bare (no /login arg): the first-run TUI runs
         # through its theme picker, then we send /login into the REPL.
-        # Use user-supplied config_path if provided, falling back to isolation_dir.
+        # Use user-supplied config_path if provided, falling back to
+        # isolation_dir. AccountService already validates ``config_path``
+        # at create/update boundaries; we re-validate here as defence in
+        # depth in case the domain object was constructed by another
+        # path.
+        from ai_accounts_core.services.accounts import _resolve_config_path_strict
         config_path = self._config.get("config_path")
-        if config_path:
-            expanded = Path(os.path.expanduser(str(config_path)))
-            resolved = expanded.resolve()
-            allowed_roots = (Path.home().resolve(), self._isolation_dir.resolve())
-            if not any(resolved.is_relative_to(root) for root in allowed_roots):
-                raise ValueError(
-                    f"config_path '{config_path}' resolves outside allowed directories"
-                )
-            config_dir = resolved
+        allowed_roots = (
+            Path.home().resolve(),
+            self._isolation_dir.resolve(),
+            self._isolation_dir.parent.resolve(),
+        )
+        config_dir_from_cfg = _resolve_config_path_strict(
+            config_path, allowed_roots=allowed_roots
+        )
+        if config_dir_from_cfg is not None:
+            config_dir = config_dir_from_cfg
             config_dir.mkdir(parents=True, exist_ok=True)
         else:
             config_dir = self._isolation_dir
@@ -158,6 +174,7 @@ class _ClaudeCliBrowserSession(LoginSession):
                 progress_label=progress_label,
                 action_command=action_command,
                 url_regex=_CLAUDE_CONSOLE_URL_RE,
+                eager_state=self._eager_state,
             ):
                 # Send Enter to dismiss "Press Enter to continue"
                 if isinstance(event, LoginComplete) and self._orchestrator:
@@ -185,32 +202,40 @@ class _ClaudeCliBrowserSession(LoginSession):
         sits waiting on the regex.  We schedule a best-effort follow-up
         ``\\r`` a few seconds later to unblock that redraw.  On the error
         path the follow-up simply dismisses "Press Enter to retry".
+
+        The code is short-lived OAuth credential material; only its length
+        is logged, never its contents or a preview.
         """
-        import logging
-        _logger = logging.getLogger("ai_accounts_core.backends.claude")
         if self._done or self._orchestrator is None:
-            _logger.warning("write_eager skipped: done=%s, orchestrator=%s",
-                            self._done, self._orchestrator is not None)
+            logger.warning(
+                "write_eager skipped: done=%s orchestrator_ready=%s",
+                self._done, self._orchestrator is not None,
+            )
             return
-        payload = text.strip() + "\r"
-        _logger.info("write_eager: writing %d bytes to PTY (preview=%r)",
-                     len(payload), payload[:20])
+        cleaned = text.strip()
+        payload = (cleaned + "\r").encode()
+        # Mark the eager state BEFORE the write so a racing text-prompt
+        # handler sees it immediately. Log only the length — never a
+        # preview — so OAuth codes don't leak into logs/CI/support bundles.
+        self._eager_state.sent = True
+        self._eager_state.length = len(cleaned)
+        self._eager_state.at_monotonic = time.monotonic()
+        logger.info("write_eager: writing %d bytes to PTY", len(payload))
         try:
-            await self._orchestrator.write(payload.encode())
-            _logger.info("write_eager: write succeeded")
-        except Exception as exc:
-            _logger.exception("write_eager: write failed: %s", exc)
+            await self._orchestrator.write(payload)
+        except Exception:
+            logger.exception("write_eager: write failed")
             return
 
         async def _followup_enter() -> None:
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(EAGER_FOLLOWUP_ENTER_SECONDS)
             if self._done or self._orchestrator is None:
                 return
             try:
                 await self._orchestrator.write(b"\r")
-                _logger.info("write_eager: follow-up Enter sent to flush TUI")
-            except Exception as exc:  # pragma: no cover
-                _logger.warning("write_eager: follow-up Enter failed: %s", exc)
+                logger.info("write_eager: follow-up Enter sent to flush TUI")
+            except Exception:  # pragma: no cover
+                logger.warning("write_eager: follow-up Enter failed", exc_info=True)
 
         asyncio.create_task(_followup_enter())
 
@@ -296,8 +321,9 @@ class ClaudeBackend:
                 kind="cli_browser",
                 display_name="Sign in with browser",
                 description=(
-                    "Run `claude auth login --claudeai --email <email>` (v2) "
-                    "or fall back to interactive `claude` + `/login` (v1)"
+                    "Launch `claude` in a PTY, drive the first-run theme/"
+                    "config menus, send `/login`, and consume the OAuth "
+                    "paste-code from the wizard's eager form."
                 ),
                 requires_inputs=[
                     InputSpec(

@@ -32,11 +32,73 @@ import time
 import re
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from typing import Pattern
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Login-loop timing knobs
+# ---------------------------------------------------------------------------
+#
+# These were hardcoded magic numbers in v0.3.7 — every value here is tied to
+# real Claude CLI v2.1.x TUI behaviour. Surface them as named constants so
+# the timing contract is explicit the next time Claude ships a TUI redraw
+# change.
+#
+# ``IDLE_SLICE_SECONDS`` — how long ``poll_output`` waits for the next chunk
+#   before reporting an idle tick. Short enough to feel snappy; long enough
+#   that the asyncio queue isn't woken every few ms while the CLI is silent.
+#
+# ``REPL_IDLE_TRIGGER_SECONDS`` — how long the REPL must stay quiet before we
+#   send ``action_command`` (``/login`` for Claude). Claude renders its
+#   first-run welcome over ~1.5 s; 2 s is comfortably past that without
+#   feeling sluggish.
+#
+# ``LOGIN_SUCCESS_GRACE_SECONDS`` — after we match a success regex, wait
+#   this long with no further output before declaring the flow complete.
+#   Claude prints "Logged in as …" then briefly redraws; cutting it off
+#   too aggressively can truncate the success card before the user sees it.
+#
+# ``MENU_RENDER_GRACE_SECONDS`` — the CLI emits a numbered menu in several
+#   chunks (header, options, footer). Wait this long with no output before
+#   parsing menu options so we don't fire on a half-drawn menu.
+#
+# ``MENU_RESPONSE_TIMEOUT`` — give the user 5 minutes to pick an option /
+#   paste a code. Beyond that we fail the session so a forgotten wizard
+#   doesn't hold the PTY indefinitely.
+#
+# ``EAGER_FOLLOWUP_ENTER_SECONDS`` — Claude v2.1 buffers
+#   "Login successful. Press Enter to continue…" behind an internal redraw
+#   gate; until another Enter arrives the success line never reaches stdout
+#   and our regex stays unmatched. ~5 s is empirically enough for the OAuth
+#   token exchange to complete (see backends.claude.write_eager); shorter
+#   values race the network call, longer values delay success detection.
+IDLE_SLICE_SECONDS: float = 1.0
+REPL_IDLE_TRIGGER_SECONDS: float = 2.0
+LOGIN_SUCCESS_GRACE_SECONDS: float = 2.0
+MENU_RENDER_GRACE_SECONDS: float = 0.3
+MENU_RESPONSE_TIMEOUT: float = 300.0
+EAGER_FOLLOWUP_ENTER_SECONDS: float = 5.0
+
+
+# Small mutable container shared between a backend session's ``write_eager``
+# and the interactive login loop. Set ``sent=True`` immediately before writing
+# the paste code to the PTY so the text-prompt handler can skip the blocking
+# ``answers.get()`` (the CLI already received the code and will either emit
+# success or an OAuth-error marker on its own).
+@dataclass
+class EagerCodeState:
+    sent: bool = False
+    # Optional redacted preview for operator debugging. The raw code MUST NOT
+    # be stored here — OAuth codes are short-lived credentials.
+    length: int = 0
+    # Monotonic timestamp of the eager write (for computing idle-since-write
+    # grace periods from outside the loop).
+    at_monotonic: float = 0.0
 
 from ai_accounts_core.login.cli_orchestrator import (
     CliOrchestrator,
@@ -55,6 +117,64 @@ _TEXT_PROMPT_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+# Heuristic token redactor for log lines.  Strips anything that looks like
+# an OAuth code / state / token so we never write credential material to
+# logs even when the CLI echoes it back in an error message.  The pattern
+# matches long (>=20 char) base64url-ish runs plus common "prefix: value"
+# shapes like ``code=...`` and ``state=...``.
+_TOKEN_REDACT_RE = re.compile(
+    r"(?i)"
+    r"(?:\b(?:code|state|token|access_token|refresh_token|"
+    r"code_verifier|code_challenge|api_key|sk-ant-[A-Za-z0-9_-]*)"
+    r"[\s=:]+[A-Za-z0-9._\-#]{8,})"
+    r"|(?:[A-Za-z0-9_\-]{24,}#[A-Za-z0-9_\-]{8,})"
+    r"|(?:\bsk-ant-[A-Za-z0-9_\-]{10,})"
+)
+
+
+def _redact_tokens(s: str) -> str:
+    """Return ``s`` with any credential-shaped substrings replaced by ``<redacted>``."""
+    return _TOKEN_REDACT_RE.sub("<redacted>", s)
+
+
+def _safe_url_origin(url: str) -> str:
+    """Return ``scheme://host/path`` with the query string stripped.
+
+    OAuth URLs carry ``state`` and ``code_challenge`` PKCE params plus a
+    ``login_hint`` email.  We want to know *which* provider was opened
+    without leaking the per-session secrets or PII.
+    """
+    m = re.match(r"^(https?://[^/\s?#]+)([^\s?#]*)", url)
+    if not m:
+        return "<url>"
+    return m.group(1) + (m.group(2) or "")
+
+
+def safe_log_text(text: str, *, max_chars: int = 200) -> str:
+    """Make ``text`` safe to write to a log line.
+
+    Applies, in order:
+
+    * Token redaction (anything OAuth-code / state / token / api-key shaped)
+    * ASCII-only escaping (so terminal control sequences can't drive the
+      operator's pager / log viewer through cursor moves or alt-screen
+      switches when the log is tailed)
+    * Truncation to ``max_chars``
+
+    Use this at every log site that handles untrusted CLI output (chunks,
+    error lines, prompts) — that way "I'll just log a snippet for
+    debugging" never reintroduces the H2 leak.
+    """
+    redacted = _redact_tokens(text)
+    # ``unicode_escape`` keeps ASCII printables and turns control bytes
+    # into their backslash forms, so a CSI sequence ends up as ``\x1b[2J``
+    # in the log instead of clearing the operator's screen.
+    escaped = redacted.encode("unicode_escape").decode("ascii", errors="replace")
+    if len(escaped) > max_chars:
+        return escaped[: max_chars - 1] + "…"
+    return escaped
+
 
 # OAuth errors emitted by the CLI after we write a code. These should
 # fail the login so the wizard surfaces an error instead of hanging.
@@ -93,11 +213,13 @@ async def run_interactive_cli_login(
     progress_label: str,
     action_command: str | None,
     url_regex: Pattern[str] | None = None,
-    idle_slice_seconds: float = 1.0,
-    repl_idle_trigger_seconds: float = 2.0,
-    login_success_grace_seconds: float = 2.0,
-    menu_render_grace_seconds: float = 0.3,
-    menu_response_timeout: float = 300.0,
+    eager_state: EagerCodeState | None = None,
+    idle_slice_seconds: float = IDLE_SLICE_SECONDS,
+    repl_idle_trigger_seconds: float = REPL_IDLE_TRIGGER_SECONDS,
+    login_success_grace_seconds: float = LOGIN_SUCCESS_GRACE_SECONDS,
+    menu_render_grace_seconds: float = MENU_RENDER_GRACE_SECONDS,
+    menu_response_timeout: float = MENU_RESPONSE_TIMEOUT,
+    eager_followup_enter_seconds: float = EAGER_FOLLOWUP_ENTER_SECONDS,
 ) -> AsyncIterator[LoginEvent]:
     """Drive ``orchestrator`` through an interactive CLI login flow.
 
@@ -238,40 +360,54 @@ async def run_interactive_cli_login(
             recent_lines = recent_lines[-40:]
 
         # URL detection: backend-specific regex first, then generic.
+        # Only log the scheme+host — the full URL contains PKCE state and
+        # a login_hint email that we don't need in application logs.
         if not url_already_emitted:
             m = None
             if url_regex is not None:
                 m = url_regex.search(chunk)
                 if m is not None:
-                    logger.info("URL detected via backend regex: %s", m.group(0)[:200])
+                    logger.info("URL detected via backend regex (%s)", _safe_url_origin(m.group(0)))
             if m is None:
                 m = _URL_IN_OUTPUT_RE.search(chunk)
                 if m is not None:
-                    logger.info("URL detected via generic regex: %s", m.group(0)[:200])
+                    logger.info("URL detected via generic regex (%s)", _safe_url_origin(m.group(0)))
             if m is not None:
                 url_already_emitted = True
                 yield UrlPrompt(prompt_id="auth", url=m.group(0))
 
-        # Login success detection.
-        logger.info("chunk after code: %r", chunk[:300])
+        # Login success detection. Intentionally do NOT log the chunk
+        # contents — the success line contains the user's email address,
+        # and nearby chunks may still hold echoed paste characters.
         if not login_success_seen and _LOGIN_SUCCESS_RE.search(chunk):
-            logger.info("LOGIN SUCCESS DETECTED in chunk: %r", chunk[:200])
+            logger.info("login success marker detected")
             login_success_seen = True
             login_success_time = now
 
         # OAuth error detection — fails the login fast so the wizard
         # doesn't sit forever after the user pastes an invalid code.
         if _OAUTH_ERROR_RE.search(chunk):
+            # Pull only the error line itself (not the whole chunk) so
+            # surrounding echoed paste characters don't end up in logs.
             error_line = next(
                 (ln.strip() for ln in chunk.splitlines() if _OAUTH_ERROR_RE.search(ln)),
-                chunk.strip()[:200],
+                "",
             )
-            logger.info("OAuth error detected in chunk: %r", error_line[:200])
+            logger.info("oauth error marker detected: %s", safe_log_text(error_line))
+            # Clear the eager flag so an in-session retry (or a fresh
+            # session reusing the state object) does not silently swallow
+            # the next paste prompt.
+            if eager_state is not None:
+                eager_state.sent = False
             yield LoginFailed(
                 code="oauth_error",
                 message=error_line[:200] or "OAuth verification failed",
             )
             return
+        # The message above is surfaced to the user via the SSE stream,
+        # which is already scoped to an authenticated session — leaving
+        # the raw error line in the event body is fine; only the *log
+        # line* is redacted.
 
         # Text input prompt detection — check every chunk, not during idle,
         # because Claude shows a spinner animation while waiting for input
@@ -280,7 +416,21 @@ async def run_interactive_cli_login(
             for line in chunk.splitlines():
                 stripped = line.strip()
                 if stripped and _TEXT_PROMPT_RE.search(stripped):
-                    logger.info("text prompt detected: %r", stripped)
+                    # Eager-write short-circuit: the AccountWizard's
+                    # paste-code form already wrote the OAuth code to the
+                    # PTY via ``write_eager``. Emitting a TextPrompt now
+                    # and blocking on ``answers.get()`` would deadlock —
+                    # the frontend UI has been dismissed, the user has
+                    # nothing to submit, and the CLI is already processing
+                    # the pasted code. Skip this prompt, *consume* the
+                    # eager flag (so a second unrelated prompt later in
+                    # the same session gets honored normally), and keep
+                    # scanning for success / OAuth-error markers.
+                    if eager_state is not None and eager_state.sent:
+                        eager_state.sent = False
+                        logger.info("text prompt skipped — eager code already sent")
+                        continue
+                    logger.info("text prompt detected")
                     prompt_id = f"text-{uuid.uuid4().hex[:6]}"
                     yield TextPrompt(
                         prompt_id=prompt_id,
@@ -303,6 +453,13 @@ async def run_interactive_cli_login(
                     await orchestrator.write(
                         (answer.answer.strip() + "\r").encode()
                     )
+                    # Note: deliberately do NOT flip eager_state.sent here.
+                    # eager_state is the contract between ``write_eager``
+                    # (eager paste) and the text-prompt handler — the
+                    # normal ``respond()`` path is independent. Treating
+                    # this write as "eager" would silently swallow the
+                    # next prompt, e.g. an in-session "Press Enter to
+                    # retry" after a bad code, leaving the wizard hung.
 
                     # Claude v2 TUI buffers "Login successful. Press Enter
                     # to continue…" behind an internal redraw gate: the
@@ -311,8 +468,10 @@ async def run_interactive_cli_login(
                     # the login loop doesn't hang on the regex. On the
                     # error path the extra Enter just dismisses
                     # "Press Enter to retry" — harmless.
+                    delay = eager_followup_enter_seconds
+
                     async def _poke_tui_after_paste() -> None:
-                        await asyncio.sleep(5.0)
+                        await asyncio.sleep(delay)
                         try:
                             await orchestrator.write(b"\r")
                             logger.info("post-paste follow-up Enter sent")
