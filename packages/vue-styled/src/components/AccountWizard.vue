@@ -150,6 +150,10 @@ const setTourGuide = inject<(msg: string | null) => void>(
   'setTourGuide',
   () => {},
 );
+const setTourTitle = inject<(title: string | null) => void>(
+  'setTourTitle',
+  () => {},
+);
 
 /** A single substep — the spotlight anchors to ``selector`` and shows
  *  ``message`` in the tooltip balloon. ``done`` is a reactive predicate;
@@ -162,6 +166,10 @@ const setTourGuide = inject<(msg: string | null) => void>(
  *  (reading 'el')" out of Vue's renderer downstream. */
 interface TourSubstep {
   selector: string;
+  /** Header shown in the tooltip — defaults to the wizard step's own
+   *  title if omitted. Set per-substep so the user sees "Pick a name",
+   *  "Sign in", "Save the account" instead of a single generic title. */
+  title?: string;
   message: string;
   done?: () => boolean;
 }
@@ -548,98 +556,118 @@ const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
   subscription: [
     {
       selector: '[data-tour="wiz-sub-yesno"]',
+      title: 'Do you have an account?',
       message: 'Pick whether you already have a Claude / Codex / Gemini account on this backend.',
       done: () => hasSubscription.value !== '',
     },
     {
       selector: '#wiz-name',
-      message: 'Type a name to identify this account (e.g. "Personal", "Work"). Optional — leave blank to use a default.',
+      title: 'Name this account',
+      message: 'Type a label so you can tell accounts apart later (e.g. "Personal", "Work"). Optional — leave blank to use a default.',
       done: () => accountName.value.trim().length > 0,
     },
     {
       selector: '#wiz-email',
-      message: 'Type the email tied to the account. We use it as a login_hint on the Claude / Google sign-in page.',
+      title: 'Account email',
+      message: 'Type the email tied to the account. We pass it as a login_hint on the Claude / Google sign-in page.',
       done: () => /.+@.+/.test(email.value),
     },
     {
       selector: '[data-tour="wiz-sub-next"]',
-      message: 'Click here when you are done. We move to step 2 (CLI check).',
+      title: 'Continue to CLI check',
+      message: 'Click Continue — we verify the CLI is installed and move to step 2.',
     },
   ],
   cli: [
     {
       selector: '[data-tour="wiz-cli-status"]',
+      title: 'CLI install check',
       message: 'Confirm the CLI is installed. If it isn\'t, the "Install" button next to it will fetch it for you.',
       done: () => cliInstalled.value,
     },
     {
       selector: '[data-tour="wiz-cli-path"]',
-      message: 'Confirm the per-account config directory. We auto-create it on the next step. Click "Customize" if you need a different path.',
+      title: 'Confirm the config directory',
+      message: 'This is the per-account config dir. We auto-create it on the next step. Click "Customize" if you need a different path.',
     },
     {
       selector: '[data-tour="wiz-cli-next"]',
+      title: 'Launch the CLI',
       message: 'Click Continue — we launch the CLI behind the scenes and move to step 3 (Sign in).',
     },
   ],
   login: [
     {
       selector: '[data-tour="wiz-login-stream"]',
-      message: 'The CLI is booting in the background. Wait ~5 seconds for the OAuth URL to appear here, then your browser opens automatically.',
+      title: 'Preparing sign-in',
+      message: 'The CLI is booting in the background. Wait ~5 seconds for the OAuth URL to appear here; your browser opens automatically.',
     },
     {
       selector: '[data-tour="wiz-login-url"]',
+      title: 'Authorize in your browser',
       message: 'If your browser didn\'t open, click this URL. Sign in with the email from step 1 and click "Authorize".',
     },
     {
       selector: '[data-tour="wiz-login-paste"]',
-      message: 'Copy the authorization code from the redirect page and paste it here, then click Send. We verify it for ~5–10 s.',
+      title: 'Paste the authorization code',
+      message: 'Copy the code from the redirect page and paste it here, then click Send. We verify it for ~5–10 s.',
     },
   ],
   proxy: [
     {
       selector: '[data-tour="wiz-proxy-install"]',
-      message: 'If CLIProxyAPI isn\'t installed yet, click Install and wait. The proxy lets other tools reach this account through an OpenAI-compatible endpoint.',
+      title: 'Install CLIProxyAPI',
+      message: 'If the proxy isn\'t installed yet, click Install and wait. The proxy lets other tools reach this account through an OpenAI-compatible endpoint.',
     },
     {
       selector: '[data-tour="wiz-proxy-start"]',
+      title: 'Register with the proxy',
       message: 'Click "Start proxy registration" to begin. A browser tab opens for the proxy OAuth.',
     },
     {
       selector: '[data-tour="wiz-proxy-callback"]',
-      message: 'Copy the full localhost callback URL from your browser\'s address bar (the redirect page will show "connection refused" — that\'s expected) and paste it here, then click Submit.',
+      title: 'Paste the callback URL',
+      message: 'Copy the full localhost callback URL from your browser\'s address bar (the redirect page shows "connection refused" — that\'s expected) and paste it here, then click Submit.',
     },
     {
       selector: '[data-tour="wiz-proxy-skip"]',
+      title: 'Skip the proxy',
       message: 'If you don\'t need the proxy, click Skip to jump to step 5.',
     },
   ],
   plan: [
     {
       selector: '[data-tour="wiz-plan-review"]',
-      message: 'Review the values you entered. If anything looks wrong, click Back to fix it.',
+      title: 'Review',
+      message: 'Check the values you entered. If anything looks wrong, click Back to fix it.',
     },
     {
       selector: '#wiz-plan',
-      message: 'Pick your plan — Pro, Max, or API. The CLI told us which subscription it found in step 3, but you can override here.',
+      title: 'Pick a plan',
+      message: 'Pro, Max, or API. The CLI told us which subscription it found in step 3 — override here if needed.',
       done: () => selectedPlan.value !== '',
     },
     {
       selector: '[data-tour="wiz-plan-default"]',
-      message: 'Optional — make this the default account for the backend.',
+      title: 'Make it the default? (optional)',
+      message: 'Tick to mark this account as the backend\'s default.',
     },
     {
       selector: '[data-tour="wiz-plan-save"]',
+      title: 'Save the account',
       message: 'Click Save — the account is persisted and we move to the Done screen.',
     },
   ],
   done: [
     {
       selector: '[data-tour="wiz-done-add"]',
+      title: 'Add another account?',
       message: 'Click here to add another account on the same backend (e.g. a second Claude account).',
     },
     {
       selector: '[data-tour="wiz-done-next-backend"]',
-      message: 'Or click here to advance the tour to the next backend (Codex / Gemini / OpenCode).',
+      title: 'Move to the next backend',
+      message: 'Click here to advance the tour to the next backend (Codex / Gemini / OpenCode).',
     },
   ],
 };
@@ -665,9 +693,11 @@ watch(activeTourSubstep, (sub) => {
   if (sub) {
     setTourTarget(sub.selector);
     setTourGuide(sub.message);
+    setTourTitle(sub.title ?? null);
   } else {
     setTourTarget(`[data-tour="wiz-${currentStep.value}"]`);
     setTourGuide(null);
+    setTourTitle(null);
   }
 });
 
