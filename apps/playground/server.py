@@ -1,6 +1,6 @@
 """Run the ai-accounts playground server.
 
-Listens on 127.0.0.1:20000. The Vite dev server proxies /api/* to this port.
+Listens on 127.0.0.1:30000. The Vite dev server proxies /api/* to this port.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ app = create_app(
 def main() -> None:
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=20000)
+    uvicorn.run(app, host="127.0.0.1", port=30000)
 
 
 if __name__ == "__main__":
