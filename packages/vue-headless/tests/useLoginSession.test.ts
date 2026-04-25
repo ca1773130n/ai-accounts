@@ -107,4 +107,71 @@ describe('useLoginSession', () => {
     await captured!.start('bkd-1', 'cli_browser', {});
     expect(captured!.stdoutLines.value).toEqual(['line 1', 'line 2']);
   });
+
+  it('reset() returns every ref to its initial idle state', async () => {
+    // Drive a session all the way to complete so the composable has
+    // accumulated non-default refs (status, accountId, sessionId, stdout,
+    // urlPrompt). reset() must clear every one.
+    const events: LoginEvent[] = [
+      { type: 'url_prompt', prompt_id: 'u', url: 'https://x' },
+      { type: 'stdout', text: 'booting…' },
+      { type: 'text_prompt', prompt_id: 'p', prompt: 'code', hidden: false },
+      { type: 'complete', account_id: 'bkd-42', backend_status: 'validating' },
+    ];
+    let captured: ReturnType<typeof useLoginSession> | null = null;
+    const Child = defineComponent({
+      setup() {
+        captured = useLoginSession();
+        return () => h('div');
+      },
+    });
+    const app = createApp(Child);
+    app.use(aiAccountsPlugin, { client: mockClient(events) });
+    app.mount(document.createElement('div'));
+
+    await captured!.start('bkd-42', 'cli_browser', {});
+    // Sanity: state has actually moved off the defaults.
+    expect(captured!.status.value).toBe('complete');
+    expect(captured!.accountId.value).toBe('bkd-42');
+    expect(captured!.urlPrompt.value?.url).toBe('https://x');
+    expect(captured!.stdoutLines.value.length).toBeGreaterThan(0);
+
+    captured!.reset();
+
+    expect(captured!.status.value).toBe('idle');
+    expect(captured!.sessionId.value).toBeNull();
+    expect(captured!.accountId.value).toBeNull();
+    expect(captured!.urlPrompt.value).toBeNull();
+    expect(captured!.textPrompt.value).toBeNull();
+    expect(captured!.menuPrompt.value).toBeNull();
+    expect(captured!.stdoutLines.value).toEqual([]);
+    expect(captured!.errorCode.value).toBeNull();
+    expect(captured!.errorMessage.value).toBeNull();
+  });
+
+  it('reset() also clears error state from a failed session', async () => {
+    const events: LoginEvent[] = [
+      { type: 'failed', code: 'oauth_error', message: 'bad code' },
+    ];
+    let captured: ReturnType<typeof useLoginSession> | null = null;
+    const Child = defineComponent({
+      setup() {
+        captured = useLoginSession();
+        return () => h('div');
+      },
+    });
+    const app = createApp(Child);
+    app.use(aiAccountsPlugin, { client: mockClient(events) });
+    app.mount(document.createElement('div'));
+
+    await captured!.start('bkd-err', 'cli_browser', {});
+    expect(captured!.status.value).toBe('failed');
+    expect(captured!.errorCode.value).toBe('oauth_error');
+
+    captured!.reset();
+
+    expect(captured!.status.value).toBe('idle');
+    expect(captured!.errorCode.value).toBeNull();
+    expect(captured!.errorMessage.value).toBeNull();
+  });
 });

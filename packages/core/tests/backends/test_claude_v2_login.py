@@ -1,116 +1,183 @@
-"""Tests for Claude v1 → v2 login command selection.
+"""Tests for the Claude CLI browser-login flow.
 
-When ``config["email"]`` is provided, the browser flow must spawn
-``claude auth login --claudeai --email <email>`` and skip the /login
-slash-command. Without email, the legacy v1 flow (bare ``claude`` +
-/login) must still be used.
+The v2 ``claude auth login --claudeai`` command doesn't read the OAuth
+code on stdin (it waits for an HTTP callback on a random local port),
+so the backend deliberately always runs the v1 REPL flow
+(`claude` + send `/login` into the REPL).  These tests pin that
+argv/flow choice and cover the supporting helpers that make the
+paste-code path work end-to-end.
 """
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from ai_accounts_core.backends.claude import ClaudeBackend
-from ai_accounts_core.login.events import LoginComplete, StdoutChunk, UrlPrompt
 
 
-class _ScriptedOrch:
+class _ArgvCapture(Exception):
+    """Thrown from the fake CliOrchestrator once it records its argv so
+    the login loop exits promptly without needing a full transcript."""
+
+
+class _ArgvOrch:
+    """Minimal fake orchestrator that records its argv and aborts start().
+
+    Used to pin the argv/env selection without running the full
+    interactive login loop.
+    """
+
+    last: "_ArgvOrch | None" = None
+
     def __init__(self, argv: list[str], env: dict[str, str], cwd: Path) -> None:
-        _ScriptedOrch.last = self
+        _ArgvOrch.last = self
         self.argv = list(argv)
         self.env = dict(env)
         self.cwd = cwd
-        self.writes: list[bytes] = []
-        self._script: list[tuple[float, str | None]] = [
-            (0.01, "Open https://platform.claude.com/oauth/authorize?x=1 to continue\n"),
-            (0.01, "Authentication successful\n"),
-            (0.2, None),
-            (0.2, None),
-        ]
 
     async def start(self) -> None:
+        raise _ArgvCapture()
+
+    async def terminate(self) -> None:  # pragma: no cover - not reached
         pass
 
-    async def poll_output(self, timeout: float = 1.0):
-        if not self._script:
-            raise StopAsyncIteration
-        return self._script.pop(0)
-
-    async def write(self, data: bytes) -> None:
-        self.writes.append(data)
-
-    def poll_captured_oauth_url(self) -> str | None:
-        return None
-
-    async def send_menu_selection(self, zero_based_index: int) -> None:
-        pass
-
-    async def terminate(self) -> None:
-        pass
-
-    async def wait(self) -> int:
+    async def wait(self) -> int:  # pragma: no cover - not reached
         return 0
 
 
-async def _run_and_capture(backend: ClaudeBackend, config: dict, tmp_path: Path):
+def _consume_until_start(session) -> None:
+    """Drive the async generator until it hits the orchestrator start().
+
+    The patched orchestrator raises ``_ArgvCapture`` from ``start``; the
+    backend converts any non-FileNotFoundError into a crash, so we catch
+    it explicitly here.
+    """
+    import asyncio
+
+    async def _run() -> None:
+        try:
+            async for _ in session.events():
+                pass
+        except _ArgvCapture:
+            return
+        except Exception as exc:  # pragma: no cover - should not fire
+            if not isinstance(exc, _ArgvCapture):
+                raise
+
+    asyncio.run(_run())
+
+
+def test_argv_is_always_v1_repl_regardless_of_email(tmp_path: Path):
+    """Even with a supplied email we must use ``["claude"]`` (v1 REPL).
+
+    v2 (`auth login --claudeai --email`) doesn't read stdin, so it can't
+    be driven from the wizard — the eager-paste flow + regex detection
+    only work against the v1 REPL.  This test pins that decision.
+    """
+    backend = ClaudeBackend()
     session = backend.begin_login(
         flow_kind="cli_browser",
-        config=config,
+        config={"email": "user@example.com"},
         vault_ctx={},
         isolation_dir=tmp_path,
     )
     with patch(
-        "ai_accounts_core.backends.claude.CliOrchestrator", new=_ScriptedOrch
+        "ai_accounts_core.backends.claude.CliOrchestrator", new=_ArgvOrch
     ):
-        events = [e async for e in session.events()]
-    return _ScriptedOrch.last, events
+        _consume_until_start(session)
+    assert _ArgvOrch.last is not None
+    assert _ArgvOrch.last.argv == ["claude"], _ArgvOrch.last.argv
 
 
-async def test_v2_argv_used_when_email_supplied(tmp_path: Path):
-    """With config={"email": ...}, argv is the v2 non-interactive command."""
-    orch, events = await _run_and_capture(
-        ClaudeBackend(), {"email": "user@example.com"}, tmp_path
+def test_argv_is_v1_without_email(tmp_path: Path):
+    backend = ClaudeBackend()
+    session = backend.begin_login(
+        flow_kind="cli_browser", config={}, vault_ctx={}, isolation_dir=tmp_path
     )
-    assert orch.argv == [
-        "claude", "auth", "login", "--claudeai", "--email", "user@example.com"
-    ], orch.argv
-    # No /login slash-command should be sent in v2 mode.
-    assert not any(b"/login" in w for w in orch.writes), orch.writes
-    # The v2 platform.claude.com URL is surfaced as UrlPrompt.
-    url_prompts = [e for e in events if isinstance(e, UrlPrompt)]
-    assert len(url_prompts) == 1
-    assert "platform.claude.com" in url_prompts[0].url
+    with patch(
+        "ai_accounts_core.backends.claude.CliOrchestrator", new=_ArgvOrch
+    ):
+        _consume_until_start(session)
+    assert _ArgvOrch.last is not None
+    assert _ArgvOrch.last.argv == ["claude"]
 
 
-async def test_v1_fallback_when_no_email(tmp_path: Path):
-    """Without an email, the legacy argv and /login slash-command are used."""
-    orch, events = await _run_and_capture(ClaudeBackend(), {}, tmp_path)
-    assert orch.argv == ["claude"], orch.argv
-    # Legacy flow still sends /login after REPL idle — script provides chunks
-    # so idle may or may not fire before EOF; key check is argv.
+@pytest.mark.asyncio
+async def test_write_eager_redacts_code_from_logs(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
+    """``write_eager`` must log only the payload *length*, never the code."""
+    caplog.set_level(logging.DEBUG, logger="ai_accounts_core.backends.claude")
+    secret = "ExtremelySecretOAuthCodeMaterial-AAAAA"
 
-
-async def test_v2_argv_strips_surrounding_whitespace_on_email(tmp_path: Path):
-    """An email with whitespace still produces a clean argv."""
-    orch, _ = await _run_and_capture(
-        ClaudeBackend(), {"email": "  user@example.com  "}, tmp_path
+    # Construct the session but stub the orchestrator so the write goes
+    # into an in-memory buffer — we only care about the *logging*.
+    backend = ClaudeBackend()
+    session = backend.begin_login(
+        flow_kind="cli_browser", config={}, vault_ctx={}, isolation_dir=tmp_path
     )
-    assert orch.argv[-1] == "user@example.com"
+
+    class _RecordingOrch:
+        def __init__(self) -> None:
+            self.writes: list[bytes] = []
+
+        async def write(self, data: bytes) -> None:
+            self.writes.append(data)
+
+    orch = _RecordingOrch()
+    session._orchestrator = orch  # type: ignore[assignment]
+    await session.write_eager(secret)
+
+    joined = "\n".join(r.getMessage() for r in caplog.records)
+    assert secret not in joined, (
+        "OAuth code leaked to logs — write_eager must log only the length"
+    )
+    # Length is still visible for operator debugging.
+    assert str(len(secret) + 1) in joined  # +1 for the \r
+    # And it actually reached the PTY.
+    assert (secret + "\r").encode() in orch.writes
+
+
+def test_write_eager_sets_eager_state(tmp_path: Path):
+    """``write_eager`` must flip the shared ``EagerCodeState.sent`` flag
+    *before* awaiting the orchestrator write so a racing text-prompt
+    handler can short-circuit."""
+    import asyncio
+
+    backend = ClaudeBackend()
+    session = backend.begin_login(
+        flow_kind="cli_browser", config={}, vault_ctx={}, isolation_dir=tmp_path
+    )
+
+    observed_flag = {"sent_at_write_time": None}
+
+    class _ObservingOrch:
+        async def write(self, data: bytes) -> None:
+            observed_flag["sent_at_write_time"] = session._eager_state.sent
+
+    session._orchestrator = _ObservingOrch()  # type: ignore[assignment]
+    asyncio.run(session.write_eager("abc123"))
+    assert observed_flag["sent_at_write_time"] is True
+    assert session._eager_state.sent is True
+    assert session._eager_state.length == len("abc123")
 
 
 def test_cli_browser_flow_declares_optional_email_input():
-    """Metadata must advertise ``email`` so hosts can collect it up-front."""
+    """Metadata must still advertise ``email`` — the wizard pre-fills the
+    Claude sign-in page with it, even though argv never carries it."""
     meta = ClaudeBackend.metadata
     cli_browser = next(f for f in meta.login_flows if f.kind == "cli_browser")
     input_names = {i.name for i in cli_browser.requires_inputs}
     assert "email" in input_names
 
 
-def test_claude_platform_url_regex_matches_v2_callback():
-    """The backend URL regex must match the v2 platform.claude.com callback."""
+def test_claude_console_url_regex_matches_v2_callback():
+    """The URL regex still matches the v2 platform.claude.com callback —
+    the v1 REPL prints that same URL as its OAuth fallback link."""
     from ai_accounts_core.backends.claude import _CLAUDE_CONSOLE_URL_RE
 
     sample = (
