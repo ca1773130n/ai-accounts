@@ -106,10 +106,12 @@ const defaultT = (_key: string, fallback?: string | Record<string, unknown>): st
     'accountWizard.tour.cli.path.message': 'This is the per-account config dir. We auto-create it on the next step. Click "Customize" if you need a different path.',
     'accountWizard.tour.cli.next.title': 'Launch the CLI',
     'accountWizard.tour.cli.next.message': 'Click Continue — we launch the CLI behind the scenes and move to step 3 (Sign in).',
-    'accountWizard.tour.login.preparing.title': 'Preparing sign-in',
-    'accountWizard.tour.login.preparing.message': 'The CLI is booting in the background. Wait ~5 seconds for the OAuth URL to appear here; your browser opens automatically.',
+    'accountWizard.tour.login.booting.title': 'Starting the CLI — pick your account type',
+    'accountWizard.tour.login.booting.message': 'The CLI is booting in the background. While it starts, decide which login type fits your account: Pro / Max / Team subscription → pick "subscription". API usage billing (sk-ant-… / sk-… key) → pick "API key". 3rd-party platform (Bedrock / Foundry / Vertex AI) → pick "3rd-party". A menu appears in a moment with these options.',
+    'accountWizard.tour.login.pickMethod.title': 'Pick how you sign in',
+    'accountWizard.tour.login.pickMethod.message': 'Click the option that matches your account: option 1 = subscription (Pro / Max / Team), option 2 = API key billing, option 3 = 3rd-party platform. The browser will open right after.',
     'accountWizard.tour.login.authorize.title': 'Authorize in your browser',
-    'accountWizard.tour.login.authorize.message': 'If your browser didn\'t open, click this URL. Sign in with the email from step 1 and click Authorize.',
+    'accountWizard.tour.login.authorize.message': 'A browser tab has opened. Sign in with the email from step 1 and click Authorize. If the tab didn\'t open, click this URL.',
     'accountWizard.tour.login.paste.title': 'Paste the authorization code',
     'accountWizard.tour.login.paste.message': 'Copy the code from the redirect page and paste it here, then click Send. We verify it for ~5–10 s.',
     'accountWizard.tour.proxy.install.title': 'Install CLIProxyAPI',
@@ -642,12 +644,30 @@ const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
     },
   ],
   login: [
+    // 1) CLI is booting + the user needs to know which option to pick
+    //    when its login-method menu appears. The "browser opens" hint
+    //    is intentionally NOT here — it would be a lie until urlPrompt
+    //    actually fires, which is several seconds later.
     {
       selector: '[data-tour="wiz-login-stream"]',
-      titleKey: 'accountWizard.tour.login.preparing.title',
-      messageKey: 'accountWizard.tour.login.preparing.message',
+      titleKey: 'accountWizard.tour.login.booting.title',
+      messageKey: 'accountWizard.tour.login.booting.message',
+      // Advance as soon as the CLI emits its login-method menu (so the
+      // user gets the more specific "Pick the option" tooltip) OR
+      // straight to URL if the menu was bypassed.
+      done: () =>
+        !!loginSession.menuPrompt.value || !!loginSession.urlPrompt.value,
+    },
+    // 2) Login-method menu visible — point at the menu and re-state
+    //    the choice in concrete terms ("subscription = 1, API key = 2").
+    {
+      selector: '[data-tour="wiz-login-stream"]',
+      titleKey: 'accountWizard.tour.login.pickMethod.title',
+      messageKey: 'accountWizard.tour.login.pickMethod.message',
       done: () => !!loginSession.urlPrompt.value,
     },
+    // 3) URL has been shown; the browser opened (or the user can click
+    //    the URL). Now we mention the browser explicitly.
     {
       selector: '[data-tour="wiz-login-url"]',
       titleKey: 'accountWizard.tour.login.authorize.title',
@@ -655,6 +675,8 @@ const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
       done: () =>
         !!loginSession.textPrompt.value || returnedFromOAuthTab.value,
     },
+    // 4) User returned from the OAuth tab (or the CLI emitted its own
+    //    paste prompt). Spotlight on the paste form.
     {
       selector: '[data-tour="wiz-login-paste"]',
       titleKey: 'accountWizard.tour.login.paste.title',
