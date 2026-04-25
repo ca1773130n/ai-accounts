@@ -46,6 +46,48 @@ def _as_str(value: object) -> str:
     return ""
 
 
+class ConfigPathOutsideAllowedRoots(ValueError):
+    """Raised when a caller supplies a ``config_path`` that resolves outside
+    the user's home directory and the per-backend isolation tree.  The
+    backend then can read or create CLI state at an operator-controlled
+    location, which we treat as a security issue and refuse at the service
+    boundary."""
+
+
+def _resolve_config_path_strict(
+    raw: object, *, allowed_roots: tuple[Path, ...]
+) -> Path | None:
+    """Validate a user-supplied ``config_path`` and return a resolved ``Path``.
+
+    ``raw`` may be ``None`` / empty (we skip validation and return ``None``).
+    When a value is supplied it must, after ``~`` expansion and
+    ``Path.resolve()``, be contained in one of ``allowed_roots``; otherwise
+    :class:`ConfigPathOutsideAllowedRoots` is raised.  Symlinks are
+    followed by ``resolve()`` so this blocks the ``~/x -> /etc`` trick too.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    expanded = Path(os.path.expanduser(s))
+    try:
+        resolved = expanded.resolve()
+    except (OSError, RuntimeError) as exc:  # pragma: no cover — filesystem-dependent
+        raise ConfigPathOutsideAllowedRoots(
+            f"config_path {s!r} could not be resolved: {exc}"
+        ) from exc
+    roots = tuple(r.resolve() for r in allowed_roots)
+    if not any(
+        resolved == root or resolved.is_relative_to(root) for root in roots
+    ):
+        raise ConfigPathOutsideAllowedRoots(
+            f"config_path {s!r} resolves to {resolved} which is outside "
+            f"the allowed roots {[str(r) for r in roots]}"
+        )
+    return resolved
+
+
 class AccountService:
     def __init__(
         self,
@@ -76,17 +118,47 @@ class AccountService:
     def _isolation_dir(self, backend_id: str) -> Path:
         return self._isolation_base_dir / backend_id
 
+    def _allowed_config_roots(self) -> tuple[Path, ...]:
+        """Roots under which a ``config_path`` is allowed to resolve.
+
+        The per-backend isolation dir is always a subdirectory of
+        ``_isolation_base_dir``, so we don't need to enumerate it here —
+        validating against the base and the user's home is enough.
+        """
+        return (
+            Path.home().resolve(),
+            self._isolation_base_dir.resolve(),
+        )
+
+    def _validate_config(self, config: dict[str, object]) -> None:
+        """Validate untrusted config keys at the service boundary.
+
+        Currently only enforces that ``config_path``, if supplied, resolves
+        under the user's home directory or the isolation tree.  Raises
+        :class:`ConfigPathOutsideAllowedRoots` on violation.
+        """
+        if "config_path" in config:
+            _resolve_config_path_strict(
+                config.get("config_path"),
+                allowed_roots=self._allowed_config_roots(),
+            )
+
     async def _resolve_config_dir(self, backend_id: str) -> Path:
         """Resolve the CLI config directory for a backend.
 
         If the backend's config has a config_path, use that (it's where
         the CLI stored credentials during login). Otherwise fall back to
-        the isolation dir.
+        the isolation dir.  Any ``config_path`` is validated against the
+        allowed roots even when it was written directly to storage — so a
+        tampered DB row can't force the server to read from an arbitrary
+        location.
         """
         backend = await self.get(backend_id)
-        config_path = backend.config.get("config_path")
-        if config_path:
-            resolved = Path(os.path.expanduser(str(config_path)))
+        raw = backend.config.get("config_path")
+        resolved = _resolve_config_path_strict(
+            raw, allowed_roots=self._allowed_config_roots()
+        )
+        if resolved is not None:
             resolved.mkdir(parents=True, exist_ok=True)
             return resolved
         base = self._isolation_base_dir / backend_id
@@ -111,6 +183,7 @@ class AccountService:
         if kind not in self._backend_impls:
             raise BackendKindUnknown(f"unknown backend kind: {kind}")
         cfg: dict[str, object] = dict(config or {})
+        self._validate_config(cfg)
 
         # Dedup: if a backend row already exists for this (kind, config_path)
         # pair (or (kind, email) for backends with no config_path), update it
@@ -202,6 +275,8 @@ class AccountService:
             new_config = backend.config
         else:
             new_config = config if config is not None else {}
+            if isinstance(new_config, dict):
+                self._validate_config(new_config)
         updated = Backend(
             id=backend.id,
             kind=backend.kind,

@@ -1,6 +1,10 @@
 from litestar import Controller, delete, get, patch, post, status_codes
+from litestar.exceptions import ClientException
 
-from ai_accounts_core.services.accounts import AccountService
+from ai_accounts_core.services.accounts import (
+    AccountService,
+    ConfigPathOutsideAllowedRoots,
+)
 
 from ..dto import (
     BackendDTO,
@@ -29,9 +33,12 @@ class BackendsController(Controller):
     async def create_backend(
         self, data: CreateBackendRequest, account_service: AccountService
     ) -> BackendDTO:
-        created = await account_service.create(
-            data.kind, display_name=data.display_name, config=data.config
-        )
+        try:
+            created = await account_service.create(
+                data.kind, display_name=data.display_name, config=data.config
+            )
+        except ConfigPathOutsideAllowedRoots as exc:
+            raise ClientException(detail=str(exc), status_code=status_codes.HTTP_400_BAD_REQUEST) from exc
         return BackendDTO.from_domain(created, config_dir=str(account_service.config_dir(created.id)))
 
     @get("/{backend_id:str}")
@@ -53,7 +60,10 @@ class BackendsController(Controller):
             kwargs["display_name"] = data.display_name
         if data.config is not None:
             kwargs["config"] = data.config
-        updated = await account_service.update(backend_id, **kwargs)  # type: ignore[arg-type]
+        try:
+            updated = await account_service.update(backend_id, **kwargs)  # type: ignore[arg-type]
+        except ConfigPathOutsideAllowedRoots as exc:
+            raise ClientException(detail=str(exc), status_code=status_codes.HTTP_400_BAD_REQUEST) from exc
         return BackendDTO.from_domain(updated, config_dir=str(account_service.config_dir(updated.id)))
 
     @delete("/{backend_id:str}")
