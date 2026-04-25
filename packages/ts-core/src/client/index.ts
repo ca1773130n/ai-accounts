@@ -61,7 +61,16 @@ export interface DetectResultsDTO {
 
 export interface ClientOptions {
   baseUrl: string;
-  token?: string;
+  /**
+   * Bearer token sent on every authenticated request.  May be a string
+   * (captured once) or a getter (re-read per request).  Use the getter
+   * form when the token is sourced from a place that can change after
+   * the client is constructed — e.g. ``localStorage`` after the user
+   * generates an admin key on the welcome page; capturing at
+   * construction would leave the client permanently unauthenticated
+   * because the key didn't exist yet when the Vue app booted.
+   */
+  token?: string | (() => string | undefined | null);
   fetch?: typeof fetch;
 }
 
@@ -90,12 +99,19 @@ async function toError(r: Response): Promise<ApiError> {
 
 export class AiAccountsClient {
   private readonly baseUrl: string;
-  private readonly token: string | undefined;
+  private readonly _resolveToken: () => string | undefined | null;
   private readonly _fetch: typeof fetch;
 
   constructor(opts: ClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, '');
-    this.token = opts.token;
+    // Normalize ``token`` to a getter so authenticated requests pick up
+    // the current value on every call. Static-string callers still work.
+    if (typeof opts.token === 'function') {
+      this._resolveToken = opts.token;
+    } else {
+      const captured = opts.token;
+      this._resolveToken = () => captured;
+    }
     // Bind to globalThis so the global `fetch` retains its Window/ServiceWorker
     // context when called as a method via `this._fetch(...)`. Without this,
     // browsers throw "Illegal invocation". A caller-supplied fetch is assumed
@@ -108,6 +124,11 @@ export class AiAccountsClient {
     // paths is imported for type-checking — proves generated file exists and compiles.
     // Re-exported above for consumer use.
     void (null as unknown as paths);
+  }
+
+  private get token(): string | undefined {
+    const t = this._resolveToken();
+    return t == null ? undefined : t;
   }
 
   private headers(): Record<string, string> {
