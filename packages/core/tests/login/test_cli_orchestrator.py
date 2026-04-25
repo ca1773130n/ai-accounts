@@ -1,6 +1,10 @@
 import pytest
 
-from ai_accounts_core.login.cli_orchestrator import CliOrchestrator, strip_ansi
+from ai_accounts_core.login.cli_orchestrator import (
+    CliOrchestrator,
+    parse_menu_options,
+    strip_ansi,
+)
 
 
 def test_strip_ansi_cursor_positioning():
@@ -14,6 +18,66 @@ def test_strip_ansi_erase():
 
 def test_strip_ansi_csi_sgr():
     assert strip_ansi("\x1b[31mred\x1b[0m") == "red"
+
+
+def test_parse_menu_options_dotted_form():
+    """Original ``❯ 1. label`` shape must keep parsing."""
+    lines = [
+        "❯ 1. Auto (match terminal)",
+        "  2. Dark mode ✔",
+        "  3. Light mode",
+    ]
+    opts = parse_menu_options(lines)
+    assert [(o.number, o.label) for o in opts] == [
+        (1, "Auto (match terminal)"),
+        (2, "Dark mode ✔"),
+        (3, "Light mode"),
+    ]
+
+
+def test_parse_menu_options_dotless_with_separator():
+    """Claude CLI v2.1.119+ dropped the ``.`` after the digit on the
+    login-method menu (``❯ 1 Claude account · Pro, Max, ...``).  The
+    parser must still recognise these because we anchor on the ``·``
+    separator that distinguishes a menu line from a diff hunk."""
+    lines = [
+        "❯ 1 Claude account with subscription · Pro, Max, Team, or Enterprise",
+        "  2 Anthropic Console account · API usage billing",
+        "  3 3rd-party platform · Amazon Bedrock, Microsoft Foundry, or Vertex AI",
+    ]
+    opts = parse_menu_options(lines)
+    assert [(o.number, o.label, o.description) for o in opts] == [
+        (1, "Claude account with subscription", "Pro, Max, Team, or Enterprise"),
+        (2, "Anthropic Console account", "API usage billing"),
+        (3, "3rd-party platform", "Amazon Bedrock, Microsoft Foundry, or Vertex AI"),
+    ]
+
+
+def test_parse_menu_options_does_not_match_diff_hunks():
+    """The dotless branch requires a ``·`` separator, so plain
+    ``N word`` lines from diffs / code dumps must NOT be parsed as
+    options.  Regression guard for the original ``2 - console.log``
+    false-positive."""
+    lines = [
+        "  2 - console.log(\"Hello\")",
+        " 1  function foo()",
+        "    3 something else without a separator",
+    ]
+    assert parse_menu_options(lines) == []
+
+
+def test_parse_menu_options_dedupes_repeats():
+    """Menu redraws emit the same option multiple times — keep first."""
+    lines = [
+        "  1. First label",
+        "  1. First label (redraw)",
+        "  2. Second label",
+    ]
+    opts = parse_menu_options(lines)
+    assert [(o.number, o.label) for o in opts] == [
+        (1, "First label"),
+        (2, "Second label"),
+    ]
 
 
 @pytest.mark.asyncio

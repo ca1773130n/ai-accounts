@@ -41,17 +41,21 @@ _CHILD_ENV_CLEAR = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
 
 # Numbered menu: "❯ 1. Dark mode ✔" / "  2. Light mode" / "● 3 Option · description"
 #
-# Match either:
-#   (a) an optional ❯/●/○/◉ bullet followed by ``N. label``  (``.`` required)
-#   (b) a ●/○/◉ bullet followed by ``N label · description``  (bullet required)
-#
-# Matching plain ``N word`` without either bullet or dot false-positives on
-# diff lines like ``2 -  console.log("Hello")`` and ``1  function foo``.
+# Match any of three forms:
+#   (a) optional ❯/●/○/◉ bullet + ``N. label``           (dotted, original)
+#   (b) ●/○/◉ bullet + ``N label · description``          (bullet, no dot)
+#   (c) optional ❯/●/○/◉ bullet + ``N label · description``
+#       — Claude CLI v2.1.119 dropped the ``.`` after the digit; the ``·``
+#       between label and description is what disambiguates from diff hunks
+#       like ``2 - console.log("Hello")`` so we still don't false-positive
+#       on plain ``N word`` lines.
 _NUMBERED_OPTION_RE = re.compile(
     r"^\s*(?:"
     r"[❯●○◉]?\s*(?P<num>\d+)\.\s+(?P<label>.+?)(?:\s*·\s*(?P<desc>.+))?"
     r"|"
     r"[●○◉]\s*(?P<num2>\d+)\s+(?P<label2>.+?)(?:\s*·\s*(?P<desc2>.+))?"
+    r"|"
+    r"[❯●○◉]?\s*(?P<num3>\d+)\s+(?P<label3>.+?)\s*·\s*(?P<desc3>.+)"
     r")\s*$"
 )
 
@@ -96,9 +100,9 @@ def parse_menu_options(recent_lines: list[str]) -> list[MenuOption]:
         m = _NUMBERED_OPTION_RE.match(line)
         if not m:
             continue
-        num_str = m.group("num") or m.group("num2")
-        label = m.group("label") or m.group("label2")
-        desc = m.group("desc") or m.group("desc2")
+        num_str = m.group("num") or m.group("num2") or m.group("num3")
+        label = m.group("label") or m.group("label2") or m.group("label3")
+        desc = m.group("desc") or m.group("desc2") or m.group("desc3")
         if num_str is None or label is None:
             continue
         num = int(num_str)
