@@ -151,74 +151,151 @@ const setTourGuide = inject<(msg: string | null) => void>(
   () => {},
 );
 
-/** Per-substep selectors the host's tour spotlight follows. Each entry
- *  points at a single ``data-tour`` attribute already present in the
- *  template below; if a step has no entry the spotlight falls back to
- *  the wizard container. */
-const TOUR_TARGETS: Record<WizardStep, string | null> = {
-  subscription: '[data-tour="wiz-subscription"]',
-  cli: '[data-tour="wiz-cli"]',
-  login: '[data-tour="wiz-login"]',
-  proxy: '[data-tour="wiz-proxy"]',
-  plan: '[data-tour="wiz-plan"]',
-  done: '[data-tour="wiz-done"]',
+/** A single substep — the spotlight anchors to ``selector`` and shows
+ *  ``message`` in the tooltip balloon. ``done`` is a reactive predicate;
+ *  when it becomes true, the spotlight advances automatically to the
+ *  next substep. ``stepFallback`` falls back to the whole-step container
+ *  if the per-element selector isn't yet in the DOM. */
+interface TourSubstep {
+  selector: string;
+  message: string;
+  done?: () => boolean;
+}
+
+const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
+  subscription: [
+    {
+      selector: '[data-tour="wiz-sub-yesno"]',
+      message: 'Pick whether you already have a Claude / Codex / Gemini account on this backend.',
+      done: () => hasSubscription.value !== '',
+    },
+    {
+      selector: '#wiz-name',
+      message: 'Type a name to identify this account (e.g. "Personal", "Work"). Optional — leave blank to use a default.',
+      done: () => accountName.value.trim().length > 0,
+    },
+    {
+      selector: '#wiz-email',
+      message: 'Type the email tied to the account. We use it as a login_hint on the Claude / Google sign-in page.',
+      done: () => /.+@.+/.test(email.value),
+    },
+    {
+      selector: '[data-tour="wiz-sub-next"]',
+      message: 'Click here when you are done. We move to step 2 (CLI check).',
+    },
+  ],
+  cli: [
+    {
+      selector: '[data-tour="wiz-cli-status"]',
+      message: 'Confirm the CLI is installed. If it isn\'t, the "Install" button next to it will fetch it for you.',
+      done: () => cliInstalled.value,
+    },
+    {
+      selector: '[data-tour="wiz-cli-path"]',
+      message: 'Confirm the per-account config directory. We auto-create it on the next step. Click "Customize" if you need a different path.',
+    },
+    {
+      selector: '[data-tour="wiz-cli-next"]',
+      message: 'Click Continue — we launch the CLI behind the scenes and move to step 3 (Sign in).',
+    },
+  ],
+  login: [
+    {
+      selector: '[data-tour="wiz-login-stream"]',
+      message: 'The CLI is booting in the background. Wait ~5 seconds for the OAuth URL to appear here, then your browser opens automatically.',
+    },
+    {
+      selector: '[data-tour="wiz-login-url"]',
+      message: 'If your browser didn\'t open, click this URL. Sign in with the email from step 1 and click "Authorize".',
+    },
+    {
+      selector: '[data-tour="wiz-login-paste"]',
+      message: 'Copy the authorization code from the redirect page and paste it here, then click Send. We verify it for ~5–10 s.',
+    },
+  ],
+  proxy: [
+    {
+      selector: '[data-tour="wiz-proxy-install"]',
+      message: 'If CLIProxyAPI isn\'t installed yet, click Install and wait. The proxy lets other tools reach this account through an OpenAI-compatible endpoint.',
+    },
+    {
+      selector: '[data-tour="wiz-proxy-start"]',
+      message: 'Click "Start proxy registration" to begin. A browser tab opens for the proxy OAuth.',
+    },
+    {
+      selector: '[data-tour="wiz-proxy-callback"]',
+      message: 'Copy the full localhost callback URL from your browser\'s address bar (the redirect page will show "connection refused" — that\'s expected) and paste it here, then click Submit.',
+    },
+    {
+      selector: '[data-tour="wiz-proxy-skip"]',
+      message: 'If you don\'t need the proxy, click Skip to jump to step 5.',
+    },
+  ],
+  plan: [
+    {
+      selector: '[data-tour="wiz-plan-review"]',
+      message: 'Review the values you entered. If anything looks wrong, click Back to fix it.',
+    },
+    {
+      selector: '#wiz-plan',
+      message: 'Pick your plan — Pro, Max, or API. The CLI told us which subscription it found in step 3, but you can override here.',
+      done: () => selectedPlan.value !== '',
+    },
+    {
+      selector: '[data-tour="wiz-plan-default"]',
+      message: 'Optional — make this the default account for the backend.',
+    },
+    {
+      selector: '[data-tour="wiz-plan-save"]',
+      message: 'Click Save — the account is persisted and we move to the Done screen.',
+    },
+  ],
+  done: [
+    {
+      selector: '[data-tour="wiz-done-add"]',
+      message: 'Click here to add another account on the same backend (e.g. a second Claude account).',
+    },
+    {
+      selector: '[data-tour="wiz-done-next-backend"]',
+      message: 'Or click here to advance the tour to the next backend (Codex / Gemini / OpenCode).',
+    },
+  ],
 };
 
-/** Step-by-step hints for the host's tour tooltip. Each one names the
- *  exact UI elements the user must interact with on this substep, in
- *  the order they should be touched. The host tooltip renders this as
- *  a multi-line block so the structure carries over verbatim. */
-const TOUR_GUIDES: Record<WizardStep, string> = {
-  subscription:
-    [
-      'Step 1 of 5 — Subscription.',
-      '1) Pick "네, 계정이 있어요" (Yes, I have an account).',
-      '2) Type a name in the "계정 이름" field (optional but recommended).',
-      '3) Type your account email in the "이메일" field — this pre-fills the Claude / Google sign-in page.',
-      '4) Click "계속하기" (Continue).',
-    ].join('\n'),
-  cli:
-    [
-      'Step 2 of 5 — CLI setup.',
-      '1) Confirm the "Claude CLI" badge says "CLI 설치됨" (installed).',
-      '2) Click "디렉토리 만들기" (Create directory) so this account has its own per-account config dir.',
-      '3) (Optional) Click "경로 직접 입력" if you want to enter a custom path.',
-      '4) Click "계속하기" (Continue) — the wizard launches the CLI in a hidden PTY.',
-    ].join('\n'),
-  login:
-    [
-      'Step 3 of 5 — Sign in.',
-      '1) Wait for the "Preparing sign-in…" spinner — the CLI is booting.',
-      '2) When the OAuth URL card appears, your browser auto-opens; if not, click the URL link.',
-      '3) On claude.com / accounts.google.com, sign in with the email you entered, then click "승인" (Authorize).',
-      '4) Copy the authorization code from the redirect page.',
-      '5) Paste it into the "Type here…" input and click "Send".',
-      '6) The "Verifying authorization code…" spinner runs ~5–10 s, then auto-advances.',
-    ].join('\n'),
-  proxy:
-    [
-      'Step 4 of 5 — API proxy (optional).',
-      '1) If CLIProxyAPI isn\'t installed, click "Install CLIProxyAPI" — wait for it to finish.',
-      '2) Click "Start proxy registration" to start the proxy OAuth.',
-      '3) A new browser tab opens; sign in, copy the localhost callback URL.',
-      '4) Paste the callback URL into the "proxy-callback-input" field, click "Submit".',
-      '5) Or click "건너뛰기" (Skip) if you don\'t want the proxy.',
-    ].join('\n'),
-  plan:
-    [
-      'Step 5 of 5 — Plan & save.',
-      '1) Review the summary card (name, email, config dir).',
-      '2) Pick your plan from the "플랜" dropdown — Claude Pro, Max, or API.',
-      '3) (Optional) Tick "기본 계정으로 설정" to make this the default for the backend.',
-      '4) Click "계정 저장" (Save account).',
-    ].join('\n'),
-  done:
-    [
-      'Done — account saved.',
-      '1) Click "다른 계정 추가" to add another account on this backend.',
-      '2) Or click "완료 — 다음 백엔드" to advance the tour to the next backend (Codex / Gemini / OpenCode).',
-    ].join('\n'),
-};
+/** Which substep within the current step is currently spotlighted. */
+const tourSubstepIndex = ref(0);
+
+/** The active substep's spotlight definition (or null when the step has none). */
+const activeTourSubstep = computed<TourSubstep | null>(() => {
+  const list = TOUR_SUBSTEPS[currentStep.value] ?? [];
+  return list[tourSubstepIndex.value] ?? null;
+});
+
+/** Auto-advance the substep when its ``done`` predicate flips true. */
+watch(
+  () => activeTourSubstep.value?.done?.() ?? false,
+  (isDone) => {
+    if (!isDone) return;
+    const list = TOUR_SUBSTEPS[currentStep.value] ?? [];
+    if (tourSubstepIndex.value < list.length - 1) {
+      tourSubstepIndex.value++;
+    }
+  },
+);
+
+/** Push the active spotlight + message to the host whenever it changes. */
+watch(
+  activeTourSubstep,
+  (sub) => {
+    if (sub) {
+      setTourTarget(sub.selector);
+      setTourGuide(sub.message);
+    } else {
+      setTourTarget(`[data-tour="wiz-${currentStep.value}"]`);
+      setTourGuide(null);
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Wizard step management
@@ -348,6 +425,12 @@ function resolveDisplayName(fallback: string | undefined): string {
   return (fallback && fallback.trim()) || 'default';
 }
 
+// Kept for backward compat with the older review card / save flow that
+// echoed the env-var name back to the user. New copy hides it
+// completely; the api-key-vs-OAuth choice is decided by the CLI's
+// own login-method menu in step 3, so pre-baking a var name here was
+// confusing for OAuth-only flows. Still computed so any host that
+// reaches into ``apiKeyEnv`` programmatically keeps working.
 const apiKeyEnv = computed(() => {
   const name = accountName.value.trim();
   if (!name) return '';
@@ -373,8 +456,9 @@ const cliInstalled = ref(false);
 const cliVersion = ref('');
 const isCheckingCli = ref(false);
 const isInstallingCli = ref(false);
-const isCreatingDir = ref(false);
-const dirCreated = ref(false);
+// Surface for backend-reported errors when the CLI can't materialise the
+// config directory on launch (e.g. permission denied). Auto-create itself
+// happens server-side as part of the login orchestrator startup.
 const dirError = ref('');
 const installError = ref('');
 
@@ -427,13 +511,6 @@ async function installCli() {
   }
 }
 
-async function createConfigDir() {
-  // Omitted: no filesystem utility endpoint in ai-accounts v0.3.0-alpha.1.
-  // Config path is still surfaced so users can create it manually.
-  if (!configPath.value) return;
-  dirCreated.value = true;
-}
-
 onMounted(async () => {
   if (!backendRegistry.loaded.value) {
     await backendRegistry.load();
@@ -455,9 +532,9 @@ watch(backendKind, () => {
   if (!configPathManuallyEdited.value) suggestConfigPath();
 });
 
-// Reset dir state when config path changes
+// Clear stale dir-error when config path changes — the next CLI launch
+// will rediscover whether the new path is materialisable.
 watch(configPath, () => {
-  dirCreated.value = false;
   dirError.value = '';
 });
 
@@ -469,13 +546,13 @@ watch(configPath, () => {
 // ---------------------------------------------------------------------------
 const draftAccountId = ref<string>(''); // backend row id once created
 
-watch(currentStep, async (step) => {
-  // Drive the host's tour spotlight per-substep so the user gets a
-  // step-by-step guide instead of "the highlight stayed on Add Account".
-  setTourTarget(TOUR_TARGETS[step] ?? '[data-tour="account-wizard"]');
-  setTourGuide(TOUR_GUIDES[step] ?? null);
+watch(currentStep, async (_step) => {
+  // Reset the per-element substep index so each step re-spotlights its
+  // first element. The activeTourSubstep watcher below pushes the
+  // selector + message to the host.
+  tourSubstepIndex.value = 0;
   // Auto-start login when entering the login step
-  if (step === 'login' && loginSession.status.value === 'idle') {
+  if (currentStep.value === 'login' && loginSession.status.value === 'idle') {
     await startUnifiedLogin();
   }
 }, { immediate: true });
@@ -521,10 +598,16 @@ function collectInputs(_meta: BackendMetadata): Record<string, string> {
 }
 
 function buildDraftConfig(): Record<string, unknown> {
+  // ``api_key_env`` is intentionally NOT pre-populated here. The
+  // api-key-vs-OAuth distinction is decided in step 3 by the CLI's
+  // own login-method menu (Claude Pro/Max → OAuth, "API Usage Billing"
+  // → API key). If the user picks the API-key flow, the login flow
+  // captures the credential into the vault directly and surfaces it
+  // through ``backend.config`` from the sidecar — pre-baking an env
+  // var name here only confused users who never wanted a key flow.
   return {
     email: email.value.trim() || undefined,
     config_path: configPath.value.trim() || undefined,
-    api_key_env: apiKeyEnv.value || undefined,
   };
 }
 
@@ -767,7 +850,7 @@ function addAnotherAccount() {
   loginSession.reset();
   resetProxyLogin();
   draftAccountId.value = '';
-  dirCreated.value = false;
+  dirError.value = '';
   currentStep.value = 'subscription';
   // Re-apply the default config dir so the hint is visible immediately
   // for the next account (mirrors Agented f52c55a addAnotherAccount reset).
@@ -848,7 +931,7 @@ function skipWizard() {
       <div class="step-body">
         <p class="step-question">Do you already have a {{ backendName }} account?</p>
 
-        <div class="radio-group">
+        <div class="radio-group" data-tour="wiz-sub-yesno">
           <label class="radio-card" :class="{ selected: hasSubscription === 'yes' }">
             <input type="radio" v-model="hasSubscription" value="yes" />
             <div class="radio-card-content">
@@ -899,6 +982,7 @@ function skipWizard() {
           class="btn"
           :class="hasSubscription === 'no' ? 'btn-outline' : 'btn-primary'"
           :disabled="!subscriptionValid"
+          data-tour="wiz-sub-next"
           @click="handleSubscriptionNext"
         >
           {{ hasSubscription === 'no' ? t('accountWizard.noSkip') : t('accountWizard.continueBtn') }}
@@ -913,7 +997,7 @@ function skipWizard() {
     <div v-if="backendKind && currentStep === 'cli'" class="wizard-step" data-tour="wiz-cli">
       <div class="step-body">
         <!-- CLI status -->
-        <div class="status-card" :class="cliInstalled ? 'status-ok' : 'status-warn'">
+        <div class="status-card" :class="cliInstalled ? 'status-ok' : 'status-warn'" data-tour="wiz-cli-status">
           <div class="status-icon">
             <template v-if="isCheckingCli">
               <div class="spinner-sm"></div>
@@ -954,25 +1038,13 @@ function skipWizard() {
         </div>
         <pre v-if="installResult && !installResult.success && installResult.stderr" class="install-stderr">{{ installResult.stderr }}</pre>
 
-        <!-- Config directory -->
-        <div v-if="configPath" class="config-dir-section">
+        <!-- Config directory — read-only confirm. The directory is
+             created on demand by the CLI launch in step 3, so we don't
+             need a manual "Create directory" button anymore. -->
+        <div v-if="configPath" class="config-dir-section" data-tour="wiz-cli-path">
           <div class="config-dir-label">{{ t('accountWizard.configPath') }}</div>
           <div class="config-dir-path">
             <code>{{ configPath }}</code>
-            <button
-              v-if="!dirCreated"
-              class="btn btn-outline btn-sm"
-              :disabled="isCreatingDir"
-              @click="createConfigDir"
-            >
-              {{ isCreatingDir ? t('accountWizard.creating') : t('accountWizard.createDir') }}
-            </button>
-            <span v-else class="dir-created-badge">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-              {{ t('accountWizard.configCreated') }}
-            </span>
           </div>
           <div v-if="dirError" class="error-text">{{ dirError }}</div>
 
@@ -989,12 +1061,6 @@ function skipWizard() {
             </div>
           </div>
         </div>
-
-        <!-- API key env info -->
-        <div v-if="apiKeyEnv" class="api-key-info">
-          <span class="api-key-label">{{ t('accountWizard.apiKeyEnv') }}</span>
-          <code>{{ apiKeyEnv }}</code>
-        </div>
       </div>
       <div class="step-actions">
         <button class="btn btn-secondary" @click="goPrev">
@@ -1003,7 +1069,7 @@ function skipWizard() {
           </svg>
           {{ t('common.back') }}
         </button>
-        <button class="btn btn-primary" @click="goNext">
+        <button class="btn btn-primary" data-tour="wiz-cli-next" @click="goNext">
           {{ t('accountWizard.continueBtn') }}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
             <polyline points="9 18 15 12 9 6"/>
@@ -1082,6 +1148,7 @@ function skipWizard() {
           </p>
           <button
             class="btn btn-primary"
+            data-tour="wiz-proxy-install"
             :disabled="cliproxyInstalling"
             @click="installCliproxy"
           >
@@ -1110,6 +1177,7 @@ function skipWizard() {
           <button
             v-if="proxyLoginStatus === 'idle'"
             class="btn btn-primary"
+            data-tour="wiz-proxy-start"
             @click="runProxyLogin"
           >
             Start proxy registration
@@ -1136,7 +1204,7 @@ function skipWizard() {
               <span class="proxy-device-code-label">Your device code:</span>
               <code class="proxy-device-code-value">{{ proxyDeviceCode }}</code>
             </div>
-            <div class="proxy-callback-section">
+            <div class="proxy-callback-section" data-tour="wiz-proxy-callback">
               <p class="proxy-callback-hint">If the redirect to localhost fails, paste the callback URL:</p>
               <div class="proxy-callback-row">
                 <input
@@ -1184,7 +1252,7 @@ function skipWizard() {
           </svg>
           {{ t('common.back') }}
         </button>
-        <button class="btn btn-primary" @click="goNext">
+        <button class="btn btn-primary" data-tour="wiz-proxy-skip" @click="goNext">
           {{ proxyLoginStatus === 'success' ? t('accountWizard.continueBtn') : t('common.skip') }}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
             <polyline points="9 18 15 12 9 6"/>
@@ -1197,7 +1265,7 @@ function skipWizard() {
     <div v-if="backendKind && currentStep === 'plan'" class="wizard-step" data-tour="wiz-plan">
       <div class="step-body">
         <!-- Review card -->
-        <div class="review-card">
+        <div class="review-card" data-tour="wiz-plan-review">
           <div class="review-row">
             <span class="review-label">{{ t('accountWizard.accountName') }}</span>
             <span class="review-value">{{ accountName }}</span>
@@ -1210,10 +1278,6 @@ function skipWizard() {
             <span class="review-label">{{ t('accountWizard.configPath') }}</span>
             <code class="review-value">{{ configPath }}</code>
           </div>
-          <div v-if="apiKeyEnv" class="review-row">
-            <span class="review-label">{{ t('accountWizard.apiKeyEnv') }}</span>
-            <code class="review-value">{{ apiKeyEnv }}</code>
-          </div>
         </div>
 
         <div v-if="planOptions.length > 0" class="form-group">
@@ -1225,7 +1289,7 @@ function skipWizard() {
             </option>
           </select>
         </div>
-        <div class="form-group checkbox">
+        <div class="form-group checkbox" data-tour="wiz-plan-default">
           <label>
             <input type="checkbox" v-model="isDefault" />
             {{ t('accountWizard.setDefault') }}
@@ -1240,7 +1304,7 @@ function skipWizard() {
           </svg>
           {{ t('common.back') }}
         </button>
-        <button class="btn btn-primary" :disabled="isSaving" @click="saveAccount">
+        <button class="btn btn-primary" data-tour="wiz-plan-save" :disabled="isSaving" @click="saveAccount">
           <div v-if="isSaving" class="spinner-sm"></div>
           {{ isSaving ? t('accountWizard.saving') : t('accountWizard.saveAccount') }}
         </button>
@@ -1262,10 +1326,10 @@ function skipWizard() {
         <!-- Proxy login (CLIProxyAPI) step omitted — not in ai-accounts 0.3.0-alpha.1. -->
 
         <div class="done-actions">
-          <button class="btn btn-outline" @click="addAnotherAccount">
+          <button class="btn btn-outline" data-tour="wiz-done-add" @click="addAnotherAccount">
             {{ t('accountWizard.addAnother') }}
           </button>
-          <button class="btn btn-primary" @click="doneWizard">
+          <button class="btn btn-primary" data-tour="wiz-done-next-backend" @click="doneWizard">
             {{ t('accountWizard.doneNextBackend') }}
           </button>
         </div>

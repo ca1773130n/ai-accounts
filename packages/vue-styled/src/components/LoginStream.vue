@@ -151,7 +151,7 @@ function dismissIncognitoHint() {
 </script>
 
 <template>
-  <div class="aia-login-stream">
+  <div class="aia-login-stream" data-tour="wiz-login-stream">
     <!-- Preparing-CLI spinner: shown while the session is running but no
          actionable prompt has arrived yet (CLI launching, theme picker
          being auto-dismissed, OAuth URL not yet emitted). Without this,
@@ -184,7 +184,7 @@ function dismissIncognitoHint() {
         </svg>
         <span>A browser window should have opened. If not, click the link below:</span>
       </div>
-      <a :href="effectiveOauthUrl" target="_blank" rel="noopener" class="aia-url-link">
+      <a :href="effectiveOauthUrl" target="_blank" rel="noopener" class="aia-url-link" data-tour="wiz-login-url">
         {{ effectiveOauthUrl }}
       </a>
 
@@ -241,7 +241,7 @@ function dismissIncognitoHint() {
         <span class="aia-verifying__text">Verifying authorization code…</span>
       </div>
 
-      <form v-if="!session.textPrompt.value && eagerStatus !== 'sent'" class="aia-text-section aia-text-section--eager" @submit.prevent="submitEagerCode">
+      <form v-if="!session.textPrompt.value && eagerStatus !== 'sent'" class="aia-text-section aia-text-section--eager" data-tour="wiz-login-paste" @submit.prevent="submitEagerCode">
         <label class="aia-text-section__label">
           After signing in, paste the authorization code here:
           <span v-if="eagerStatus === 'queued'" class="aia-text-section__queued">(queued — waiting for CLI prompt)</span>
