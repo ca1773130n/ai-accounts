@@ -145,6 +145,28 @@ function dismissIncognitoHint() {
 
 <template>
   <div class="aia-login-stream">
+    <!-- Preparing-CLI spinner: shown while the session is running but no
+         actionable prompt has arrived yet (CLI launching, theme picker
+         being auto-dismissed, OAuth URL not yet emitted). Without this,
+         the wizard looked frozen during the 5–15 seconds between
+         "click option 1" and "OAuth URL appears". -->
+    <div
+      v-if="
+        !session.urlPrompt.value &&
+        !session.menuPrompt.value &&
+        !session.textPrompt.value &&
+        session.status.value === 'running' &&
+        !verifying
+      "
+      class="aia-preparing"
+    >
+      <span class="aia-preparing__spinner"></span>
+      <div class="aia-preparing__text">
+        <strong>Preparing sign-in…</strong>
+        <span>Launching the CLI and waiting for the OAuth link. This usually takes a few seconds.</span>
+      </div>
+    </div>
+
     <!-- OAuth URL -->
     <div v-if="session.urlPrompt.value" class="aia-url-section">
       <div class="aia-url-badge">
@@ -403,6 +425,42 @@ function dismissIncognitoHint() {
 }
 @keyframes aia-verifying-spin {
   to { transform: rotate(360deg); }
+}
+
+.aia-preparing {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(0, 212, 255, 0.06);
+  color: var(--aia-fg, #fafafa);
+}
+.aia-preparing__spinner {
+  display: inline-block;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(0, 212, 255, 0.25);
+  border-top-color: #00d4ff;
+  border-radius: 50%;
+  animation: aia-verifying-spin 0.7s linear infinite;
+}
+.aia-preparing__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.aia-preparing__text strong {
+  font-weight: 600;
+  color: var(--aia-fg, #fafafa);
+}
+.aia-preparing__text span {
+  color: var(--aia-fg-muted, #a0a0b0);
+  font-size: 12px;
 }
 .aia-incognito-hint {
   position: relative;

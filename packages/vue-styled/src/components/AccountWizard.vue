@@ -13,7 +13,7 @@
  *   4) Plan & Save (choose plan, set default, createBackend)
  *   5) Done
  */
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, inject } from 'vue';
 import type {
   LoginFlowKind,
   BackendMetadata,
@@ -136,9 +136,43 @@ const backendName = computed<string>(
   () => props.backendName || backendMeta.value?.display_name || backendKind.value || 'Backend'
 );
 
-// no-op tour hooks (used to be inject()ed by Agented's tour system)
-const setTourGuide = (_msg: string | null) => {};
-const setTourTarget = (_selector: string | null) => {};
+// Tour bridging: the host app (Agented) provides ``setTourTarget`` /
+// ``setTourGuide`` via Vue ``provide()`` so the wizard can drive the
+// tour spotlight per-substep ("highlight the Continue button on the
+// CLI step" / "highlight the paste-code form on the Login step" / …).
+// When the wizard is mounted standalone (no host), inject() falls back
+// to no-op so the wizard still renders and works.
+const setTourTarget = inject<(selector: string | null) => void>(
+  'setTourTarget',
+  () => {},
+);
+const setTourGuide = inject<(msg: string | null) => void>(
+  'setTourGuide',
+  () => {},
+);
+
+/** Per-substep selectors the host's tour spotlight follows. Each entry
+ *  points at a single ``data-tour`` attribute already present in the
+ *  template below; if a step has no entry the spotlight falls back to
+ *  the wizard container. */
+const TOUR_TARGETS: Record<WizardStep, string | null> = {
+  subscription: '[data-tour="wiz-subscription"]',
+  cli: '[data-tour="wiz-cli"]',
+  login: '[data-tour="wiz-login"]',
+  proxy: '[data-tour="wiz-proxy"]',
+  plan: '[data-tour="wiz-plan"]',
+  done: '[data-tour="wiz-done"]',
+};
+
+/** Short, human-readable hint for the spotlight tooltip. */
+const TOUR_GUIDES: Record<WizardStep, string> = {
+  subscription: 'Pick whether you already have an account, then fill name + email.',
+  cli: 'Create the per-account config directory, then click Continue.',
+  login: 'Pick a login method, sign in via the browser, paste the code here.',
+  proxy: 'Optional — register this account with the local API proxy, or Skip.',
+  plan: 'Pick your plan and Save the account.',
+  done: 'All set. Add another account or move to the next backend.',
+};
 
 // ---------------------------------------------------------------------------
 // Wizard step management
@@ -390,7 +424,10 @@ watch(configPath, () => {
 const draftAccountId = ref<string>(''); // backend row id once created
 
 watch(currentStep, async (step) => {
-  setTourGuide(step); // no-op
+  // Drive the host's tour spotlight per-substep so the user gets a
+  // step-by-step guide instead of "the highlight stayed on Add Account".
+  setTourTarget(TOUR_TARGETS[step] ?? '[data-tour="account-wizard"]');
+  setTourGuide(TOUR_GUIDES[step] ?? null);
   // Auto-start login when entering the login step
   if (step === 'login' && loginSession.status.value === 'idle') {
     await startUnifiedLogin();
@@ -761,7 +798,7 @@ function skipWizard() {
     </div>
 
     <!-- Step 1: Subscription -->
-    <div v-if="backendKind && currentStep === 'subscription'" class="wizard-step">
+    <div v-if="backendKind && currentStep === 'subscription'" class="wizard-step" data-tour="wiz-subscription">
       <div class="step-body">
         <p class="step-question">Do you already have a {{ backendName }} account?</p>
 
@@ -827,7 +864,7 @@ function skipWizard() {
     </div>
 
     <!-- Step 2: CLI Setup -->
-    <div v-if="backendKind && currentStep === 'cli'" class="wizard-step">
+    <div v-if="backendKind && currentStep === 'cli'" class="wizard-step" data-tour="wiz-cli">
       <div class="step-body">
         <!-- CLI status -->
         <div class="status-card" :class="cliInstalled ? 'status-ok' : 'status-warn'">
@@ -930,7 +967,7 @@ function skipWizard() {
     </div>
 
     <!-- Step 3: Login -->
-    <div v-if="backendKind && currentStep === 'login'" class="wizard-step">
+    <div v-if="backendKind && currentStep === 'login'" class="wizard-step" data-tour="wiz-login">
       <div class="step-body">
         <!-- Idle / Connecting -->
         <template v-if="loginStatus === 'idle' || loginStatus === 'connecting'">
@@ -989,7 +1026,7 @@ function skipWizard() {
     </div>
 
     <!-- Step 3.5: CLIProxyAPI registration (optional) -->
-    <div v-if="backendKind && currentStep === 'proxy'" class="wizard-step">
+    <div v-if="backendKind && currentStep === 'proxy'" class="wizard-step" data-tour="wiz-proxy">
       <div class="step-body">
         <!-- CLIProxyAPI not installed — offer auto-install -->
         <div v-if="cliproxyStatusChecked && !cliproxyInstalled" class="cliproxy-install-block">
@@ -1111,7 +1148,7 @@ function skipWizard() {
     </div>
 
     <!-- Step 4: Plan & Save -->
-    <div v-if="backendKind && currentStep === 'plan'" class="wizard-step">
+    <div v-if="backendKind && currentStep === 'plan'" class="wizard-step" data-tour="wiz-plan">
       <div class="step-body">
         <!-- Review card -->
         <div class="review-card">
@@ -1165,7 +1202,7 @@ function skipWizard() {
     </div>
 
     <!-- Step 5: Done -->
-    <div v-if="backendKind && currentStep === 'done'" class="wizard-step">
+    <div v-if="backendKind && currentStep === 'done'" class="wizard-step" data-tour="wiz-done">
       <div class="step-body done-body">
         <div class="done-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="40" height="40">
