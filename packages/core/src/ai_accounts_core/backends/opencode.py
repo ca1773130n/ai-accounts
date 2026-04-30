@@ -267,7 +267,12 @@ class OpenCodeBackend:
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
         # opencode 0.x has no `auth check` subcommand. The real surface is
         # `opencode providers list` (alias `auth list`) which exits 0 even
-        # when no providers are configured — must inspect stdout.
+        # when no providers are configured — must inspect stdout. Output
+        # ends with either "N credentials" (where N>0 → ok) or "0
+        # credentials" / "No providers" → not authenticated.
+        # NOTE: opencode reads its auth.json from ~/.local/share/opencode
+        # regardless of OPENCODE_HOME — true per-account isolation isn't
+        # supported by the CLI yet (tracked separately).
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return False
@@ -278,11 +283,19 @@ class OpenCodeBackend:
         )
         if rc != 0:
             return False
-        text = stdout.decode("utf-8", errors="replace").strip()
-        # Empty stdout / "No providers configured" → not authenticated.
+        # Strip ANSI escape sequences before matching.
+        text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", stdout.decode("utf-8", errors="replace"))
+        text = text.strip().lower()
         if not text:
             return False
-        return "no providers" not in text.lower()
+        if "0 credentials" in text or "no providers" in text or "no credentials" in text:
+            return False
+        # Match "N credentials" with N>=1.
+        m = re.search(r"(\d+)\s+credentials?\b", text)
+        if m:
+            return int(m.group(1)) > 0
+        # Fallback: assume non-empty meaningful output means authenticated.
+        return True
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
         path = shutil.which(self._CLI_NAME)
