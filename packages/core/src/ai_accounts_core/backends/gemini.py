@@ -536,26 +536,37 @@ class GeminiBackend:
     async def list_models(
         self, credential: bytes, *, isolation_dir: Path
     ) -> list[Model]:
-        path = shutil.which(self._CLI_NAME)
-        if path is None:
+        # Gemini CLI 0.35+ has no `models list` subcommand. Probe Google AI
+        # Studio's models endpoint directly with the API key — no isolation_dir
+        # needed for this path.
+        if not credential:
             return []
-        env = self._env(credential, isolation_dir)
-        rc, stdout, _stderr = await self._run(
-            {"argv": [path, "models", "list", "--json"], "env": env}
-        )
-        if rc != 0:
+        api_key = credential.decode("utf-8", errors="replace").strip()
+        if not api_key:
             return []
         try:
-            raw = json.loads(stdout)
-        except json.JSONDecodeError:
+            async with httpx.AsyncClient(timeout=10.0) as http:
+                resp = await http.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    params={"key": api_key},
+                )
+        except (httpx.HTTPError, OSError):
             return []
+        if resp.status_code != 200:
+            return []
+        try:
+            raw_data = resp.json()
+        except (ValueError, json.JSONDecodeError):
+            return []
+        items = raw_data.get("models", [])
         return [
             Model(
-                id=item["id"],
-                display_name=item.get("display_name", item["id"]),
-                context_window=item.get("context_window"),
+                id=m.get("name", "").rsplit("/", 1)[-1],
+                display_name=m.get("displayName", m.get("name", "")),
+                context_window=m.get("inputTokenLimit"),
             )
-            for item in raw
+            for m in items
+            if m.get("name")
         ]
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
