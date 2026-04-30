@@ -384,33 +384,44 @@ class ClaudeBackend:
         return DetectResult(installed=True, version=version, path=path)
 
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
+        # Claude CLI v1/v2 has no `auth status` subcommand. We validate by:
+        #   1. Confirming the binary is on PATH (sanity).
+        #   2. Confirming `<isolation>/.credentials.json` exists, is non-empty,
+        #      and parses as JSON. This is the file the CLI writes after a
+        #      successful /login flow.
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return False
-        env = self._env(credential, resolved_iso(isolation_dir))
-        rc, _stdout, _stderr = await self._run(
-            {"argv": [path, "auth", "status"], "env": env}
-        )
-        return rc == 0
+        iso = resolved_iso(isolation_dir)
+        creds_file = iso / ".credentials.json"
+        if not creds_file.is_file():
+            return False
+        try:
+            data = json.loads(creds_file.read_text())
+        except (OSError, json.JSONDecodeError):
+            return False
+        return bool(data)
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
-        path = shutil.which(self._CLI_NAME)
-        if path is None:
-            return []
-        env = self._env(credential, resolved_iso(isolation_dir))
-        rc, stdout, _stderr = await self._run(
-            {"argv": [path, "models", "list", "--json"], "env": env}
-        )
-        if rc != 0:
-            return []
-        raw: list[dict[str, Any]] = json.loads(stdout)
+        # Claude CLI has no `models list` subcommand. Return a static set of
+        # the public Anthropic models; live discovery happens upstream via
+        # CLIProxyAPI's /v1/models when the proxy is registered.
         return [
             Model(
-                id=item["id"],
-                display_name=item.get("display_name", item["id"]),
-                context_window=item.get("context_window"),
-            )
-            for item in raw
+                id="claude-opus-4-7",
+                display_name="Claude Opus 4.7",
+                context_window=1_000_000,
+            ),
+            Model(
+                id="claude-sonnet-4-6",
+                display_name="Claude Sonnet 4.6",
+                context_window=1_000_000,
+            ),
+            Model(
+                id="claude-haiku-4-5-20251001",
+                display_name="Claude Haiku 4.5",
+                context_window=200_000,
+            ),
         ]
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
