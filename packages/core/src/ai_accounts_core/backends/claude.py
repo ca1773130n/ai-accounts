@@ -180,8 +180,10 @@ class _ClaudeCliBrowserSession(LoginSession):
                 if isinstance(event, LoginComplete) and self._orchestrator:
                     try:
                         await self._orchestrator.write(b"\r")
-                    except Exception:
-                        pass
+                    except (OSError, asyncio.CancelledError) as exc:
+                        logger.debug(
+                            "post-login Enter write ignored: %r", exc
+                        )
                 yield event
         finally:
             await self._cleanup()
@@ -223,7 +225,7 @@ class _ClaudeCliBrowserSession(LoginSession):
         logger.info("write_eager: writing %d bytes to PTY", len(payload))
         try:
             await self._orchestrator.write(payload)
-        except Exception:
+        except (OSError, asyncio.CancelledError):
             logger.exception("write_eager: write failed")
             return
 
@@ -458,7 +460,8 @@ class ClaudeBackend:
                         )
                     )
                 return windows
-        except Exception:
+        except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
+            logger.debug("get_usage failed: %r", exc)
             return []
 
     async def chat(

@@ -505,7 +505,8 @@ class CodexBackend:
                                 )
                             )
                 return windows
-        except Exception:
+        except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
+            logging.getLogger(__name__).debug("codex get_usage failed: %r", exc)
             return []
 
     async def chat(

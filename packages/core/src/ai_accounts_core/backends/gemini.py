@@ -207,7 +207,7 @@ class GeminiBackend:
                     "https://generativelanguage.googleapis.com/v1beta/models",
                     params={"key": api_key},
                 )
-        except Exception:
+        except (httpx.HTTPError, OSError):
             return False
         return resp.status_code == 200
 
@@ -278,7 +278,7 @@ class GeminiBackend:
                         )
                     )
                 return windows
-        except Exception:
+        except (httpx.HTTPError, ValueError, KeyError, OSError):
             return []
 
     async def chat(
