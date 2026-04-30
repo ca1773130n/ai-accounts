@@ -14,6 +14,7 @@ from typing import Any, ClassVar
 import httpx
 
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
+from ai_accounts_core.backends._iso import resolved_iso
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
@@ -264,14 +265,24 @@ class OpenCodeBackend:
         return DetectResult(installed=True, version=version, path=path)
 
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
+        # opencode 0.x has no `auth check` subcommand. The real surface is
+        # `opencode providers list` (alias `auth list`) which exits 0 even
+        # when no providers are configured — must inspect stdout.
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return False
-        env = self._env(credential, isolation_dir)
-        rc, _stdout, _stderr = await self._run(
-            {"argv": [path, "auth", "check"], "env": env}
+        iso = resolved_iso(isolation_dir)
+        env = self._env(credential, iso)
+        rc, stdout, _stderr = await self._run(
+            {"argv": [path, "providers", "list"], "env": env}
         )
-        return rc == 0
+        if rc != 0:
+            return False
+        text = stdout.decode("utf-8", errors="replace").strip()
+        # Empty stdout / "No providers configured" → not authenticated.
+        if not text:
+            return False
+        return "no providers" not in text.lower()
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
         path = shutil.which(self._CLI_NAME)
