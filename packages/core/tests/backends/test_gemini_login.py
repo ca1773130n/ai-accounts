@@ -19,46 +19,17 @@ async def _drain(session):
 
 
 @pytest.mark.asyncio
-async def test_gemini_oauth_device_parses_url_and_code(tmp_path: Path):
+async def test_gemini_oauth_device_flow_unsupported(tmp_path: Path):
+    """Gemini CLI 0.35+ has no `auth` subcommand; oauth_device is removed."""
+
     backend = GeminiBackend()
-    session = backend.begin_login(
-        flow_kind="oauth_device",
-        config={},
-        vault_ctx={},
-        isolation_dir=tmp_path,
-    )
-
-    scripted = [
-        "Opening device authorization...\n",
-        "Visit https://accounts.google.com/o/oauth2/device/usercode\n",
-        "Enter code: ZXCV-5678\n",
-        "Waiting for authorization...\n",
-        "Login successful\n",
-    ]
-
-    async def fake_read_output(self):
-        for chunk in scripted:
-            yield chunk
-
-    with patch(
-        "ai_accounts_core.backends.gemini.CliOrchestrator.start",
-        new=AsyncMock(return_value=None),
-    ), patch(
-        "ai_accounts_core.backends.gemini.CliOrchestrator.read_output",
-        fake_read_output,
-    ), patch(
-        "ai_accounts_core.backends.gemini.CliOrchestrator.wait",
-        new=AsyncMock(return_value=0),
-    ):
-        events = await _drain(session)
-
-    url_prompts = [e for e in events if isinstance(e, UrlPrompt)]
-    completes = [e for e in events if isinstance(e, LoginComplete)]
-    assert len(url_prompts) == 1
-    assert "accounts.google.com/o/oauth2/device" in url_prompts[0].url
-    assert url_prompts[0].user_code == "ZXCV-5678"
-    assert len(completes) == 1
-    assert session.done is True
+    with pytest.raises(ValueError, match="unsupported"):
+        backend.begin_login(
+            flow_kind="oauth_device",
+            config={},
+            vault_ctx={},
+            isolation_dir=tmp_path,
+        )
 
 
 @pytest.mark.asyncio
@@ -108,5 +79,5 @@ def test_gemini_metadata_shape():
     assert meta.supports_multi_account is True
     assert meta.isolation_env_var == "GEMINI_CLI_HOME"
     flow_kinds = {f.kind for f in meta.login_flows}
-    assert "oauth_device" in flow_kinds
-    assert "api_key" in flow_kinds
+    # Gemini CLI 0.35+ has no `auth` subcommand — only api_key is supported.
+    assert flow_kinds == {"api_key"}

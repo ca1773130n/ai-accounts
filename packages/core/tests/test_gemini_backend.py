@@ -25,8 +25,9 @@ async def test_detect_missing_cli():
 
 
 def test_supported_login_flows():
-    assert "api_key" in GeminiBackend.supported_login_flows
-    assert "oauth_device" in GeminiBackend.supported_login_flows
+    # Gemini CLI 0.35+ has no `auth` subcommand — only api_key flow is
+    # supported; the OAuth device / direct PKCE flows were dead code.
+    assert GeminiBackend.supported_login_flows == frozenset({"api_key"})
 
 
 def test_kind_is_gemini():
@@ -34,40 +35,84 @@ def test_kind_is_gemini():
 
 
 @pytest.mark.asyncio
-async def test_validate_with_api_key_sets_env(tmp_path: Path):
+async def test_validate_returns_false_for_empty_credential(tmp_path: Path):
     backend = GeminiBackend()
-    isolation_dir = tmp_path / "gemini"
-    with patch("shutil.which", return_value="/usr/local/bin/gemini"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"ok", b""))) as mock_run:
-        result = await backend.validate(b"AIzaSy-test", isolation_dir=isolation_dir)
-    assert result is True
-    spec = mock_run.await_args.args[0]
-    assert spec["env"]["GEMINI_API_KEY"] == "AIzaSy-test"
-    assert spec["env"]["GEMINI_CLI_HOME"] == str(isolation_dir)
+    ok = await backend.validate(b"", isolation_dir=tmp_path / "gemini")
+    assert ok is False
 
 
 @pytest.mark.asyncio
-async def test_validate_with_empty_credential_omits_api_key_env(tmp_path: Path):
+async def test_validate_calls_google_api_with_key(tmp_path: Path):
+    """validate() must hit Google AI Studio /models with the key, not the CLI."""
+
     backend = GeminiBackend()
-    isolation_dir = tmp_path / "gemini"
-    with patch("shutil.which", return_value="/usr/local/bin/gemini"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"ok", b""))) as mock_run:
-        result = await backend.validate(b"", isolation_dir=isolation_dir)
-    assert result is True
-    spec = mock_run.await_args.args[0]
-    assert "GEMINI_API_KEY" not in spec["env"]
-    assert spec["env"]["GEMINI_CLI_HOME"] == str(isolation_dir)
+    captured = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"models": []}
+
+    class _Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, url, *, params=None, **_):
+            captured["url"] = url
+            captured["params"] = params or {}
+            return _Resp()
+
+    from ai_accounts_core.backends import gemini as gemini_mod
+
+    with patch.object(gemini_mod.httpx, "AsyncClient", _Client):
+        ok = await backend.validate(b"AIzaSy-test", isolation_dir=tmp_path / "gemini")
+    assert ok is True
+    assert captured["url"].endswith("/v1beta/models")
+    assert captured["params"].get("key") == "AIzaSy-test"
 
 
 @pytest.mark.asyncio
-async def test_list_models_parses_json(tmp_path: Path):
-    import json as _json
+async def test_list_models_parses_google_payload(tmp_path: Path):
     backend = GeminiBackend()
-    payload = _json.dumps([
-        {"id": "gemini-2-5-pro", "display_name": "Gemini 2.5 Pro", "context_window": 2_000_000},
-    ]).encode()
-    with patch("shutil.which", return_value="/usr/local/bin/gemini"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, payload, b""))):
-        models = await backend.list_models(b"", isolation_dir=tmp_path / "gemini")
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {
+                "models": [
+                    {
+                        "name": "models/gemini-2.5-pro",
+                        "displayName": "Gemini 2.5 Pro",
+                        "inputTokenLimit": 2_000_000,
+                    }
+                ]
+            }
+
+    class _Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, *a, **kw):
+            return _Resp()
+
+    from ai_accounts_core.backends import gemini as gemini_mod
+
+    with patch.object(gemini_mod.httpx, "AsyncClient", _Client):
+        models = await backend.list_models(b"AIzaSy-test", isolation_dir=tmp_path / "gemini")
     assert len(models) == 1
-    assert models[0].id == "gemini-2-5-pro"
+    assert models[0].id == "gemini-2.5-pro"
+    assert models[0].context_window == 2_000_000
