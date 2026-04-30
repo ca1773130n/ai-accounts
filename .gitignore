@@ -29,3 +29,8 @@ pnpm-debug.log*
 .env.local
 *.db
 accounts.db
+
+# SQLite WAL/SHM sidecar files (apps/playground generates these during dev)
+*.db-shm
+*.db-wal
+*.db-journal
