@@ -88,10 +88,13 @@ class _OpenCodeCliBrowserSession(LoginSession):
                     pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
+        # OPENCODE_HOME MUST be absolute — see codex backend for rationale.
+        iso = self._isolation_dir.resolve()
+        iso.mkdir(parents=True, exist_ok=True)
         self._orchestrator = CliOrchestrator(
             argv=["opencode", "auth", "login"],
-            env={"OPENCODE_HOME": str(self._isolation_dir)},
-            cwd=self._isolation_dir,
+            env={"OPENCODE_HOME": str(iso)},
+            cwd=iso,
         )
         try:
             await self._orchestrator.start()

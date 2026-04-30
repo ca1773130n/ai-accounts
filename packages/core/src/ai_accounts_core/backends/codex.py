@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -47,7 +48,14 @@ from ai_accounts_core.protocols.backend import (
 _CODEX_URL_RE = re.compile(
     r"https://(?:chatgpt\.com/auth/|auth\.openai\.com/)\S+"
 )
-_CODEX_USER_CODE_RE = re.compile(r"code[:\s]+([A-Z0-9]{4}-?[A-Z0-9]{4})", re.IGNORECASE)
+# Codex 0.121.0 device-auth prints the code on its own line BELOW the
+# "Enter this one-time code" label (e.g. "   3IKX-6ZZWB"). Length is 4-5
+# alphanum either side of the dash, so allow {4,8}. The earlier labelled
+# regex `code[:\s]+(...)` was matching "code authoriz" from the ALSO-printed
+# phrase "device code authorization:" and capturing garbage.
+_CODEX_USER_CODE_RE = re.compile(
+    r"(?:^|\n)\s*([A-Z0-9]{4,8}-[A-Z0-9]{4,8})\s*$", re.MULTILINE
+)
 _CODEX_SUCCESS_MARKERS = ("Successfully logged in", "Authentication complete")
 _CODEX_FAILURE_MARKERS = ("error:", "failed", "Error")
 
@@ -94,10 +102,17 @@ class _CodexOAuthDeviceSession(LoginSession):
                     pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
+        # Codex 0.121.0 emits a device-code URL only when explicitly asked via
+        # --device-auth; bare `codex login` uses the local-callback browser flow.
+        # CODEX_HOME MUST be absolute — the codex CLI resolves it against its
+        # own cwd, and our cwd= chdir would otherwise cause it to look for
+        # backend_dirs/<id>/backend_dirs/<id> (doubled relative path).
+        iso = self._isolation_dir.resolve()
+        iso.mkdir(parents=True, exist_ok=True)
         self._orchestrator = CliOrchestrator(
-            argv=["codex", "login"],
-            env={"CODEX_HOME": str(self._isolation_dir)},
-            cwd=self._isolation_dir,
+            argv=["codex", "login", "--device-auth"],
+            env={"CODEX_HOME": str(iso)},
+            cwd=iso,
         )
         try:
             await self._orchestrator.start()
@@ -110,16 +125,24 @@ class _CodexOAuthDeviceSession(LoginSession):
         user_code: str | None = None
         emitted_url_prompt = False
         success = False
+        # Codex prints "Enter this one-time code\n   ABCD-EFGH" — the literal
+        # word "code" and the code value land in DIFFERENT PTY chunks, so a
+        # per-chunk regex misses the user_code. Run the regex against an
+        # accumulating buffer (capped) so cross-chunk matches succeed too.
+        buffer = ""
         try:
             async for chunk in self._orchestrator.read_output():
                 if chunk.strip():
                     yield StdoutChunk(text=chunk)
+                buffer += chunk
+                if len(buffer) > 8192:
+                    buffer = buffer[-8192:]
                 if url is None:
-                    m = _CODEX_URL_RE.search(chunk)
+                    m = _CODEX_URL_RE.search(buffer)
                     if m:
                         url = m.group(0)
                 if user_code is None:
-                    m = _CODEX_USER_CODE_RE.search(chunk)
+                    m = _CODEX_USER_CODE_RE.search(buffer)
                     if m:
                         user_code = m.group(1)
                 if not emitted_url_prompt and url and user_code:
@@ -195,10 +218,16 @@ class _CodexCliBrowserSession(LoginSession):
                     pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
+        # Codex 0.121.0: `codex login` is the default browser-callback flow.
+        # The earlier `codex auth --browser` form does not exist in this CLI.
+        # CODEX_HOME MUST be absolute (see _CodexOAuthDeviceSession comment).
+        log = logging.getLogger("ai_accounts_core.backends.codex")
+        iso = self._isolation_dir.resolve()
+        iso.mkdir(parents=True, exist_ok=True)
         self._orchestrator = CliOrchestrator(
-            argv=["codex", "auth", "--browser"],
-            env={"CODEX_HOME": str(self._isolation_dir)},
-            cwd=self._isolation_dir,
+            argv=["codex", "login"],
+            env={"CODEX_HOME": str(iso)},
+            cwd=iso,
         )
         try:
             await self._orchestrator.start()
@@ -209,23 +238,31 @@ class _CodexCliBrowserSession(LoginSession):
 
         url_seen = False
         success = False
+        captured_chunks: list[str] = []
+        exit_reason = "unknown"
         try:
             async for chunk in self._orchestrator.read_output():
+                captured_chunks.append(chunk)
                 if chunk.strip():
                     yield StdoutChunk(text=chunk)
                 if not url_seen:
                     m = _CODEX_URL_RE.search(chunk)
                     if m:
                         url_seen = True
+                        log.info("codex login: URL detected, emitting UrlPrompt")
                         yield UrlPrompt(prompt_id="auth", url=m.group(0))
                 if any(mk in chunk for mk in _CODEX_SUCCESS_MARKERS):
                     success = True
+                    exit_reason = "success_marker"
                     break
                 lower = chunk.lower()
                 if "error" in lower or "failed" in lower or any(
                     mk in chunk for mk in _CODEX_FAILURE_MARKERS
                 ):
+                    exit_reason = f"failure_marker_in_chunk: {chunk[:120]!r}"
                     break
+            else:
+                exit_reason = "EOF (CLI exited cleanly)"
         finally:
             await self._cleanup()
             self._done = True
@@ -233,9 +270,15 @@ class _CodexCliBrowserSession(LoginSession):
         if success:
             yield LoginComplete(account_id="", backend_status="validating")
         else:
+            log.warning(
+                "codex login failed; url_seen=%s exit_reason=%s captured=%r",
+                url_seen,
+                exit_reason,
+                "".join(captured_chunks)[:600],
+            )
             yield LoginFailed(
                 code="auth_failed",
-                message="codex auth --browser failed",
+                message=f"codex login failed ({exit_reason}; url_seen={url_seen})",
             )
 
     async def respond(self, answer: PromptAnswer) -> None:
@@ -309,8 +352,15 @@ class CodexBackend:
     _CLI_NAME: ClassVar[str] = "codex"
     _ISOLATION_ENV_VAR: ClassVar[str] = "CODEX_HOME"
     _API_KEY_ENV_VAR: ClassVar[str] = "OPENAI_API_KEY"
+    # NOTE: cli_browser flow (`codex login`) is implemented but NOT advertised
+    # because Codex 0.121.0's local-callback server (localhost:1455) only
+    # works when the codex subprocess survives the user's tab-switching to
+    # complete OAuth in the browser, AND the wizard's SSE stream keeps the
+    # subprocess alive that long. In practice the callback often fails. The
+    # device-auth flow is much more reliable: codex prints a URL + code, the
+    # user signs in and enters the code, no localhost server required.
     supported_login_flows: ClassVar[frozenset[str]] = frozenset(
-        {"api_key", "oauth_device", "cli_browser"}
+        {"api_key", "oauth_device"}
     )
 
     metadata: ClassVar[BackendMetadata] = BackendMetadata(
@@ -326,12 +376,6 @@ class CodexBackend:
                 kind="oauth_device",
                 display_name="Sign in with OpenAI",
                 description="Sign in via a device code — codex prints a URL and code",
-                requires_inputs=[],
-            ),
-            LoginFlowSpec(
-                kind="cli_browser",
-                display_name="Sign in with browser",
-                description="Opens a browser to authenticate",
                 requires_inputs=[],
             ),
             LoginFlowSpec(
@@ -387,11 +431,20 @@ class CodexBackend:
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return False
-        env = self._env(credential, isolation_dir)
-        rc, _stdout, _stderr = await self._run(
-            {"argv": [path, "auth", "status"], "env": env}
+        # Codex 0.121.0 uses `codex login status` (no top-level `auth` subcommand).
+        # CODEX_HOME must be absolute — codex resolves it against its own cwd
+        # and our subprocess cwd defaults to the parent's, doubling the path.
+        # NOTE: `codex login status` exits 0 even when "Not logged in" — must
+        # inspect stdout to distinguish actual auth from a missing session.
+        iso = isolation_dir.resolve()
+        env = self._env(credential, iso)
+        rc, stdout, _stderr = await self._run(
+            {"argv": [path, "login", "status"], "env": env}
         )
-        return rc == 0
+        if rc != 0:
+            return False
+        text = stdout.decode("utf-8", errors="replace").lower()
+        return "logged in" in text and "not logged in" not in text
 
     async def list_models(
         self, credential: bytes, *, isolation_dir: Path

@@ -102,10 +102,14 @@ class _GeminiOAuthDeviceSession(LoginSession):
                     pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
+        # GEMINI_CLI_HOME MUST be absolute — the CLI resolves it against its
+        # own cwd, and our cwd= chdir would otherwise double the relative path.
+        iso = self._isolation_dir.resolve()
+        iso.mkdir(parents=True, exist_ok=True)
         self._orchestrator = CliOrchestrator(
             argv=["gemini", "auth", "login", "--device"],
-            env={"GEMINI_CLI_HOME": str(self._isolation_dir)},
-            cwd=self._isolation_dir,
+            env={"GEMINI_CLI_HOME": str(iso)},
+            cwd=iso,
         )
         try:
             await self._orchestrator.start()
@@ -437,8 +441,15 @@ class GeminiBackend:
     _CLI_NAME: ClassVar[str] = "gemini"
     _ISOLATION_ENV_VAR: ClassVar[str] = "GEMINI_CLI_HOME"
     _API_KEY_ENV_VAR: ClassVar[str] = "GEMINI_API_KEY"
+    # Gemini CLI 0.35.3 has NO `auth` subcommand — `gemini auth login --device`
+    # does not exist. Authentication is set via env vars: GEMINI_API_KEY (API
+    # key flow), GOOGLE_GENAI_USE_VERTEXAI (Vertex), or GOOGLE_GENAI_USE_GCA
+    # (interactive Google Cloud OAuth, browser-only). The OAuth flows we used
+    # to advertise (oauth_device / direct_oauth) cannot be reliably driven
+    # from a wizard subprocess. Until that's reworked, only api_key is
+    # advertised; users paste a Google AI Studio key.
     supported_login_flows: ClassVar[frozenset[str]] = frozenset(
-        {"api_key", "oauth_device", "direct_oauth"}
+        {"api_key"}
     )
 
     metadata: ClassVar[BackendMetadata] = BackendMetadata(
@@ -451,21 +462,13 @@ class GeminiBackend:
         ),
         login_flows=[
             LoginFlowSpec(
-                kind="oauth_device",
-                display_name="Sign in with Google",
-                description="Sign in via Google device flow",
-                requires_inputs=[],
-            ),
-            LoginFlowSpec(
-                kind="direct_oauth",
-                display_name="Sign in with Google (direct)",
-                description="Paste a Google OAuth code from the Code Assist page",
-                requires_inputs=[],
-            ),
-            LoginFlowSpec(
                 kind="api_key",
                 display_name="API key",
-                description="Paste a Google AI Studio API key",
+                description=(
+                    "Paste a Google AI Studio API key (the OAuth flows for "
+                    "Gemini CLI 0.35+ are not yet supported here — get a key "
+                    "from https://aistudio.google.com/apikey)"
+                ),
                 requires_inputs=[InputSpec(name="api_key", label="API key", kind="secret")],
             ),
         ],
@@ -511,14 +514,24 @@ class GeminiBackend:
     async def validate(
         self, credential: bytes, *, isolation_dir: Path
     ) -> bool:
-        path = shutil.which(self._CLI_NAME)
-        if path is None:
+        # Gemini CLI 0.35+ has no `auth status` subcommand. For the api_key
+        # flow we validate the credential directly against Google AI Studio's
+        # `models` endpoint — a 200 means the key is accepted, anything else
+        # is a failure.
+        if not credential:
             return False
-        env = self._env(credential, isolation_dir)
-        rc, _stdout, _stderr = await self._run(
-            {"argv": [path, "auth", "status"], "env": env}
-        )
-        return rc == 0
+        api_key = credential.decode("utf-8", errors="replace").strip()
+        if not api_key:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as http:
+                resp = await http.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    params={"key": api_key},
+                )
+        except Exception:
+            return False
+        return resp.status_code == 200
 
     async def list_models(
         self, credential: bytes, *, isolation_dir: Path

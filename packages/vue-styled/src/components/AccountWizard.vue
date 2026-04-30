@@ -13,7 +13,7 @@
  *   4) Plan & Save (choose plan, set default, createBackend)
  *   5) Done
  */
-import { ref, computed, watch, onMounted, onUnmounted, inject } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, onUnmounted, inject } from 'vue';
 import type {
   LoginFlowKind,
   BackendMetadata,
@@ -115,13 +115,13 @@ const defaultT = (_key: string, fallback?: string | Record<string, unknown>): st
     'accountWizard.tour.login.paste.title': 'Paste the authorization code',
     'accountWizard.tour.login.paste.message': 'Copy the code from the redirect page and paste it here, then click Send. We verify it for ~5–10 s.',
     'accountWizard.tour.proxy.install.title': 'Install CLIProxyAPI',
-    'accountWizard.tour.proxy.install.message': 'If the proxy isn\'t installed yet, click Install and wait. The proxy lets other tools reach this account through an OpenAI-compatible endpoint.',
+    'accountWizard.tour.proxy.install.message': 'Click Install to set up CLIProxyAPI. It lets other tools reach this account through an OpenAI-compatible endpoint. Or click Skip below if you don\'t need it.',
     'accountWizard.tour.proxy.start.title': 'Register with the proxy',
-    'accountWizard.tour.proxy.start.message': 'Click Start proxy registration to begin. A browser tab opens for the proxy OAuth.',
+    'accountWizard.tour.proxy.start.message': 'Click Start proxy registration to begin — a browser tab opens for the proxy OAuth. Don\'t need the proxy? Click Skip below to jump to step 5.',
     'accountWizard.tour.proxy.callback.title': 'Paste the callback URL',
     'accountWizard.tour.proxy.callback.message': 'Copy the full localhost callback URL from your browser\'s address bar and paste it here, then click Submit. The redirect page may show "connection refused" — that\'s expected.',
-    'accountWizard.tour.proxy.skip.title': 'Skip the proxy',
-    'accountWizard.tour.proxy.skip.message': 'If you don\'t need the proxy, click Skip to jump to step 5.',
+    'accountWizard.tour.proxy.continue.title': 'Proxy registered',
+    'accountWizard.tour.proxy.continue.message': 'Registration succeeded. Click Continue below to move to step 5.',
     'accountWizard.tour.plan.review.title': 'Review',
     'accountWizard.tour.plan.review.message': 'Check the values you entered. If anything looks wrong, click Back to fix it.',
     'accountWizard.tour.plan.pick.title': 'Pick a plan',
@@ -129,7 +129,7 @@ const defaultT = (_key: string, fallback?: string | Record<string, unknown>): st
     'accountWizard.tour.plan.default.title': 'Make it the default? (optional)',
     'accountWizard.tour.plan.default.message': 'Tick to mark this account as the backend\'s default.',
     'accountWizard.tour.plan.save.title': 'Save the account',
-    'accountWizard.tour.plan.save.message': 'Click Save — the account is persisted and we move to the Done screen.',
+    'accountWizard.tour.plan.save.message': 'Click Save to persist the account and move to the Done screen. Tip: tick "Set as default" above first if this should be the backend\'s default account.',
     'accountWizard.tour.done.add.title': 'Add another account?',
     'accountWizard.tour.done.add.message': 'Click here to add another account on the same backend (e.g. a second Claude account).',
     'accountWizard.tour.done.nextBackend.title': 'Move to the next backend',
@@ -443,11 +443,25 @@ onMounted(async () => {
   // Pre-fill the default config path so it's visible even before the user
   // types an account name. Ported from Agented f52c55a.
   suggestConfigPath();
-  setTourTarget('[data-tour="account-wizard"]');
   busEmit({ type: 'wizard.opened', backendKind: backendKind.value });
   // Kick off a CLIProxyAPI status check so the proxy step can render
   // install/register UI without a spinner lag.
   checkCliproxyStatus();
+  // Broadcast the FIRST substep — the activeTourSubstep watcher only fires
+  // on changes, so without this the host tour overlay would keep showing the
+  // parent tour-machine step's title/guide ("AI Backend Accounts: click Add
+  // Account") even after the wizard is open. Wait a tick so the wizard's
+  // root anchor is in the DOM before broadcasting.
+  void nextTick().then(() => {
+    if (isUnmounted.value) return;
+    if (activeTourSubstep.value) {
+      void broadcastSubstep(activeTourSubstep.value);
+    } else {
+      setTourTarget(`[data-tour="wiz-${currentStep.value}"]`);
+      setTourGuide(null);
+      setTourTitle(null);
+    }
+  });
 });
 
 // Re-suggest the default path whenever the selected backend changes
@@ -533,18 +547,58 @@ function buildDraftConfig(): Record<string, unknown> {
   };
 }
 
+// Only auto-advance from login → next step if THIS account's login actually
+// went through a 'running' state for the user we're currently helping. Without
+// this gate, a stale 'complete' from a prior account (or a fast-resolving
+// cached-auth path) can fire goNext() before the user has even seen the OAuth
+// flow — the second-account "skipped registering step" bug. Armed when start
+// is called, disarmed on every currentStep change.
+const autoAdvanceOnLoginComplete = ref(false);
+
+// Set true in onUnmounted; every in-flight async tour broadcast checks this
+// before calling setTourTarget/Guide/Title so a delayed broadcast after the
+// wizard closes can never push a stale wiz-* selector to the host (which
+// would leave the next page's tour overlay stuck on a spinner because it's
+// hunting for a wizard element that no longer exists).
+const isUnmounted = ref(false);
+
+watch(currentStep, () => {
+  autoAdvanceOnLoginComplete.value = false;
+});
+
 watch(
   () => loginSession.status.value,
   (status) => {
-    if (status === 'complete' && currentStep.value === 'login') {
+    if (status === 'running') {
+      // Real session actually started for the current login step — arm the
+      // auto-advance now (and only now).
+      if (currentStep.value === 'login') {
+        autoAdvanceOnLoginComplete.value = true;
+      }
+      return;
+    }
+    if (
+      status === 'complete' &&
+      currentStep.value === 'login' &&
+      autoAdvanceOnLoginComplete.value
+    ) {
+      autoAdvanceOnLoginComplete.value = false;
       goNext();
     }
   }
 );
 
+// Set the abort flag in onBeforeUnmount (runs before Vue tears down child
+// reactivity) so any async tour broadcast in flight bails out before it
+// can call setTourTarget/Guide/Title with a now-stale wiz-* selector.
+onBeforeUnmount(() => {
+  isUnmounted.value = true;
+});
+
 onUnmounted(() => {
   setTourGuide(null);
   setTourTarget(null);
+  setTourTitle(null);
   if (loginSession.status.value === 'running') {
     loginSession.cancel().catch(() => {});
   }
@@ -611,13 +665,19 @@ const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
       selector: '#wiz-name',
       titleKey: 'accountWizard.tour.sub.name.title',
       messageKey: 'accountWizard.tour.sub.name.message',
-      done: () => accountName.value.trim().length > 0,
+      // Skip when "No, skip" is selected (input isn't rendered) OR the
+      // user typed something. Optional field, so empty is a valid end state —
+      // they can still advance via the Continue button at the bottom.
+      done: () =>
+        hasSubscription.value === 'no' || accountName.value.trim().length > 0,
     },
     {
       selector: '#wiz-email',
       titleKey: 'accountWizard.tour.sub.email.title',
       messageKey: 'accountWizard.tour.sub.email.message',
-      done: () => /.+@.+/.test(email.value),
+      // Same as name — skip when "No, skip" path or user filled in an email.
+      done: () =>
+        hasSubscription.value === 'no' || /.+@.+/.test(email.value),
     },
     {
       selector: '[data-tour="wiz-sub-next"]',
@@ -687,41 +747,57 @@ const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
     {
       selector: '[data-tour="wiz-proxy-install"]',
       titleKey: 'accountWizard.tour.proxy.install.title',
+      // Install message also tells the user they can Skip below if they
+      // don't need the proxy — same screen, no need for a separate substep.
       messageKey: 'accountWizard.tour.proxy.install.message',
+      done: () => cliproxyStatusChecked.value && cliproxyInstalled.value,
     },
     {
       selector: '[data-tour="wiz-proxy-start"]',
       titleKey: 'accountWizard.tour.proxy.start.title',
+      // Start message bundles the skip option so users always know they can
+      // bypass the proxy without us pointing at the Skip button after the
+      // button's label has already changed to "Continue".
       messageKey: 'accountWizard.tour.proxy.start.message',
+      done: () => proxyLoginStatus.value !== 'idle',
     },
     {
       selector: '[data-tour="wiz-proxy-callback"]',
       titleKey: 'accountWizard.tour.proxy.callback.title',
       messageKey: 'accountWizard.tour.proxy.callback.message',
+      // Stay on this substep through 'running' / 'device_auth'. Done only on
+      // terminal state — after success we advance to the Continue substep,
+      // after error/skipped we likewise advance (the user will use Back/Skip
+      // to recover, both still rendered).
+      done: () =>
+        proxyLoginStatus.value === 'success' ||
+        proxyLoginStatus.value === 'skipped' ||
+        proxyLoginStatus.value === 'error',
     },
     {
+      // The Skip button's label flips to "Continue" once registration
+      // succeeds (template line ~1396). Only spotlight it on success — the
+      // earlier path (idle → click Skip) is covered by the Start substep's
+      // bundled "click Skip" hint, so we never point at a button whose
+      // label doesn't match what we're saying.
       selector: '[data-tour="wiz-proxy-skip"]',
-      titleKey: 'accountWizard.tour.proxy.skip.title',
-      messageKey: 'accountWizard.tour.proxy.skip.message',
+      titleKey: 'accountWizard.tour.proxy.continue.title',
+      messageKey: 'accountWizard.tour.proxy.continue.message',
+      done: () => false,
     },
   ],
   plan: [
-    {
-      selector: '[data-tour="wiz-plan-review"]',
-      titleKey: 'accountWizard.tour.plan.review.title',
-      messageKey: 'accountWizard.tour.plan.review.message',
-    },
+    // Plan dropdown first — the only meaningful choice on this step.
     {
       selector: '#wiz-plan',
       titleKey: 'accountWizard.tour.plan.pick.title',
       messageKey: 'accountWizard.tour.plan.pick.message',
-      done: () => selectedPlan.value !== '',
+      done: () => planOptions.value.length === 0 || selectedPlan.value !== '',
     },
-    {
-      selector: '[data-tour="wiz-plan-default"]',
-      titleKey: 'accountWizard.tour.plan.default.title',
-      messageKey: 'accountWizard.tour.plan.default.message',
-    },
+    // Save button — final action. We mention the optional "set as default"
+    // checkbox in the same guide so the tour doesn't stagnate on a no-op
+    // (the standalone default substep had no done predicate, so it would
+    // sit there forever waiting for an action that may never come).
     {
       selector: '[data-tour="wiz-plan-save"]',
       titleKey: 'accountWizard.tour.plan.save.title',
@@ -743,9 +819,18 @@ const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
 };
 
 const tourSubstepIndex = ref(0);
+// Resolve the current substep, skipping ones whose done() predicate is
+// already true so we land on the next not-yet-completed substep. The
+// activeTourSubstep watcher then handles missing-DOM-element gracefully
+// (anchors on the step root and shows the substep's guide text) instead of
+// surfacing a "not found" error.
 const activeTourSubstep = computed<TourSubstep | null>(() => {
   const list = TOUR_SUBSTEPS[currentStep.value] ?? [];
-  return list[tourSubstepIndex.value] ?? null;
+  let i = tourSubstepIndex.value;
+  while (i < list.length - 1 && list[i]?.done?.() === true) {
+    i++;
+  }
+  return list[i] ?? null;
 });
 
 // Heuristic for "user opened the OAuth tab and came back": flips true
@@ -780,31 +865,123 @@ watch(
   (isDone) => {
     if (!isDone) return;
     const list = TOUR_SUBSTEPS[currentStep.value] ?? [];
-    if (tourSubstepIndex.value < list.length - 1) {
+    // Cascade: skip past every consecutive done substep so we never land on
+    // a substep whose UI element isn't rendered (e.g. wiz-proxy-install when
+    // CLIProxyAPI is already installed → "...설치을(를) 찾을 수 없어요").
+    while (
+      tourSubstepIndex.value < list.length - 1 &&
+      list[tourSubstepIndex.value]?.done?.() === true
+    ) {
       tourSubstepIndex.value++;
     }
   },
 );
 
-watch(activeTourSubstep, (sub) => {
-  if (sub) {
-    setTourTarget(sub.selector);
-    setTourGuide(t(sub.messageKey));
-    setTourTitle(sub.titleKey ? t(sub.titleKey) : null);
-  } else {
+
+// True while the wizard is mid-transition between steps — set the moment
+// currentStep changes, cleared after the next step's root anchor is mounted.
+// Suppresses tour-substep updates so we never push a target for a step whose
+// DOM isn't on screen yet (which would surface "...찾을 수 없어요" 3 s later).
+const stepLanding = ref(false);
+
+// Sync-flush watcher so stepLanding flips BEFORE any other watcher (in
+// particular the activeTourSubstep watcher below) can fire on the same
+// currentStep change. Without this, that watcher would broadcast e.g.
+// wiz-proxy-install for an instant before the async transition handler
+// runs, and the overlay would surface a not-found fallback.
+watch(currentStep, () => {
+  stepLanding.value = true;
+}, { flush: 'sync' });
+
+// Broadcast a substep with a graceful fallback: if the substep's selector
+// doesn't resolve to a live element after a short wait, anchor the spotlight
+// on the step root instead — the user still sees the substep's guide text,
+// no spinner, no "not found" race. Re-runs whenever the activeTourSubstep
+// or the relevant proxy state changes.
+async function broadcastSubstep(sub: TourSubstep | null): Promise<void> {
+  if (isUnmounted.value) return;
+  if (!sub) {
     setTourTarget(`[data-tour="wiz-${currentStep.value}"]`);
     setTourGuide(null);
     setTourTitle(null);
+    return;
   }
+  // Capture the substep at call time to bail if it changes mid-wait.
+  const expected = sub;
+  // Poll briefly for the element. Conditionally-rendered targets (e.g.
+  // wiz-proxy-callback during device_auth) need a few ticks to mount.
+  let el: Element | null = null;
+  for (let i = 0; i < 20; i++) {
+    if (isUnmounted.value || activeTourSubstep.value !== expected) return;
+    el = typeof document !== 'undefined'
+      ? document.querySelector(sub.selector)
+      : null;
+    if (el && (el as HTMLElement).getBoundingClientRect().width > 0) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  if (isUnmounted.value || activeTourSubstep.value !== expected) return;
+  if (el) {
+    setTourTarget(sub.selector);
+  } else {
+    // Element never materialised — keep the spotlight on the step root
+    // (always mounted) so the overlay never shows a not-found fallback.
+    setTourTarget(`[data-tour="wiz-${currentStep.value}"]`);
+  }
+  setTourGuide(t(sub.messageKey));
+  setTourTitle(sub.titleKey ? t(sub.titleKey) : null);
+}
+
+watch(activeTourSubstep, (sub) => {
+  if (stepLanding.value) return;
+  void broadcastSubstep(sub);
 });
 
-// Reset substep index whenever the wizard advances to a new step so the
-// spotlight starts at the first element of the new step. Also reset the
-// OAuth-tab return heuristic so an old visibility flip from a previous
-// session doesn't leak into a new login.
-watch(currentStep, () => {
+// Wait for the wizard step's root anchor to be in the DOM before resuming
+// tour updates. Polls every 50 ms up to 3 s. Returns the moment the anchor
+// is found (typical case: 1–2 nextTicks).
+async function waitForStepLanded(stepName: WizardStep): Promise<void> {
+  const sel = `[data-tour="wiz-${stepName}"]`;
+  for (let i = 0; i < 60; i++) {
+    if (isUnmounted.value) return;
+    if (typeof document !== 'undefined' && document.querySelector(sel)) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+// On wizard step change: blank the tour overrides immediately so no stale
+// target from the previous step is broadcast, then wait for the new step's
+// DOM to land before letting the activeTourSubstep watcher push updates again.
+watch(currentStep, async (newStep) => {
+  if (isUnmounted.value) return;
+  stepLanding.value = true;
+  // Anchor on the wizard container during the transition — that element is
+  // always in the DOM while the wizard is open, so the overlay neither shows
+  // a loading spinner nor a "not found" fallback while the old step is
+  // unmounting and the new step is settling. Title/guide cleared so the
+  // tooltip itself stays neutral until we know which substep to land on.
+  setTourTarget('[data-tour="account-wizard"]');
+  setTourGuide(null);
+  setTourTitle(null);
   tourSubstepIndex.value = 0;
   returnedFromOAuthTab.value = false;
+
+  await waitForStepLanded(newStep);
+  if (isUnmounted.value || currentStep.value !== newStep) return;
+  // Allow any conditional sub-blocks to mount.
+  await nextTick();
+  if (isUnmounted.value || currentStep.value !== newStep) return;
+
+  stepLanding.value = false;
+
+  // Manually fire the substep update now that the DOM is fully ready.
+  const list = TOUR_SUBSTEPS[newStep] ?? [];
+  while (
+    tourSubstepIndex.value < list.length - 1 &&
+    list[tourSubstepIndex.value]?.done?.() === true
+  ) {
+    tourSubstepIndex.value++;
+  }
+  void broadcastSubstep(activeTourSubstep.value);
 });
 
 // ---------------------------------------------------------------------------
@@ -991,6 +1168,9 @@ function addAnotherAccount() {
   resetProxyLogin();
   draftAccountId.value = '';
   dirError.value = '';
+  // Disarm the login auto-advance so the next account's login step won't
+  // honour a stale 'complete' status from the first account.
+  autoAdvanceOnLoginComplete.value = false;
   currentStep.value = 'subscription';
   // Re-apply the default config dir so the hint is visible immediately
   // for the next account (mirrors Agented f52c55a addAnotherAccount reset).

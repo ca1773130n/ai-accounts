@@ -240,8 +240,16 @@ async def start_cliproxy_login(
     return proc, info
 
 
-_CLIPROXY_ALLOWED_PORTS = frozenset({54545, 8085})
-_CLIPROXY_ALLOWED_PATH_PREFIXES = ("/callback", "/cb", "/oauth")
+# Allowed local callback ports for cliproxyapi's OAuth registration. The
+# allowlist is an SSRF guard around the upstream HTTP forward. Extend as
+# new cliproxyapi versions / providers add ports:
+#   54545, 8085 — historical cliproxyapi defaults
+#   1455        — cliproxyapi 0.16+ uses the same port as Codex's
+#                 codex_cli_simplified_flow (shares OAuth client app id)
+_CLIPROXY_ALLOWED_PORTS = frozenset({1455, 8085, 54545})
+# Allowed callback path prefixes. cliproxyapi 0.16+ uses /auth/callback
+# (matches Codex's codex_cli_simplified_flow); older versions used /callback.
+_CLIPROXY_ALLOWED_PATH_PREFIXES = ("/auth/callback", "/callback", "/cb", "/oauth")
 _CLIPROXY_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1"})
 
 
