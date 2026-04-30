@@ -271,7 +271,18 @@ async def forward_cliproxy_callback(callback_url: str) -> dict:
     effective_port = parsed.port or (443 if parsed.scheme == "https" else 80)
     if effective_port not in _CLIPROXY_ALLOWED_PORTS:
         return {"status": "error", "message": f"callback port {effective_port} not allowed"}
-    if not any(parsed.path.startswith(p) for p in _CLIPROXY_ALLOWED_PATH_PREFIXES):
+    # Path allowlist: reject URL-encoded ".." traversal and non-allowed prefixes.
+    # We check the RAW path (urlparse already URL-decodes %2F, but %2E.%2E
+    # remains as ".." — explicit reject) and we also assert no segment is "..".
+    raw_path = parsed.path or "/"
+    if "/.." in raw_path or raw_path.endswith("/..") or "%2e%2e" in raw_path.lower():
+        return {"status": "error", "message": "callback path contains traversal"}
+    # Split into segments and refuse "." / ".." or empty segments mid-path.
+    from pathlib import PurePosixPath as _Path
+    parts = _Path(raw_path).parts
+    if any(p in ("..", ".") for p in parts):
+        return {"status": "error", "message": "callback path contains traversal"}
+    if not any(raw_path.startswith(p) for p in _CLIPROXY_ALLOWED_PATH_PREFIXES):
         return {"status": "error", "message": "callback path not allowed"}
 
     if not code:
