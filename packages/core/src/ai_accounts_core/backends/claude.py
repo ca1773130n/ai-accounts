@@ -17,6 +17,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+from ai_accounts_core.backends._iso import resolved_iso
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
@@ -140,10 +141,9 @@ class _ClaudeCliBrowserSession(LoginSession):
             config_path, allowed_roots=allowed_roots
         )
         if config_dir_from_cfg is not None:
-            config_dir = config_dir_from_cfg
-            config_dir.mkdir(parents=True, exist_ok=True)
+            config_dir = resolved_iso(config_dir_from_cfg)
         else:
-            config_dir = self._isolation_dir
+            config_dir = resolved_iso(self._isolation_dir)
 
         # Always use the v1 REPL + /login flow — it emits the
         # "Paste code here if prompted > " prompt and accepts the code on
@@ -158,7 +158,7 @@ class _ClaudeCliBrowserSession(LoginSession):
         self._orchestrator = CliOrchestrator(
             argv=argv,
             env={"CLAUDE_CONFIG_DIR": str(config_dir)},
-            cwd=self._isolation_dir,
+            cwd=resolved_iso(self._isolation_dir),
         )
         try:
             await self._orchestrator.start()
@@ -387,7 +387,7 @@ class ClaudeBackend:
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return False
-        env = self._env(credential, isolation_dir)
+        env = self._env(credential, resolved_iso(isolation_dir))
         rc, _stdout, _stderr = await self._run(
             {"argv": [path, "auth", "status"], "env": env}
         )
@@ -397,7 +397,7 @@ class ClaudeBackend:
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return []
-        env = self._env(credential, isolation_dir)
+        env = self._env(credential, resolved_iso(isolation_dir))
         rc, stdout, _stderr = await self._run(
             {"argv": [path, "models", "list", "--json"], "env": env}
         )
@@ -586,7 +586,7 @@ class ClaudeBackend:
         from ai_accounts_core.pty.handle import AsyncPtyHandle
 
         env = dict(request.env)
-        env.update(self._env(credential, isolation_dir))
+        env.update(self._env(credential, resolved_iso(isolation_dir)))
         return await AsyncPtyHandle.spawn(
             command=request.command, cols=request.cols, rows=request.rows, env=env,
         )
