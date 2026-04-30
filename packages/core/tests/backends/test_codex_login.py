@@ -28,10 +28,14 @@ async def test_codex_oauth_device_parses_url_and_code(tmp_path: Path):
         isolation_dir=tmp_path,
     )
 
+    # Match the actual codex 0.121+ device-auth output: URL on one line,
+    # one-time code on its OWN line below the "Enter this one-time code" label.
     scripted = [
-        "Starting OpenAI device flow...\n",
-        "Visit: https://chatgpt.com/auth/device\n",
-        "Enter code: ABCD-1234\n",
+        "Follow these steps to sign in:\n",
+        "1. Open this link in your browser\n",
+        "   https://chatgpt.com/auth/device\n",
+        "2. Enter this one-time code\n",
+        "   ABCD-1234\n",
         "Waiting...\n",
         "Successfully logged in\n",
     ]
@@ -127,6 +131,9 @@ def test_codex_metadata_shape():
     assert meta.supports_multi_account is True
     assert meta.isolation_env_var == "CODEX_HOME"
     flow_kinds = {f.kind for f in meta.login_flows}
+    # cli_browser was removed from advertised flows because the localhost:1455
+    # callback couldn't be reliably driven from a wizard subprocess; only
+    # oauth_device + api_key are supported.
     assert "oauth_device" in flow_kinds
-    assert "cli_browser" in flow_kinds
     assert "api_key" in flow_kinds
+    assert "cli_browser" not in flow_kinds

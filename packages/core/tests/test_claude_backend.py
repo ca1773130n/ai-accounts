@@ -46,37 +46,36 @@ def test_supported_login_flows_includes_api_key_and_cli_browser():
 
 
 @pytest.mark.asyncio
-async def test_validate_succeeds_on_rc_zero(tmp_path: Path):
+async def test_validate_succeeds_when_credentials_file_present(tmp_path: Path):
+    """Claude CLI has no `auth status` subcommand. Validate by checking the
+    credentials.json file the CLI writes after a successful /login."""
     backend = ClaudeBackend()
     isolation_dir = tmp_path / "claude"
-    with patch("shutil.which", return_value="/usr/local/bin/claude"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"ok", b""))) as mock_run:
-        result = await backend.validate(b"sk-ant-test", isolation_dir=isolation_dir)
+    isolation_dir.mkdir(parents=True)
+    (isolation_dir / ".credentials.json").write_text(
+        json.dumps({"oauth_token": "sk-ant-..."})
+    )
+    with patch("shutil.which", return_value="/usr/local/bin/claude"):
+        result = await backend.validate(b"", isolation_dir=isolation_dir)
     assert result is True
-    called_spec = mock_run.await_args.args[0]
-    assert called_spec["env"]["ANTHROPIC_API_KEY"] == "sk-ant-test"
 
 
 @pytest.mark.asyncio
-async def test_validate_uses_isolation_dir_in_env(tmp_path: Path):
+async def test_validate_returns_false_when_credentials_file_missing(tmp_path: Path):
     backend = ClaudeBackend()
-    isolation_dir = tmp_path / "claude"
-    with patch("shutil.which", return_value="/usr/local/bin/claude"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"ok", b""))) as mock_run:
-        result = await backend.validate(b"sk-ant-test", isolation_dir=isolation_dir)
-    assert result is True
-    assert isolation_dir.exists()
-    spec = mock_run.await_args.args[0]
-    assert spec["env"]["ANTHROPIC_API_KEY"] == "sk-ant-test"
-    assert spec["env"]["CLAUDE_CONFIG_DIR"] == str(isolation_dir)
+    with patch("shutil.which", return_value="/usr/local/bin/claude"):
+        result = await backend.validate(b"", isolation_dir=tmp_path / "claude")
+    assert result is False
 
 
 @pytest.mark.asyncio
-async def test_validate_fails_on_nonzero_rc(tmp_path: Path):
+async def test_validate_returns_false_when_credentials_corrupt(tmp_path: Path):
     backend = ClaudeBackend()
-    with patch("shutil.which", return_value="/usr/local/bin/claude"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(1, b"", b"invalid api key"))):
-        result = await backend.validate(b"bad", isolation_dir=tmp_path / "claude")
+    isolation_dir = tmp_path / "claude"
+    isolation_dir.mkdir(parents=True)
+    (isolation_dir / ".credentials.json").write_text("not json{{")
+    with patch("shutil.which", return_value="/usr/local/bin/claude"):
+        result = await backend.validate(b"", isolation_dir=isolation_dir)
     assert result is False
 
 
@@ -89,34 +88,17 @@ async def test_validate_missing_cli_returns_false(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_list_models_parses_cli_json(tmp_path: Path):
+async def test_list_models_returns_static_set_no_subprocess(tmp_path: Path):
+    """Claude CLI has no `models list` subcommand. We return a static set,
+    so list_models must not invoke any subprocess."""
     backend = ClaudeBackend()
-    payload = json.dumps([
-        {"id": "claude-opus-4-6", "display_name": "Claude Opus 4.6", "context_window": 1_000_000},
-        {"id": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6", "context_window": 200_000},
-    ]).encode()
-    with patch("shutil.which", return_value="/usr/local/bin/claude"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, payload, b""))):
+    async def explode(spec):
+        raise AssertionError(f"_run must not be called by list_models, got {spec}")
+    with patch.object(backend, "_run", side_effect=explode):
         models = await backend.list_models(b"sk-ant-test", isolation_dir=tmp_path / "claude")
     ids = {m.id for m in models}
-    assert ids == {"claude-opus-4-6", "claude-sonnet-4-6"}
-
-
-@pytest.mark.asyncio
-async def test_list_models_returns_empty_on_error(tmp_path: Path):
-    backend = ClaudeBackend()
-    with patch("shutil.which", return_value="/usr/local/bin/claude"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(1, b"", b"err"))):
-        models = await backend.list_models(b"sk-ant-test", isolation_dir=tmp_path / "claude")
-    assert models == []
-
-
-@pytest.mark.asyncio
-async def test_list_models_missing_cli_returns_empty(tmp_path: Path):
-    backend = ClaudeBackend()
-    with patch("shutil.which", return_value=None):
-        models = await backend.list_models(b"sk-ant-test", isolation_dir=tmp_path / "claude")
-    assert models == []
+    assert "claude-opus-4-7" in ids or "claude-sonnet-4-6" in ids
+    assert all(m.context_window for m in models)
 
 
 

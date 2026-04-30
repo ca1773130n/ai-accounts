@@ -24,18 +24,31 @@ def test_supported_login_flows_includes_api_key_and_cli_browser():
 
 
 @pytest.mark.asyncio
-async def test_validate_uses_opencode_api_key_env(tmp_path: Path):
+async def test_validate_uses_providers_list_subcommand(tmp_path: Path):
+    """opencode 0.x has no `auth check`; the real subcommand is
+    `providers list`. Validate must pick that path."""
     backend = OpenCodeBackend()
     isolation_dir = tmp_path / "opencode"
     with patch("shutil.which", return_value="/opt/bin/opencode"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"ok", b""))) as mock_run:
+         patch.object(backend, "_run", new=AsyncMock(
+             return_value=(0, b"Credentials\n  3 credentials\n", b""),
+         )) as mock_run:
         result = await backend.validate(b"oc-abc", isolation_dir=isolation_dir)
     assert result is True
     spec = mock_run.await_args.args[0]
+    assert spec["argv"][1:] == ["providers", "list"]
     assert spec["env"]["OPENCODE_API_KEY"] == "oc-abc"
-    assert spec["env"]["OPENCODE_HOME"] == str(isolation_dir)
-    assert "auth" in spec["argv"]
-    assert "check" in spec["argv"]
+
+
+@pytest.mark.asyncio
+async def test_validate_returns_false_for_zero_credentials(tmp_path: Path):
+    backend = OpenCodeBackend()
+    with patch("shutil.which", return_value="/opt/bin/opencode"), \
+         patch.object(backend, "_run", new=AsyncMock(
+             return_value=(0, b"Credentials\n  0 credentials\n", b""),
+         )):
+        result = await backend.validate(b"", isolation_dir=tmp_path / "opencode")
+    assert result is False
 
 
 @pytest.mark.asyncio

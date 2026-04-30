@@ -54,9 +54,11 @@ async def test_codex_oauth_device_captures_auth_openai_url(tmp_path: Path):
     )
 
     scripted = [
-        "Starting OpenAI device flow...\n",
-        "Visit: https://auth.openai.com/device?code_challenge=XYZ\n",
-        "Enter code: WXYZ-5678\n",
+        "Follow these steps to sign in:\n",
+        "1. Open this link\n",
+        "   https://auth.openai.com/device?code_challenge=XYZ\n",
+        "2. Enter this one-time code\n",
+        "   WXYZ-5678\n",
         "Successfully logged in\n",
     ]
 

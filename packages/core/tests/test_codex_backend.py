@@ -34,29 +34,32 @@ def test_kind_is_codex():
 
 
 @pytest.mark.asyncio
-async def test_validate_with_api_key_sets_env(tmp_path: Path):
+async def test_validate_succeeds_when_logged_in_marker_in_stdout(tmp_path: Path):
+    """codex 0.121+ uses `login status` (not `auth status`) which exits 0
+    even when not logged in — must inspect stdout."""
     backend = CodexBackend()
     isolation_dir = tmp_path / "codex"
     with patch("shutil.which", return_value="/usr/local/bin/codex"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"ok", b""))) as mock_run:
+         patch.object(backend, "_run", new=AsyncMock(
+             return_value=(0, b"Logged in using ChatGPT\n", b""),
+         )) as mock_run:
         result = await backend.validate(b"sk-test-key", isolation_dir=isolation_dir)
     assert result is True
     spec = mock_run.await_args.args[0]
+    assert spec["argv"][1:] == ["login", "status"]
     assert spec["env"]["OPENAI_API_KEY"] == "sk-test-key"
-    assert spec["env"]["CODEX_HOME"] == str(isolation_dir)
 
 
 @pytest.mark.asyncio
-async def test_validate_with_empty_credential_omits_api_key_env(tmp_path: Path):
+async def test_validate_returns_false_when_not_logged_in(tmp_path: Path):
     backend = CodexBackend()
     isolation_dir = tmp_path / "codex"
     with patch("shutil.which", return_value="/usr/local/bin/codex"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"ok", b""))) as mock_run:
+         patch.object(backend, "_run", new=AsyncMock(
+             return_value=(0, b"Not logged in\n", b""),
+         )):
         result = await backend.validate(b"", isolation_dir=isolation_dir)
-    assert result is True
-    spec = mock_run.await_args.args[0]
-    assert "OPENAI_API_KEY" not in spec["env"]
-    assert spec["env"]["CODEX_HOME"] == str(isolation_dir)
+    assert result is False
 
 
 @pytest.mark.asyncio
