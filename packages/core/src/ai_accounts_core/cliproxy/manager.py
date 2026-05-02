@@ -396,11 +396,20 @@ def _check_healthy(port: int, api_key: str) -> bool:
 def write_cliproxy_config(port: int = 8317, api_key: str = "not-needed") -> Path:
     """Write ~/.cli-proxy-api/config.yaml with the given port and api-key.
 
-    Creates the directory if needed. Returns the config path.
+    Creates the directory and the OAuth auth subdirectory if needed.
+    Returns the config path.
+
+    cliproxyapi 6.8.30+ requires an explicit ``auth-dir`` config entry —
+    without it the binary tries to ``mkdir("")`` and exits with
+    ``failed to create auth directory`` before opening the listen port,
+    which presents to callers as a 10s readiness timeout.
     """
+    auth_dir = _CLIPROXY_CONFIG.parent / "auth"
     _CLIPROXY_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    auth_dir.mkdir(parents=True, exist_ok=True)
     _CLIPROXY_CONFIG.write_text(
         f"port: {port}\n"
+        f'auth-dir: "{auth_dir}"\n'
         f"api-keys:\n"
         f'  - "{api_key}"\n'
     )
