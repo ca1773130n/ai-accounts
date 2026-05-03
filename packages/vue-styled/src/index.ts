@@ -11,6 +11,8 @@ export { default as ChatMessage } from './components/ChatMessage.vue';
 
 // Smart AI Chat Panel (v0.3)
 export { default as AiChatPanel } from './components/AiChatPanel.vue';
+// Caller-managed sibling — back-migrated from Agented (v0.5.7).
+export { default as AiChatPanelManaged } from './components/AiChatPanelManaged.vue';
 export { default as ChatBubble } from './components/ChatBubble.vue';
 export { default as ChatControls } from './components/ChatControls.vue';
 export { default as ChatModeSelector } from './components/ChatModeSelector.vue';
