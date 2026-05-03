@@ -29,6 +29,10 @@ pnpm-debug.log*
 .env.local
 *.db
 accounts.db
+# Per-account isolation dirs hold real OAuth credential files — never commit.
+apps/playground/backend_dirs/
+# Claude Code per-project local state (scheduled tasks, etc.)
+.claude/
 
 # SQLite WAL/SHM sidecar files (apps/playground generates these during dev)
 *.db-shm
