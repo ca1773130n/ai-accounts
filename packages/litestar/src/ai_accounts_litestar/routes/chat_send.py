@@ -160,6 +160,18 @@ class ChatSendController(Controller):
                         if isinstance(event, dict)
                         else msgspec.to_builtins(event)
                     )
+                    # Normalize ChatDelta (single-mode) to the SmartChatEvent
+                    # shape the frontend's useSmartChat.dispatch expects.
+                    # ChatDelta.token carries the text in `text`; the frontend
+                    # union types `token` as `{kind: 'token', payload: string}`
+                    # and reads `event.payload`. Without this rename the user
+                    # sees "undefinedundefined…" because every token's payload
+                    # is undefined. Errors flow through the same shape.
+                    ev_kind = event_dict.get("kind")
+                    if ev_kind in ("token", "error") and "payload" not in event_dict:
+                        text_val = event_dict.get("text")
+                        if text_val is not None:
+                            event_dict = {**event_dict, "payload": text_val}
                     seq = chat_state.push_event(session_id, event_dict)
                     tagged = (
                         {**event_dict, "_seq": seq} if seq > 0 else event_dict

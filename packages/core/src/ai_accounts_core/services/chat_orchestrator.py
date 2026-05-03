@@ -80,33 +80,69 @@ class ChatOrchestrator:
             # Use backend_id as key so multiple accounts of the same kind
             # produce distinct streams (not merged under one kind label).
             bid = health.backend_id
+            kind = health.kind
+            # Resolve a friendly label (display_name / email) for the UI card.
+            label: str | None = None
             try:
-                result = await self._scheduler.pick(kind=health.kind)
+                bdetail = await self._scheduler._accounts.get(bid)
+                label = getattr(bdetail, "display_name", None) or None
+            except Exception:
+                pass
+            try:
+                result = await self._scheduler.pick(kind=kind)
                 if not result:
                     await queue.put(
-                        AllModeEvent(kind="backend_error", backend=bid, error="no account available"),
+                        AllModeEvent(
+                            kind="backend_error", backend=bid, backend_kind=kind,
+                            account_label=label, error="no account available",
+                        ),
                     )
                     return
-                impl = self._scheduler._accounts._impl_for(health.kind)
-                request = ChatRequest(messages=tuple(history), model="auto")
+                impl = self._scheduler._accounts._impl_for(kind)
+                # Pick a real model id — passing model="auto" downstream causes
+                # CLIProxyAPI to mis-route (it has no "auto" provider mapping)
+                # and return 401/429 from a stranger provider's credentials.
+                # Use the backend's first advertised model as a sensible default.
+                try:
+                    models = await impl.list_models(
+                        result.credential, isolation_dir=Path(result.isolation_dir)
+                    )
+                except Exception:
+                    models = []
+                model_id = models[0].id if models else "auto"
+                request = ChatRequest(messages=tuple(history), model=model_id)
                 async for event in impl.chat(
                     request, result.credential, isolation_dir=Path(result.isolation_dir),
                 ):
                     if event.kind == "token" and isinstance(event.payload, str):
-                        await queue.put(AllModeEvent(kind="backend_delta", backend=bid, text=event.payload))
+                        await queue.put(AllModeEvent(
+                            kind="backend_delta", backend=bid, backend_kind=kind,
+                            account_label=label, text=event.payload,
+                        ))
                     elif event.kind == "error":
-                        await queue.put(AllModeEvent(kind="backend_error", backend=bid, error=str(event.payload)))
-                await queue.put(AllModeEvent(kind="backend_complete", backend=bid))
+                        await queue.put(AllModeEvent(
+                            kind="backend_error", backend=bid, backend_kind=kind,
+                            account_label=label, error=str(event.payload),
+                        ))
+                await queue.put(AllModeEvent(
+                    kind="backend_complete", backend=bid, backend_kind=kind, account_label=label,
+                ))
             except Exception as exc:
                 logger.error("send_all backend %s failed: %s", bid, exc, exc_info=True)
-                await queue.put(AllModeEvent(kind="backend_error", backend=bid, error=f"{type(exc).__name__}: {exc}"))
+                await queue.put(AllModeEvent(
+                    kind="backend_error", backend=bid, backend_kind=kind,
+                    account_label=label, error=f"{type(exc).__name__}: {exc}",
+                ))
 
         async def _call_one_with_timeout(health) -> None:  # noqa: ANN001
             """Wrap _call_one with timeout — catch TimeoutError at the outer level."""
             try:
                 await asyncio.wait_for(_call_one(health), timeout=30.0)
             except asyncio.TimeoutError:
-                await queue.put(AllModeEvent(kind="backend_timeout", backend=health.backend_id))
+                await queue.put(AllModeEvent(
+                    kind="backend_timeout", backend=health.backend_id,
+                    backend_kind=health.kind,
+                ))
 
         for h in ready:
             task = asyncio.create_task(_call_one_with_timeout(h))
@@ -144,7 +180,9 @@ class ChatOrchestrator:
         responses: dict[str, str] = {}
         async for event in self.send_all(session_id=session_id, content=content):
             yield CompoundEvent(
-                kind=event.kind, backend=event.backend, text=event.text, error=event.error,
+                kind=event.kind, backend=event.backend,
+                backend_kind=event.backend_kind, account_label=event.account_label,
+                text=event.text, error=event.error,
             )
             if event.kind == "backend_delta" and event.text:
                 responses.setdefault(event.backend, "")
@@ -199,7 +237,15 @@ class ChatOrchestrator:
             content=synthesis_prompt,
             created_at=_now(),
         )
-        synth_request = ChatRequest(messages=(synth_msg,), model="auto")
+        # Same model resolution as send_all: synth must hit a real provider.
+        try:
+            synth_models = await impl.list_models(
+                result.credential, isolation_dir=Path(result.isolation_dir)
+            )
+        except Exception:
+            synth_models = []
+        synth_model_id = synth_models[0].id if synth_models else "auto"
+        synth_request = ChatRequest(messages=(synth_msg,), model=synth_model_id)
         try:
             async for event in impl.chat(
                 synth_request, result.credential, isolation_dir=Path(result.isolation_dir),
