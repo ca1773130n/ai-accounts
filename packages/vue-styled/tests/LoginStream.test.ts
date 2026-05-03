@@ -139,7 +139,11 @@ describe('LoginStream', () => {
     const session = mkSession({
       stdoutLines: ref(['line 1\n', 'line 2\n']),
     });
-    const w = mount(LoginStream, { props: { session: session as never } });
+    // showStdout defaults to false (the terminal panel is opt-in for hosts
+    // who want to expose CLI output to the user); the test must opt in.
+    const w = mount(LoginStream, {
+      props: { session: session as never, showStdout: true },
+    });
     const output = w.find('.aia-terminal__output');
     expect(output.exists()).toBe(true);
     expect(output.text()).toContain('line 1');
