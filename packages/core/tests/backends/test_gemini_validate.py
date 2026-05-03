@@ -1,12 +1,24 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from ai_accounts_core.backends.gemini import GeminiBackend
 
 
+def _no_cliproxy():
+    """Force the cliproxy live-discovery fallback to 'unavailable' so a real
+    cliproxyapi running on the dev machine doesn't shadow the assertions."""
+    return patch(
+        "ai_accounts_core.cliproxy.cliproxy_list_models",
+        new=AsyncMock(return_value=None),
+    )
+
+
 @pytest.mark.asyncio
 async def test_list_models_empty_for_blank_credential(tmp_path):
     backend = GeminiBackend()
-    models = await backend.list_models(b"", isolation_dir=tmp_path)
+    with _no_cliproxy():
+        models = await backend.list_models(b"", isolation_dir=tmp_path)
     assert models == []
 
 
@@ -20,8 +32,10 @@ async def test_list_models_uses_http_not_cli(tmp_path, monkeypatch):
         raise RuntimeError(f"_run should not be called by list_models, got {spec}")
 
     monkeypatch.setattr(backend, "_run", explode)
-    # With blank credential we expect [] without any _run call.
-    models = await backend.list_models(b"", isolation_dir=tmp_path)
+    # With blank credential we expect [] without any _run call. Force cliproxy
+    # to "unavailable" so the real one (if running) doesn't override the [].
+    with _no_cliproxy():
+        models = await backend.list_models(b"", isolation_dir=tmp_path)
     assert models == []
 
 

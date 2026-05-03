@@ -439,12 +439,24 @@ class ClaudeBackend:
         return bool(data)
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
-        # Claude CLI has no `models list` subcommand. The list mirrors what
-        # CLIProxyAPI 6.8.30 advertises for the claude provider — every id
-        # below is accepted by /v1/chat/completions when the account is
-        # registered through cliproxy. Picking a model not in cliproxy's
-        # mapping (e.g. an aspirational future name) causes the proxy to
-        # reject with "unknown provider for model …".
+        # Prefer live discovery from CLIProxyAPI when registered: this is the
+        # single source of truth for which model ids actually round-trip
+        # through /v1/chat/completions, so the dropdown can never advertise a
+        # name cliproxy doesn't know. Falls back to the static set when
+        # cliproxy isn't running (e.g. dev without the proxy installed,
+        # tests). Static list mirrors what cliproxyapi 6.8.30 advertises.
+        from ai_accounts_core.cliproxy import cliproxy_list_models
+
+        live = await cliproxy_list_models("claude")
+        if live:  # truthy iff non-empty list (None or [] both fall through)
+            return [
+                Model(
+                    id=str(m["id"]),
+                    display_name=str(m.get("display_name") or m["id"]),
+                    context_window=m.get("context_window"),
+                )
+                for m in live
+            ]
         return [
             Model(id="claude-opus-4-6", display_name="Claude Opus 4.6", context_window=1_000_000),
             Model(id="claude-opus-4-5-20251101", display_name="Claude Opus 4.5", context_window=200_000),

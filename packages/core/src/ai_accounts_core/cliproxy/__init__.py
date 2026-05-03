@@ -1,6 +1,7 @@
 from ai_accounts_core.cliproxy.manager import (
     CliproxyInstallResult,
     CliproxyLoginInfo,
+    cliproxy_list_models,
     cliproxy_server_status,
     detect_cliproxy,
     forward_cliproxy_callback,
@@ -16,6 +17,7 @@ from ai_accounts_core.cliproxy.manager import (
 __all__ = [
     "CliproxyInstallResult",
     "CliproxyLoginInfo",
+    "cliproxy_list_models",
     "cliproxy_server_status",
     "detect_cliproxy",
     "forward_cliproxy_callback",

@@ -102,15 +102,22 @@ async def test_validate_missing_cli_returns_false(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_list_models_returns_static_set_no_subprocess(tmp_path: Path):
-    """Claude CLI has no `models list` subcommand. We return a static set,
-    so list_models must not invoke any subprocess."""
+    """Claude CLI has no `models list` subcommand. With cliproxy unavailable
+    we return a static set, so list_models must not invoke any subprocess."""
+    from unittest.mock import AsyncMock as _AsyncMock
     backend = ClaudeBackend()
     async def explode(spec):
         raise AssertionError(f"_run must not be called by list_models, got {spec}")
-    with patch.object(backend, "_run", side_effect=explode):
+    # Force the cliproxy live-discovery path to "unavailable" so the static
+    # fallback runs deterministically — the test machine may have a real
+    # cliproxyapi running on :8317 which would otherwise win.
+    with patch.object(backend, "_run", side_effect=explode), patch(
+        "ai_accounts_core.cliproxy.cliproxy_list_models",
+        new=_AsyncMock(return_value=None),
+    ):
         models = await backend.list_models(b"sk-ant-test", isolation_dir=tmp_path / "claude")
     ids = {m.id for m in models}
-    assert "claude-opus-4-7" in ids or "claude-sonnet-4-6" in ids
+    assert "claude-sonnet-4-6" in ids
     assert all(m.context_window for m in models)
 
 

@@ -334,6 +334,56 @@ async def forward_cliproxy_callback(callback_url: str) -> dict:
 _CLIPROXY_CONFIG = Path.home() / ".cli-proxy-api" / "config.yaml"
 
 
+# Backend kind → cliproxy `owned_by` value used to filter /v1/models.
+# Cliproxyapi 6.8.30 uses standard OpenAI-style provider names.
+_CLIPROXY_OWNED_BY: dict[str, str] = {
+    "claude": "anthropic",
+    "codex": "openai",
+    "gemini": "google",
+}
+
+
+async def cliproxy_list_models(kind: str) -> list[dict[str, object]] | None:
+    """Live-discover models for `kind` from a running CLIProxyAPI.
+
+    Returns a list of `{id, owned_by, ...}` dicts (raw cliproxy items),
+    filtered by `_CLIPROXY_OWNED_BY[kind]`. Returns None when cliproxy is
+    not detected or the request fails — the caller is expected to fall
+    back to its static set in that case.
+
+    Empty list is a valid result (cliproxy is up but advertises no models
+    for that kind), distinct from None (cliproxy unreachable).
+
+    Sync-friendly: uses an async httpx client so backends can call it from
+    inside their `list_models()` coroutine without blocking the event loop.
+    """
+    expected_owner = _CLIPROXY_OWNED_BY.get(kind)
+    if expected_owner is None:
+        return None  # opencode etc. — not registrable with cliproxy
+    proxy = detect_cliproxy()
+    if proxy is None:
+        return None
+    base_url, api_key = proxy
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{base_url}/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+    except Exception:
+        return None
+    items = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return None
+    return [
+        m for m in items
+        if isinstance(m, dict) and m.get("owned_by") == expected_owner and m.get("id")
+    ]
+
+
 def detect_cliproxy() -> tuple[str, str] | None:
     """Auto-detect a running CLIProxyAPI from ~/.cli-proxy-api/config.yaml.
 

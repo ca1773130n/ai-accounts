@@ -64,10 +64,16 @@ async def test_validate_returns_false_when_not_logged_in(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_list_models_returns_static_set(tmp_path: Path):
-    """codex 0.128.0 has no `models list` subcommand; we return a static set
-    matching what CLIProxyAPI advertises for the codex provider."""
+    """codex 0.128.0 has no `models list` subcommand; with cliproxy
+    unavailable we return a static set matching what CLIProxyAPI advertises
+    for the codex provider."""
+    from unittest.mock import AsyncMock as _AsyncMock
     backend = CodexBackend()
-    models = await backend.list_models(b"", isolation_dir=tmp_path / "codex")
+    with patch(
+        "ai_accounts_core.cliproxy.cliproxy_list_models",
+        new=_AsyncMock(return_value=None),
+    ):
+        models = await backend.list_models(b"", isolation_dir=tmp_path / "codex")
     ids = {m.id for m in models}
     # gpt-5-codex is the canonical codex CLI default and must always be present.
     assert "gpt-5-codex" in ids

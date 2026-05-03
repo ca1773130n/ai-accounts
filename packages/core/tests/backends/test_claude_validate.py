@@ -61,8 +61,16 @@ async def test_validate_returns_true_when_macos_keychain_has_entry(tmp_path):
 
 @pytest.mark.asyncio
 async def test_list_models_returns_known_set(tmp_path):
+    """Static fallback when cliproxy isn't reachable. Force the live path
+    to 'unavailable' so the test machine's real cliproxyapi (if any)
+    doesn't shadow the static set."""
+    from unittest.mock import AsyncMock as _AsyncMock
     backend = ClaudeBackend()
-    models = await backend.list_models(b"", isolation_dir=tmp_path)
+    with patch(
+        "ai_accounts_core.cliproxy.cliproxy_list_models",
+        new=_AsyncMock(return_value=None),
+    ):
+        models = await backend.list_models(b"", isolation_dir=tmp_path)
     ids = {m.id for m in models}
-    assert "claude-opus-4-7" in ids or "claude-sonnet-4-6" in ids
+    assert "claude-sonnet-4-6" in ids
     assert all(m.context_window for m in models)

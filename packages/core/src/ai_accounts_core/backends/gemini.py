@@ -214,38 +214,49 @@ class GeminiBackend:
     async def list_models(
         self, credential: bytes, *, isolation_dir: Path
     ) -> list[Model]:
-        # Gemini CLI 0.35+ has no `models list` subcommand. Probe Google AI
-        # Studio's models endpoint directly with the API key — no isolation_dir
-        # needed for this path.
-        if not credential:
-            return []
-        api_key = credential.decode("utf-8", errors="replace").strip()
-        if not api_key:
-            return []
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as http:
-                resp = await http.get(
-                    "https://generativelanguage.googleapis.com/v1beta/models",
-                    params={"key": api_key},
+        # Gemini CLI 0.35+ has no `models list` subcommand. Two live sources:
+        #   1. Google AI Studio's models endpoint with the API key — primary
+        #      for api_key flows.
+        #   2. CLIProxyAPI's /v1/models filtered by owned_by="google" — used
+        #      when there's no api_key (OAuth-only registration via cliproxy).
+        # Either is current; we pick whichever resolves first.
+        api_key = credential.decode("utf-8", errors="replace").strip() if credential else ""
+        if api_key:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as http:
+                    resp = await http.get(
+                        "https://generativelanguage.googleapis.com/v1beta/models",
+                        params={"key": api_key},
+                    )
+                if resp.status_code == 200:
+                    raw_data = resp.json()
+                    items = raw_data.get("models", [])
+                    if items:
+                        return [
+                            Model(
+                                id=m.get("name", "").rsplit("/", 1)[-1],
+                                display_name=m.get("displayName", m.get("name", "")),
+                                context_window=m.get("inputTokenLimit"),
+                            )
+                            for m in items
+                            if m.get("name")
+                        ]
+            except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError):
+                pass  # fall through to cliproxy
+        # No api_key, or Google API didn't respond — try cliproxy.
+        from ai_accounts_core.cliproxy import cliproxy_list_models
+
+        live = await cliproxy_list_models("gemini")
+        if live:
+            return [
+                Model(
+                    id=str(m["id"]),
+                    display_name=str(m.get("display_name") or m["id"]),
+                    context_window=m.get("context_window"),
                 )
-        except (httpx.HTTPError, OSError):
-            return []
-        if resp.status_code != 200:
-            return []
-        try:
-            raw_data = resp.json()
-        except (ValueError, json.JSONDecodeError):
-            return []
-        items = raw_data.get("models", [])
-        return [
-            Model(
-                id=m.get("name", "").rsplit("/", 1)[-1],
-                display_name=m.get("displayName", m.get("name", "")),
-                context_window=m.get("inputTokenLimit"),
-            )
-            for m in items
-            if m.get("name")
-        ]
+                for m in live
+            ]
+        return []
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
         from ai_accounts_core.domain.usage import UsageWindow

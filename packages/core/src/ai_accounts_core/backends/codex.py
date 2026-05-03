@@ -454,13 +454,24 @@ class CodexBackend:
     async def list_models(
         self, credential: bytes, *, isolation_dir: Path
     ) -> list[Model]:
-        # Codex CLI 0.128.0 has no `models list` subcommand. Mirror the
-        # claude/gemini fixes (commits 8ec6372, 1b4c642): return a static
-        # set of the public Codex-reachable models. The list mirrors what
-        # CLIProxyAPI 6.8.30 advertises for the chatgpt-codex provider —
-        # users registering through cliproxy will see these names accepted
-        # by /v1/chat/completions. Live discovery is still possible via
-        # CLIProxyAPI's /v1/models when needed.
+        # Prefer live discovery from CLIProxyAPI when registered (single
+        # source of truth for which model ids round-trip through
+        # /v1/chat/completions). Falls back to the static set when cliproxy
+        # isn't running. Codex CLI 0.128.0 has no `models list` subcommand,
+        # so the static list matches what cliproxyapi 6.8.30 advertises for
+        # the openai provider — kept around for offline/test environments.
+        from ai_accounts_core.cliproxy import cliproxy_list_models
+
+        live = await cliproxy_list_models("codex")
+        if live:
+            return [
+                Model(
+                    id=str(m["id"]),
+                    display_name=str(m.get("display_name") or m["id"]),
+                    context_window=m.get("context_window"),
+                )
+                for m in live
+            ]
         return [
             Model(id="gpt-5.3-codex", display_name="GPT-5.3 Codex", context_window=400_000),
             Model(id="gpt-5.3-codex-spark", display_name="GPT-5.3 Codex Spark", context_window=400_000),
