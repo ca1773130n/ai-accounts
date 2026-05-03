@@ -34,9 +34,16 @@ export type CliproxyLoginBeginResponse = {
   message: string;
   oauth_url?: string | null;
   device_code?: string | null;
+  session_id?: string | null;
 };
 
 export type CliproxyCallbackForwardResponse = {
   status: 'completed' | 'error';
   message: string;
+};
+
+export type CliproxyLoginStatus = {
+  state: 'running' | 'completed' | 'failed' | 'timeout' | 'unknown';
+  message: string;
+  returncode?: number | null;
 };

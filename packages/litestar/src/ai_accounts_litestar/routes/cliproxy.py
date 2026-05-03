@@ -43,6 +43,13 @@ class _LoginBeginResponse(msgspec.Struct):
     message: str
     oauth_url: str | None = None
     device_code: str | None = None
+    session_id: str | None = None  # set when proc is running; key for /login/status
+
+
+class _LoginStatusResponse(msgspec.Struct):
+    state: str  # "running" | "completed" | "failed" | "timeout" | "unknown"
+    message: str
+    returncode: int | None = None
 
 
 class _ServerStartRequest(msgspec.Struct, kw_only=True):
@@ -65,6 +72,21 @@ logger = logging.getLogger(__name__)
 # can extend their lifetime via the callback forward path.
 _ACTIVE_PROCS: dict[str, object] = {}
 _ACTIVE_TASKS: dict[str, asyncio.Task[None]] = {}
+# Final state of completed login sessions, keyed by the same session_id as
+# _ACTIVE_PROCS. Lets the device-code flow poll for completion: cliproxyapi
+# polls OpenAI server-side and exits 0 on success — no browser callback.
+# Bounded LRU eviction keeps this from growing unbounded.
+_LOGIN_STATE: dict[str, dict[str, object]] = {}
+_LOGIN_STATE_MAX = 64
+
+
+def _record_login_state(session_id: str, state: str, message: str, returncode: int | None) -> None:
+    if len(_LOGIN_STATE) >= _LOGIN_STATE_MAX:
+        # Drop oldest entry (insertion order in dicts ≥ 3.7)
+        oldest = next(iter(_LOGIN_STATE), None)
+        if oldest is not None:
+            _LOGIN_STATE.pop(oldest, None)
+    _LOGIN_STATE[session_id] = {"state": state, "message": message, "returncode": returncode}
 
 
 class CliproxyController(Controller):
@@ -109,6 +131,7 @@ class CliproxyController(Controller):
                 message="Proxy login did not produce an OAuth URL",
             )
 
+        proc_id: str | None = None
         if proc is not None:
             # Closes RISKS-AND-BUGS L-2: don't key on id(proc). Python can
             # reuse an object's id after GC, so a long-running process
@@ -117,20 +140,43 @@ class CliproxyController(Controller):
             # lifetime.
             proc_id = uuid.uuid4().hex
             _ACTIVE_PROCS[proc_id] = proc
+            _record_login_state(proc_id, "running", "Awaiting OAuth completion", None)
             reap_info = info  # capture for closure
+            captured_proc_id = proc_id
 
             async def _reap() -> None:
+                timed_out = False
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=300)
                 except asyncio.TimeoutError:
+                    timed_out = True
                     proc.kill()
                     await proc.wait()
-                finally:
-                    _ACTIVE_PROCS.pop(proc_id, None)
-                    if reap_info.fake_dir:
-                        import shutil as _shutil
+                # Drain any remaining stdout so cliproxyapi never blocks on
+                # a full pipe buffer mid-flow. We also use the tail to
+                # disambiguate success/failure when returncode alone isn't
+                # decisive.
+                tail = ""
+                if proc.stdout is not None:
+                    try:
+                        remaining = await proc.stdout.read()
+                        tail = remaining.decode(errors="replace")[-2048:]
+                    except Exception:
+                        pass
+                rc = proc.returncode
+                if timed_out:
+                    state, msg = "timeout", "Login timed out after 5 minutes"
+                elif rc == 0:
+                    state, msg = "completed", "API proxy login completed"
+                else:
+                    state = "failed"
+                    msg = (tail.strip().splitlines() or [f"cliproxyapi exited with code {rc}"])[-1]
+                _record_login_state(captured_proc_id, state, msg, rc)
+                _ACTIVE_PROCS.pop(captured_proc_id, None)
+                if reap_info.fake_dir:
+                    import shutil as _shutil
 
-                        _shutil.rmtree(reap_info.fake_dir, ignore_errors=True)
+                    _shutil.rmtree(reap_info.fake_dir, ignore_errors=True)
 
             asyncio.create_task(_reap())
 
@@ -139,6 +185,18 @@ class CliproxyController(Controller):
             message="Open the URL to complete authentication",
             oauth_url=info.oauth_url,
             device_code=info.device_code,
+            session_id=proc_id,
+        )
+
+    @get("/login/status")
+    async def login_status(self, session_id: str) -> _LoginStatusResponse:
+        entry = _LOGIN_STATE.get(session_id)
+        if entry is None:
+            return _LoginStatusResponse(state="unknown", message="No such session")
+        return _LoginStatusResponse(
+            state=str(entry["state"]),
+            message=str(entry["message"]),
+            returncode=entry["returncode"],  # type: ignore[arg-type]
         )
 
     @post("/login/callback-forward")

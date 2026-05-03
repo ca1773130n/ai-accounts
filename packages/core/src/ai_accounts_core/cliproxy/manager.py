@@ -26,7 +26,11 @@ _CLIPROXY_INSTALL_COMMANDS = [
 ]
 
 _OAUTH_URL_RE = re.compile(r"https?://[^\s\"'<>]+")
-_DEVICE_CODE_RE = re.compile(r"code[:\s]+([A-Z0-9]{4}-?[A-Z0-9]{4})", re.IGNORECASE)
+# Codex device codes are 4-5 alphanumeric (e.g. "FXEJ-GY37O" — 9 chars total
+# excluding the dash). Claude/older formats are 4-4 (8 chars). Allow the
+# second group to be 4-8 chars so both fit; greedy matching naturally takes
+# the longest run, so we don't truncate the trailing character of a 4-5 code.
+_DEVICE_CODE_RE = re.compile(r"code[:\s]+([A-Z0-9]{4}-?[A-Z0-9]{4,8})", re.IGNORECASE)
 _SUCCESS_MARKERS = (
     "Successfully authenticated",
     "Login successful",
@@ -140,9 +144,14 @@ async def start_cliproxy_login(
     if not is_cliproxy_installed():
         return None, CliproxyLoginInfo(error="cliproxyapi binary not found")
 
+    # Codex uses the device-code flow (URL + code printed to stdout) rather
+    # than the browser-callback flow (--codex-login). Device-code works
+    # unchanged when the playground is reached over a remote URL — the
+    # callback flow does not, because the OAuth provider would redirect to
+    # localhost on the *user's* machine, not the playground host.
     flag_map = {
         "claude": "--claude-login",
-        "codex": "--codex-login",
+        "codex": "--codex-device-login",
         "gemini": "--gemini-login",
     }
     flag = flag_map.get(backend_kind)
@@ -396,16 +405,23 @@ def _check_healthy(port: int, api_key: str) -> bool:
 def write_cliproxy_config(port: int = 8317, api_key: str = "not-needed") -> Path:
     """Write ~/.cli-proxy-api/config.yaml with the given port and api-key.
 
-    Creates the directory and the OAuth auth subdirectory if needed.
-    Returns the config path.
+    Creates the directory if needed. Returns the config path.
 
     cliproxyapi 6.8.30+ requires an explicit ``auth-dir`` config entry —
     without it the binary tries to ``mkdir("")`` and exits with
     ``failed to create auth directory`` before opening the listen port,
     which presents to callers as a 10s readiness timeout.
+
+    The ``auth-dir`` MUST point at the same directory where cliproxyapi's
+    own login flows write credential files (e.g. ``codex-<email>.json``,
+    ``claude-<email>.json``). cliproxyapi's login subcommands write those
+    files into the config directory itself, NOT into a subdirectory — so
+    pointing ``auth-dir`` at an ``auth/`` subdir leaves cliproxyapi with
+    zero providers ("unknown provider for model …" on every chat). Use
+    the config directory as the auth directory so the server scans the
+    same files the login flow created.
     """
-    auth_dir = _CLIPROXY_CONFIG.parent / "auth"
-    _CLIPROXY_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    auth_dir = _CLIPROXY_CONFIG.parent
     auth_dir.mkdir(parents=True, exist_ok=True)
     _CLIPROXY_CONFIG.write_text(
         f"port: {port}\n"

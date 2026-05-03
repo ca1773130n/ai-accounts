@@ -38,6 +38,7 @@ export type {
   CliproxyInstallResult,
   CliproxyLoginBeginResponse,
   CliproxyCallbackForwardResponse,
+  CliproxyLoginStatus,
 } from './types/install';
 export type { AiAccountsEvent, AiAccountsEventHandler } from './events';
 export type { PtySessionDTO, PtySpawnRequest } from './types/pty';
@@ -54,6 +55,7 @@ export type {
   BackendResponse,
   SynthesisState,
   BackendOption,
+  BackendAccountOption,
   SmartChatEvent,
   ChatMode,
   SendChatRequest,

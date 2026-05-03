@@ -11,6 +11,7 @@ import type {
   CliproxyInstallResult,
   CliproxyLoginBeginResponse,
   CliproxyCallbackForwardResponse,
+  CliproxyLoginStatus,
 } from '../types/install';
 import type { ChatSessionDTO, ChatSessionDetailDTO, ChatDelta } from '../types/chat';
 import type { AccountHealthDTO, PickResultDTO, FallbackChainEntryDTO } from '../types/scheduler';
@@ -302,6 +303,15 @@ export class AiAccountsClient {
     yield* parseSseLoginEvents(r);
   }
 
+  async listModels(backendId: string): Promise<{ items: Array<{ id: string; display_name: string; context_window: number | null }> }> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/backends/${encodeURIComponent(backendId)}/models/`,
+      { method: 'GET', headers: this.headers() }
+    );
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as { items: Array<{ id: string; display_name: string; context_window: number | null }> };
+  }
+
   async getBackendMetadata(): Promise<{ items: BackendMetadata[] }> {
     const r = await this._fetch(`${this.baseUrl}/api/v1/backends/_meta`, {
       headers: this.headers(),
@@ -418,6 +428,15 @@ export class AiAccountsClient {
     );
     if (!r.ok) throw await toError(r);
     return (await r.json()) as CliproxyCallbackForwardResponse;
+  }
+
+  async cliproxyLoginStatus(sessionId: string): Promise<CliproxyLoginStatus> {
+    const r = await this._fetch(
+      `${this.baseUrl}/api/v1/cliproxy/login/status?session_id=${encodeURIComponent(sessionId)}`,
+      { method: 'GET', headers: this.headers() }
+    );
+    if (!r.ok) throw await toError(r);
+    return (await r.json()) as CliproxyLoginStatus;
   }
 
   // --- CLIProxyAPI Server Lifecycle ---

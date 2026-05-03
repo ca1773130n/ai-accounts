@@ -602,6 +602,7 @@ onUnmounted(() => {
   if (loginSession.status.value === 'running') {
     loginSession.cancel().catch(() => {});
   }
+  stopProxyPoll();
 });
 
 // Convenience aliases so the template's existing bindings keep working.
@@ -1002,6 +1003,39 @@ const proxyOauthUrl = ref('');
 const proxyDeviceCode = ref('');
 const proxyCallbackUrl = ref('');
 const proxyCallbackError = ref('');
+const proxySessionId = ref<string | null>(null);
+let proxyPollHandle: ReturnType<typeof setInterval> | null = null;
+
+function stopProxyPoll() {
+  if (proxyPollHandle !== null) {
+    clearInterval(proxyPollHandle);
+    proxyPollHandle = null;
+  }
+}
+
+function startProxyPoll() {
+  stopProxyPoll();
+  if (!proxySessionId.value) return;
+  const id = proxySessionId.value;
+  proxyPollHandle = setInterval(async () => {
+    try {
+      const s = await client.cliproxyLoginStatus(id);
+      if (s.state === 'completed') {
+        proxyLoginStatus.value = 'success';
+        proxyLoginMessage.value = s.message || 'API proxy login completed';
+        stopProxyPoll();
+      } else if (s.state === 'failed' || s.state === 'timeout') {
+        proxyLoginStatus.value = 'error';
+        proxyLoginMessage.value = s.message;
+        stopProxyPoll();
+      }
+      // 'running' / 'unknown' → keep polling
+    } catch (e: unknown) {
+      // Transient errors shouldn't kill the poll; log once and keep going.
+      console.warn('[AccountWizard] cliproxy login status poll failed:', e);
+    }
+  }, 2000);
+}
 
 const cliproxyInstalled = ref(false);
 const cliproxyInstalling = ref(false);
@@ -1043,12 +1077,14 @@ async function installCliproxy() {
 }
 
 function resetProxyLogin() {
+  stopProxyPoll();
   proxyLoginStatus.value = 'idle';
   proxyLoginMessage.value = '';
   proxyOauthUrl.value = '';
   proxyDeviceCode.value = '';
   proxyCallbackUrl.value = '';
   proxyCallbackError.value = '';
+  proxySessionId.value = null;
 }
 
 async function runProxyLogin() {
@@ -1069,13 +1105,19 @@ async function runProxyLogin() {
       proxyLoginStatus.value = 'device_auth';
       proxyOauthUrl.value = res.oauth_url;
       proxyDeviceCode.value = res.device_code ?? '';
+      proxySessionId.value = res.session_id ?? null;
       // Auto-open the OAuth URL in the user's browser
       window.open(res.oauth_url, '_blank', 'noopener');
       if (res.device_code) {
-        proxyLoginMessage.value = `Open the URL and enter code ${res.device_code}`;
+        proxyLoginMessage.value = `Open the URL and enter code ${res.device_code}. We'll detect completion automatically.`;
       } else {
         proxyLoginMessage.value =
           'Complete OAuth in the browser; paste the callback URL below if it fails to redirect';
+      }
+      // Device-code flow has no browser callback — cliproxyapi polls the
+      // OAuth provider server-side. Poll the session for completion.
+      if (proxySessionId.value) {
+        startProxyPoll();
       }
     } else if (res.status === 'skipped') {
       proxyLoginStatus.value = 'skipped';
@@ -1515,7 +1557,12 @@ function skipWizard() {
                 <polyline points="15 3 21 3 21 9" />
                 <line x1="10" y1="14" x2="21" y2="3" />
               </svg>
-              <span>A browser window should have opened. Sign in, then the page will redirect to <code>localhost</code> — that redirect will fail (this is normal). Copy the full URL from the browser address bar and paste it below.</span>
+              <span v-if="proxyDeviceCode">
+                Open the URL below, sign in, and enter the device code. We'll detect completion automatically.
+              </span>
+              <span v-else>
+                A browser window should have opened. Sign in, then the page will redirect to <code>localhost</code> — that redirect will fail (this is normal). Copy the full URL from the browser address bar and paste it below.
+              </span>
             </div>
             <a v-if="proxyOauthUrl" :href="proxyOauthUrl" target="_blank" rel="noopener" class="proxy-oauth-link">
               {{ proxyOauthUrl }}
@@ -1524,7 +1571,11 @@ function skipWizard() {
               <span class="proxy-device-code-label">Your device code:</span>
               <code class="proxy-device-code-value">{{ proxyDeviceCode }}</code>
             </div>
-            <div class="proxy-callback-section" data-tour="wiz-proxy-callback">
+            <div v-if="proxyDeviceCode" class="proxy-waiting" data-tour="wiz-proxy-callback">
+              <div class="spinner-sm"></div>
+              <span>Waiting for you to enter the code…</span>
+            </div>
+            <div v-else class="proxy-callback-section" data-tour="wiz-proxy-callback">
               <p class="proxy-callback-hint">If the redirect to localhost fails, paste the callback URL:</p>
               <div class="proxy-callback-row">
                 <input
@@ -2484,6 +2535,18 @@ code.review-value {
 
 .proxy-callback-section {
   width: 100%;
+  margin-top: 0.25rem;
+}
+
+.proxy-waiting {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.3));
+  border-radius: 6px;
   margin-top: 0.25rem;
 }
 
