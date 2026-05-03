@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watchEffect, onMounted } from 'vue';
+import { computed, ref, watch, watchEffect, onMounted } from 'vue';
 import { useSmartChat, useSmartScroll, useAiAccounts } from '@ai-accounts/vue-headless';
 import type { BackendDTO, BackendOption } from '@ai-accounts/ts-core';
 import ChatBubble from './ChatBubble.vue';
@@ -48,12 +48,47 @@ const chat = useSmartChat();
 const scroll = useSmartScroll();
 const { client } = useAiAccounts();
 const backends = ref<BackendDTO[]>([]);
+// Models per backend kind, populated lazily from /api/v1/backends/{id}/models.
+// Empty arrays render as a disabled dropdown; once loaded, the user can pick.
+const modelsByKind = ref<Record<string, string[]>>({});
 const backendOptions = computed<BackendOption[]>(() =>
   Array.from(new Set(backends.value.map(b => b.kind))).map(kind => {
     const forKind = backends.value.filter(b => b.kind === kind);
-    return { kind, displayName: kind, accounts: forKind.map(b => b.id), models: [] };
+    return {
+      kind,
+      displayName: kind,
+      // Account dropdown shows display_name (typically the email); the id
+      // is what gets sent to the API as account_id.
+      accounts: forKind.map(b => ({ id: b.id, label: b.display_name || b.id })),
+      models: modelsByKind.value[kind] ?? [],
+    };
   }),
 );
+
+async function loadModelsFor(backend: BackendDTO) {
+  if (modelsByKind.value[backend.kind]) return;
+  try {
+    const { items } = await client.listModels(backend.id);
+    modelsByKind.value = { ...modelsByKind.value, [backend.kind]: items.map(m => m.id) };
+  } catch {
+    // Backend not yet ready / endpoint failed — leave models empty; user can retry.
+  }
+}
+
+async function loadAllModels() {
+  await Promise.all(backends.value.filter(b => b.status === 'ready').map(loadModelsFor));
+  // If no model is yet selected, default to the first model of the first ready backend
+  // so handleSend never sends an empty model string (the API rejects it with 400).
+  if (!chat.selectedModel.value) {
+    for (const opt of backendOptions.value) {
+      if (opt.models.length > 0) {
+        chat.selectedModel.value = opt.models[0]!;
+        if (!chat.selectedBackend.value) chat.selectedBackend.value = opt.kind;
+        break;
+      }
+    }
+  }
+}
 
 watchEffect(() => {
   chat.setConfigParser(props.configParser ?? null);
@@ -63,12 +98,33 @@ onMounted(async () => {
   try {
     const result = await client.listBackends();
     backends.value = result.items ?? [];
+    await loadAllModels();
   } catch (e) {
     // listBackends may fail before sidecar is ready; ignore — user can retry by sending
   }
 });
 
-function pickBackendFor(kind: string | null): BackendDTO | null {
+// The chat session is bound server-side to the backend it was created with.
+// Changing the backend (or specific account) in the dropdown means the next
+// message must go through a fresh session — otherwise the request is honored
+// against the old binding and the user sees responses from the wrong model.
+// Clear the session when either selection changes; handleSend will create a
+// new one on the next message.
+watch(
+  () => [chat.selectedBackend.value, chat.selectedAccount.value],
+  ([newKind, newAccount], [oldKind, oldAccount]) => {
+    if (!chat.sessionId.value) return;
+    if (newKind !== oldKind || newAccount !== oldAccount) {
+      chat.resetSession();
+    }
+  },
+);
+
+function pickBackendFor(kind: string | null, accountId: string | null = null): BackendDTO | null {
+  if (accountId) {
+    const exact = backends.value.find(b => b.id === accountId);
+    if (exact) return exact;
+  }
   const pool = kind ? backends.value.filter(b => b.kind === kind) : backends.value;
   return pool.find(b => b.status === 'ready') ?? pool[0] ?? null;
 }
@@ -80,18 +136,36 @@ async function handleSend(content: string) {
       try {
         const result = await client.listBackends();
         backends.value = result.items ?? [];
+        await loadAllModels();
       } catch {
         chat.error.value = 'Unable to load backends from sidecar';
         return;
       }
     }
     const preferredKind = chat.selectedBackend.value ?? props.defaultBackend ?? null;
-    const backend = pickBackendFor(preferredKind);
+    const preferredAccount = chat.selectedAccount.value;
+    const backend = pickBackendFor(preferredKind, preferredAccount);
     if (!backend) {
       chat.error.value = 'No backend available — add an account first';
       return;
     }
-    const model = chat.selectedModel.value ?? props.defaultModel ?? '';
+    // Resolve a non-empty model. selectBackend() clears selectedModel, so on
+    // the first send after a backend switch we'd otherwise post '' and the
+    // server would reject with 400 ("Expected str of length >= 1 at .model").
+    // Lazy-load models for this backend if missing, then default to its first.
+    let model = chat.selectedModel.value ?? props.defaultModel ?? '';
+    if (!model) {
+      await loadModelsFor(backend);
+      const candidates = modelsByKind.value[backend.kind] ?? [];
+      if (candidates.length > 0) {
+        model = candidates[0]!;
+        chat.selectedModel.value = model;
+      }
+    }
+    if (!model) {
+      chat.error.value = `No models available for ${backend.kind}`;
+      return;
+    }
     try {
       await chat.createSession(backend.id, model);
     } catch (e) {
@@ -115,10 +189,12 @@ async function handleFinalize() {
       v-if="density === 'detailed'"
       :chat-mode="chat.chatMode.value"
       :selected-backend="chat.selectedBackend.value"
+      :selected-account="chat.selectedAccount.value"
       :selected-model="chat.selectedModel.value"
       :backends="backendOptions"
       @update:chat-mode="chat.setMode"
       @update:selected-backend="chat.selectBackend"
+      @update:selected-account="(v: string | null) => chat.selectedAccount.value = v"
       @update:selected-model="(v: string | null) => chat.selectedModel.value = v"
     />
 

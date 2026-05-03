@@ -17,7 +17,8 @@ const BACKEND_COLORS: Record<string, { bg: string; fg: string; label: string }> 
   opencode: { bg: 'rgba(251,191,36,0.15)', fg: '#fbbf24', label: 'OpenCode' },
 };
 
-function backendMeta(kind: string) {
+function backendMeta(kind: string | undefined | null) {
+  if (!kind) return { bg: 'rgba(161,161,170,0.15)', fg: '#a1a1aa', label: 'Backend' };
   return BACKEND_COLORS[kind] ?? { bg: 'rgba(161,161,170,0.15)', fg: '#a1a1aa', label: kind };
 }
 
@@ -43,13 +44,14 @@ function renderMarkdown(content: string): string {
     <div
       v-for="[key, resp] in entries" :key="key"
       class="aia-resp"
-      :style="{ '--resp-bg': backendMeta(resp.backend).bg, '--resp-fg': backendMeta(resp.backend).fg }"
+      :style="{ '--resp-bg': backendMeta(resp.backendKind).bg, '--resp-fg': backendMeta(resp.backendKind).fg }"
     >
       <details :open="!collapsible || undefined">
         <summary class="aia-resp__header">
-          <span class="aia-resp__name" :style="{ color: backendMeta(resp.backend).fg }">
-            {{ backendMeta(resp.backend).label }}
+          <span class="aia-resp__name" :style="{ color: backendMeta(resp.backendKind).fg }">
+            {{ backendMeta(resp.backendKind).label }}
           </span>
+          <span v-if="resp.accountLabel" class="aia-resp__account">{{ resp.accountLabel }}</span>
           <span class="aia-resp__badge" :class="statusBadge(resp.status).cls">
             {{ statusBadge(resp.status).text }}
           </span>
@@ -75,6 +77,15 @@ function renderMarkdown(content: string): string {
 }
 .aia-resp__header::-webkit-details-marker { display: none; }
 .aia-resp__name { font-weight: 600; font-size: var(--aia-text-sm, 14px); }
+.aia-resp__account {
+  font-size: var(--aia-text-xs, 12px);
+  color: var(--aia-fg-muted, #a1a1aa);
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
 .aia-resp__badge {
   font-size: var(--aia-text-xs, 12px); padding: 1px 8px;
   border-radius: var(--aia-radius-sm, 4px); margin-left: auto; font-weight: 500;

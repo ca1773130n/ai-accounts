@@ -11,7 +11,9 @@ import { useAiAccounts } from './useAiAccounts';
 import { useProcessGroups, type UseProcessGroupsReturn } from './useProcessGroups';
 
 export interface BackendResponseState {
-  backend: string;
+  backend: string;                       // backend_id (bkd-…) — Map key
+  backendKind?: string | undefined;      // "claude" / "codex" / … — for color & label
+  accountLabel?: string | undefined;     // display_name / email — shown in card title
   content: string;
   status: 'streaming' | 'complete' | 'error' | 'timeout';
   error?: string;
@@ -42,6 +44,7 @@ export interface UseSmartChatReturn {
   send: (content: string) => Promise<void>;
   setMode: (mode: ChatMode) => void;
   selectBackend: (kind: string | null) => void;
+  resetSession: () => void;
   processGroups: UseProcessGroupsReturn;
   canFinalize: Ref<boolean>;
   isFinalizing: Ref<boolean>;
@@ -248,6 +251,8 @@ export function useSmartChat(): UseSmartChatReturn {
         const updated = new Map(backendResponses.value);
         updated.set(event.backend, {
           backend: event.backend,
+          backendKind: event.backend_kind ?? existing?.backendKind,
+          accountLabel: event.account_label ?? existing?.accountLabel,
           content: (existing?.content ?? '') + (event.text ?? ''),
           status: 'streaming',
         });
@@ -258,7 +263,12 @@ export function useSmartChat(): UseSmartChatReturn {
         const existing = backendResponses.value.get(event.backend);
         if (existing) {
           const updated = new Map(backendResponses.value);
-          updated.set(event.backend, { ...existing, status: 'complete' });
+          updated.set(event.backend, {
+            ...existing,
+            backendKind: event.backend_kind ?? existing.backendKind,
+            accountLabel: event.account_label ?? existing.accountLabel,
+            status: 'complete',
+          });
           backendResponses.value = updated;
         }
         break;
@@ -268,6 +278,8 @@ export function useSmartChat(): UseSmartChatReturn {
         const updated = new Map(backendResponses.value);
         updated.set(event.backend, {
           backend: event.backend,
+          backendKind: event.backend_kind ?? existing?.backendKind,
+          accountLabel: event.account_label ?? existing?.accountLabel,
           content: existing?.content ?? '',
           status: 'error',
           error: event.error,
@@ -280,6 +292,8 @@ export function useSmartChat(): UseSmartChatReturn {
         const updated = new Map(backendResponses.value);
         updated.set(event.backend, {
           backend: event.backend,
+          backendKind: event.backend_kind ?? existing?.backendKind,
+          accountLabel: event.account_label ?? existing?.accountLabel,
           content: existing?.content ?? '',
           status: 'timeout',
         });
@@ -331,10 +345,28 @@ export function useSmartChat(): UseSmartChatReturn {
     selectedModel.value = null;
   }
 
+  /** Clear the active session and visible chat state.
+   *
+   * Used by chat UIs to start a fresh conversation when the user switches
+   * backends — the existing session is bound to its original backend_id
+   * server-side, so changing the dropdown without resetting would still
+   * route messages through the old backend.
+   */
+  function resetSession() {
+    sessionId.value = null;
+    messages.value = [];
+    streamingContent.value = '';
+    backendResponses.value = new Map();
+    synthesisState.value = null;
+    canFinalize.value = false;
+    detectedConfig.value = null;
+    error.value = null;
+  }
+
   return {
     sessionId, messages, isStreaming, streamingContent, error, chatMode,
     backendResponses, synthesisState, selectedBackend, selectedAccount, selectedModel,
-    createSession, loadSession, send, setMode, selectBackend,
+    createSession, loadSession, send, setMode, selectBackend, resetSession,
     processGroups,
     canFinalize, isFinalizing, detectedConfig, finalize, setConfigParser,
   };

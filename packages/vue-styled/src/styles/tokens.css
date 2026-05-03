@@ -32,4 +32,36 @@
   --aia-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --aia-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   --aia-transition: 150ms ease-out;
+
+  /* Component-side aliases used by AccountWizard / LoginStream / etc.
+   * The wizard's CSS was authored against an unprefixed token vocabulary
+   * (e.g. var(--border-default), var(--text-primary), var(--accent-cyan))
+   * with no fallback values. Without these definitions, properties like
+   * `border: 1px solid var(--border-default)` resolve to invalid → the
+   * browser falls back to initial, so rounded borders disappear and
+   * accent-colored chips render unstyled. Map each one onto the existing
+   * --aia-* palette so consumers get a coherent dark theme out of the box.
+   * Override any of these in your own :root to retheme.
+   */
+  --bg-primary: var(--aia-bg);
+  --bg-secondary: var(--aia-bg-elevated);
+  --bg-tertiary: #1c1c20;
+  --bg-hover: var(--aia-bg-hover);
+  --text-primary: var(--aia-fg);
+  --text-secondary: var(--aia-fg-muted);
+  --text-tertiary: var(--aia-fg-subtle);
+  --text-on-accent: var(--aia-primary-fg);
+  --border-default: var(--aia-border);
+  --border-hover: var(--aia-border-hover);
+  --primary-color: var(--aia-primary);
+  --primary-hover: var(--aia-primary-hover);
+  --font-mono: var(--aia-font-mono);
+  --accent-red: var(--aia-danger);
+  --accent-crimson: #e11d48;
+  --accent-crimson-dim: rgba(225, 29, 72, 0.18);
+  --accent-emerald: var(--aia-success);
+  --accent-emerald-dim: rgba(16, 185, 129, 0.18);
+  --accent-cyan: #06b6d4;
+  --accent-violet: #8b5cf6;
+  --accent-amber: var(--aia-warning);
 }

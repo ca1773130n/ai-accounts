@@ -13,10 +13,17 @@ export interface SynthesisState {
   error?: string;
 }
 
+export interface BackendAccountOption {
+  /** Backend id (e.g. "bkd-…") — what gets sent as account_id. */
+  id: string;
+  /** Human-friendly label (display_name / email) — what the user sees. */
+  label: string;
+}
+
 export interface BackendOption {
   kind: string;
   displayName: string;
-  accounts: string[];
+  accounts: BackendAccountOption[];
   models: string[];
 }
 
@@ -35,10 +42,10 @@ export type SmartChatEvent = _WithSeq<
   | { kind: 'token'; payload: string }
   | { kind: 'done'; payload: Record<string, unknown> }
   | { kind: 'error'; payload: string }
-  | { kind: 'backend_delta'; backend: string; text: string }
-  | { kind: 'backend_complete'; backend: string }
-  | { kind: 'backend_error'; backend: string; error: string }
-  | { kind: 'backend_timeout'; backend: string }
+  | { kind: 'backend_delta'; backend: string; backend_kind?: string | null; account_label?: string | null; text: string }
+  | { kind: 'backend_complete'; backend: string; backend_kind?: string | null; account_label?: string | null }
+  | { kind: 'backend_error'; backend: string; backend_kind?: string | null; account_label?: string | null; error: string }
+  | { kind: 'backend_timeout'; backend: string; backend_kind?: string | null; account_label?: string | null }
   | { kind: 'synthesis_start'; primary_backend: string; backends_collected: string[] }
   | { kind: 'synthesis_delta'; text: string }
   | { kind: 'synthesis_complete' }

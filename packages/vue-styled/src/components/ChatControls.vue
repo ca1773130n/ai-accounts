@@ -5,6 +5,7 @@ import { computed } from 'vue';
 const props = defineProps<{
   chatMode: ChatMode;
   selectedBackend: string | null;
+  selectedAccount: string | null;
   selectedModel: string | null;
   backends: BackendOption[];
 }>();
@@ -12,6 +13,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:chatMode': [mode: ChatMode];
   'update:selectedBackend': [kind: string | null];
+  'update:selectedAccount': [id: string | null];
   'update:selectedModel': [model: string | null];
 }>();
 
@@ -49,9 +51,14 @@ const models = computed(() => activeBackend.value?.models ?? []);
     <!-- Account -->
     <div class="aia-controls__group">
       <label class="aia-controls__label">Account</label>
-      <select class="aia-controls__select" :disabled="isAutoMode">
+      <select
+        class="aia-controls__select"
+        :disabled="isAutoMode"
+        :value="selectedAccount ?? ''"
+        @change="emit('update:selectedAccount', ($event.target as HTMLSelectElement).value || null)"
+      >
         <option value="">{{ isAutoMode ? '--' : 'Default' }}</option>
-        <option v-for="acc in accounts" :key="acc" :value="acc">{{ acc }}</option>
+        <option v-for="acc in accounts" :key="acc.id" :value="acc.id">{{ acc.label }}</option>
       </select>
     </div>
 
