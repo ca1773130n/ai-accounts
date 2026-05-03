@@ -4,7 +4,7 @@ All notable changes to ai-accounts packages in this monorepo.
 
 ## 0.3.9 — 2026-05-03
 
-End-to-end fixes for the playground webui — codex device-code login, claude credential validation on macOS, multi-backend chat routing, and a polished playground app. Versions 0.3.3 through 0.3.8 ship on npm but were not entered here in real time; entries skipped (recoverable from `git log` between the corresponding tags).
+End-to-end fixes for the playground webui — codex device-code login, claude credential validation on macOS, multi-backend chat routing, and a polished playground app. Entries for 0.3.3 through 0.3.8 (which shipped on npm but were not entered here in real time) were backfilled from `git log` in this same release pass — see entries below.
 
 ### Added
 
@@ -35,7 +35,96 @@ End-to-end fixes for the playground webui — codex device-code login, claude cr
 
 ### Documentation
 
-- This entry. Acknowledges the unfilled gap from 0.3.3 to 0.3.8 — contents of those versions are recoverable from `git log` between the corresponding tags. Per-package `CHANGELOG.md` files similarly skip from `0.2.2` to `0.3.9`; backfilling those is tracked separately.
+- This entry. Per-package `CHANGELOG.md` files still skip from `0.2.2` to `0.3.9` (changesets-flow gap); backfilling those is tracked separately. The root changelog gap from 0.3.3 to 0.3.8 was backfilled from `git log` in this same release pass — entries below.
+
+---
+
+## 0.3.8 — 2026-04-22
+
+Claude CLI v2 paste-code reliability and OAuth error surfacing.
+Backfilled from `git log v0.3.7..d347f2e` 2026-05-03.
+
+### Fixed
+
+- **Force Claude v1 `/login` REPL flow** (`ai-accounts-core`, `backends/claude.py`). Claude CLI v2 (`claude auth login --claudeai`) does not read the OAuth code from stdin, so paste-code never delivered. Pin the backend to the v1 REPL flow (which does), and after paste send a best-effort follow-up Enter to flush the v2.1 TUI's buffered "Login successful" line so the regex-driven login loop can complete. Broaden success/error regex coverage. (d347f2e)
+- **`useLoginSession.reset()`** (`@ai-accounts/vue-headless`) added so the wizard's "Add another account" flow clears prior status/URL state instead of showing stale values. (d347f2e)
+
+### Added
+
+- **OAuth error detection in interactive PTY** (`ai-accounts-core`, `login/interactive.py`). New `_OAUTH_ERROR_RE` matches "OAuth error", "invalid grant/code/token/credentials", and HTTP 401/403/4xx in PTY output and yields `LoginFailed` instead of leaving the wizard hung waiting for a success event that would never come. (3eac129)
+- **"Verifying authorization code…" spinner** (`@ai-accounts/vue-styled`, `LoginStream.vue`) during the post-submit window for both the eager-paste path and the response-path. Purple-accent CSS spinner; clears on terminal status. (3eac129)
+
+---
+
+## 0.3.7 — 2026-04-18
+
+Direct PTY write fallback for paste-code, when Claude CLI v2 fails to
+emit the "Paste code here" prompt at all. Backfilled from `git log
+v0.3.6..v0.3.7` 2026-05-03.
+
+### Added
+
+- **`session.write_eager(text)`** (`ai-accounts-core`,
+  `ai-accounts-litestar`, `@ai-accounts/ts-core`,
+  `@ai-accounts/vue-headless`, `@ai-accounts/vue-styled`).
+  Claude CLI v2 occasionally never emits the `"Paste code here if prompted >"` text prompt, leaving the user with a queued code and no way to deliver it. New `LoginSession.write_eager(text)` writes directly to the CLI's stdin, bypassing prompt detection. Wire-up: `_ClaudeCliBrowserSession.write_eager()` calls `orchestrator.write(code + "\r")`; `POST /api/v1/backends/{id}/login/write` exposes it; `client.writeEagerLogin()` and `useLoginSession.writeEager()` plumb it to the UI; `LoginStream` calls `writeEager` first and falls back to `queue + respond` on throw. (248e5aa)
+
+---
+
+## 0.3.6 — 2026-04-18
+
+Eager paste-code form so users who finish OAuth before Claude CLI v2.1
+emits its prompt aren't stuck staring at an empty UI. Backfilled from
+`git log v0.3.5..v0.3.6` 2026-05-03.
+
+### Added
+
+- **Eager paste-code form in `LoginStream`** (`@ai-accounts/vue-styled`).
+  Claude CLI v2.1.x prints `"Paste code here if prompted >"` ~10 seconds AFTER the OAuth URL (during the spinner while it waits for the browser callback). Users who completed OAuth in another tab returned to find only the URL, no input, and assumed the UI was broken. `LoginStream` now renders a secondary paste-code form as soon as the OAuth URL arrives. If the CLI's own `textPrompt` has already fired, the eager form is hidden. Otherwise, user-submitted codes are queued locally and auto-flushed via `props.session.respond()` once the real `textPrompt` event lands. (95d3d12)
+
+---
+
+## 0.3.5 — 2026-04-18
+
+SSE parser CRLF compatibility. Backfilled from `git log v0.3.4..v0.3.5`
+2026-05-03.
+
+### Fixed
+
+- **`parseSseLoginEvents` normalises CRLF → LF**
+  (`@ai-accounts/ts-core`, `client/login-stream.ts`). Litestar's `ServerSentEvent` emits frames separated by CRLF (`\r\n\r\n`), but the parser searched only for LF (`\n\n`) and silently yielded nothing — the login wizard hung on "Starting login session…" while events were already streaming. Root cause verified via browser console instrumentation: `buffer.indexOf('\n\n')` returned `-1` against `'event: login\r\ndata: {…}\r\n\r\n'`. Fix: normalise CRLF → LF on each decoded chunk. Regression tests cover both CRLF (Litestar) and LF (other SSE emitters). (717f166)
+
+---
+
+## 0.3.4 — 2026-04-18
+
+Claude CLI 2.1.112 OAuth host change. Backfilled from `git log
+v0.3.3..v0.3.4` 2026-05-03.
+
+### Fixed
+
+- **Match `https://claude.com/*` OAuth URLs** (`ai-accounts-core`, `backends/claude.py`). Claude CLI v2.1.112 prints its OAuth URL as `https://claude.com/cai/oauth/authorize?…` (new `claude.com` host; the previous regex only matched `claude.ai`, `console.anthropic.com`, and `platform.claude.com`). On PTY output the URL never matched → `UrlPrompt` was never emitted → the wizard sat on "Starting login session…" forever. Regex extended; info logs added on URL detection (both backend regex and generic fallback) so future host changes are easier to diagnose from the sidecar log. (e0b403d)
+- **`uv.lock` synced to 0.3.3** baseline. (a34df78)
+
+---
+
+## 0.3.3 — 2026-04-18
+
+Login UX polish ported from Agented commit f52c55a + SSE reconnect
+replay. Backfilled from `git log v0.3.2..v0.3.3` 2026-05-03.
+
+### Added
+
+- **UrlPrompt SSE replay to late subscribers**
+  (`ai-accounts-core`, `ai-accounts-litestar`).
+  Fixes the case where a login client reconnects (page refresh, network blip) AFTER the OAuth URL was emitted but BEFORE the user clicked it. Previously the reconnect got only new events and sat on a spinner. `LoginSession` now caches the last `UrlPrompt` via a new `events_with_replay()` wrapper; `/login/stream` replays the cached prompt to the new subscriber before entering the live event loop, deduping against the wrapper's first live event so the same URL isn't emitted back-to-back. In-memory per-process replay only — full multi-subscriber broadcast and persistence across backend restarts are separate architectural concerns. (704427c)
+- **Account name optional in wizard** (`@ai-accounts/vue-styled`, `AccountWizard.vue`). Pre-fills the default config path (`~/.claude`, `~/.codex`, `~/.gemini`, `~/.opencode`) on mount and on backend-kind change. Blank names persist as `"default"` for DB NOT-NULL compatibility (via `resolveDisplayName`). Hint text: "(optional — leave blank to use the default config directory)". (5afb55b)
+- **`forceFreshAccountPrompt()` helper** (`@ai-accounts/vue-styled`). Appends `prompt=select_account&consent` + `login_hint` to Google OAuth URLs (gemini/codex) and `prompt=login` + `login_hint` to Claude OAuth URLs. Prevents wrong-account logins when the default browser is already signed in to a different account. Exported from the package root. (5afb55b)
+- **"Copy for Incognito" button + ⌘⇧N hint box in `LoginStream`** with the Cmd-Shift-N / Ctrl-Shift-N instruction. Auto-dismiss on close; "Copied!" state for 2.5s after clipboard write. (5afb55b)
+
+### Changed
+
+- **`AccountWizard` forwards `backendKind` + `email` to `LoginStream`** so `forceFreshAccountPrompt` can pick the right provider flavor without hard-coding. (5afb55b)
 
 ---
 
