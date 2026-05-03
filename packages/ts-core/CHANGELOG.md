@@ -1,5 +1,17 @@
 # @ai-accounts/ts-core
 
+## 0.3.9
+
+### Patch Changes
+
+- Add `BackendAccountOption` type and change `BackendOption.accounts` from `string[]` to `Array<{id, label}>` so account dropdowns can show display_name/email while still emitting the backend id.
+- Add `AiAccountsClient.listModels(backendId)` wrapping `GET /api/v1/backends/{id}/models`.
+- Add `AiAccountsClient.cliproxyLoginStatus(sessionId)` and `CliproxyLoginStatus` type for polling cliproxy login completion (device-code flow).
+- `CliproxyLoginBeginResponse` now carries `session_id` for the new polling endpoint.
+- `SmartChatEvent` `backend_*` variants gained `backend_kind` + `account_label` fields so the chat panel can render "Claude · user@example.com" instead of an opaque `bkd-…` hash.
+
+> Versions 0.2.3 through 0.3.8 ship on npm but were not entered here in real time (changesets-flow gap). Recoverable from git log between the corresponding tags. See the root `CHANGELOG.md` for the 0.3.9 monorepo summary.
+
 ## 0.2.2
 
 ### Patch Changes

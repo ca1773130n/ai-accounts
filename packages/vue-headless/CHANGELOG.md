@@ -1,5 +1,17 @@
 # @ai-accounts/vue-headless
 
+## 0.3.9
+
+### Patch Changes
+
+- Add `useSmartChat.resetSession()` — drops `sessionId` + visible chat state so consumers can start a fresh conversation when the user switches backend (server-side sessions are bound to their original `backend_id`).
+- `useSmartChat.dispatch` now propagates `backend_kind` + `account_label` from `backend_*` SSE events into `BackendResponseState.{backendKind, accountLabel}` so chat-panel cards can render proper kind + account labels instead of `bkd-…` hashes.
+- `BackendResponseState` gained `backendKind` + `accountLabel` optional fields.
+- Updated dependencies (chat type changes from ts-core)
+  - @ai-accounts/ts-core@0.3.9
+
+> Versions 0.2.3 through 0.3.8 ship on npm but were not entered here in real time (changesets-flow gap). Recoverable from git log between the corresponding tags. See the root `CHANGELOG.md` for the 0.3.9 monorepo summary.
+
 ## 0.2.2
 
 ### Patch Changes

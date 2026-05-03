@@ -1,4 +1,4 @@
-# ai-accounts Architecture Reference (v0.3.0-alpha.1)
+# ai-accounts Architecture Reference (v0.3.9)
 
 ## 1. Package Dependency Graph
 
@@ -8,8 +8,8 @@ Root `pyproject.toml` at `/Users/neo/Developer/Projects/ai-accounts/pyproject.to
 
 ```
 ai-accounts-workspace (root, not published)
-  ├── packages/core        → ai-accounts-core  v0.3.0a2
-  ├── packages/litestar    → ai-accounts-litestar v0.3.0a2  depends on: ai-accounts-core
+  ├── packages/core        → ai-accounts-core  v0.3.9
+  ├── packages/litestar    → ai-accounts-litestar v0.3.9  depends on: ai-accounts-core
   └── apps/playground      → ai-accounts-playground v0.0.0   depends on: ai-accounts-core, ai-accounts-litestar, uvicorn
 ```
 
@@ -27,9 +27,9 @@ Root `package.json` at `/Users/neo/Developer/Projects/ai-accounts/package.json` 
 
 ```
 ai-accounts-workspace (root, private)
-  ├── packages/ts-core       → @ai-accounts/ts-core  v0.3.0-alpha.2
-  ├── packages/vue-headless  → @ai-accounts/vue-headless v0.3.0-alpha.2  depends on: @ai-accounts/ts-core
-  ├── packages/vue-styled    → @ai-accounts/vue-styled  v0.3.0-alpha.2  depends on: @ai-accounts/ts-core, @ai-accounts/vue-headless
+  ├── packages/ts-core       → @ai-accounts/ts-core  v0.3.9
+  ├── packages/vue-headless  → @ai-accounts/vue-headless v0.3.9  depends on: @ai-accounts/ts-core
+  ├── packages/vue-styled    → @ai-accounts/vue-styled  v0.3.9  depends on: @ai-accounts/ts-core, @ai-accounts/vue-headless
   ├── apps/playground        → playground v0.0.4   depends on: all three packages above + vue
   └── docs/                  → docs (VitePress site, no cross-package deps)
 ```
@@ -39,8 +39,8 @@ ai-accounts-workspace (root, private)
 ```mermaid
 graph TD
     subgraph Python
-        core["ai-accounts-core<br/>0.3.0a2"]
-        litestar["ai-accounts-litestar<br/>0.3.0a2"]
+        core["ai-accounts-core<br/>0.3.9"]
+        litestar["ai-accounts-litestar<br/>0.3.9"]
         playground_py["playground<br/>(server.py)"]
         litestar --> core
         playground_py --> core
@@ -48,9 +48,9 @@ graph TD
     end
 
     subgraph TypeScript
-        tscore["@ai-accounts/ts-core<br/>0.3.0-alpha.2"]
-        headless["@ai-accounts/vue-headless<br/>0.3.0-alpha.2"]
-        styled["@ai-accounts/vue-styled<br/>0.3.0-alpha.2"]
+        tscore["@ai-accounts/ts-core<br/>0.3.9"]
+        headless["@ai-accounts/vue-headless<br/>0.3.9"]
+        styled["@ai-accounts/vue-styled<br/>0.3.9"]
         playground_ts["playground<br/>(Vite app)"]
         headless --> tscore
         styled --> tscore
@@ -499,7 +499,7 @@ Exports (type-only unless noted):
 - `useAiAccounts` (value)
 - `useBackendRegistry` (value)
 - `useLoginSession` (value), `UseLoginSession`, `LoginStatus`
-- `version = '0.3.0-alpha.1'`
+- `version = '0.3.9'`
 
 ---
 

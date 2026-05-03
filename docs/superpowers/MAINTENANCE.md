@@ -1,21 +1,23 @@
 # ai-accounts Maintenance Guide
 
-Last updated: 2026-04-17 (0.3.1 release)
+Last updated: 2026-05-03 (0.3.9 release)
 
 This guide covers operational knowledge for maintaining the ai-accounts system
 across the `ai-accounts` monorepo (branch `main`) and the `Agented` consumer
 (branch `main`).
 
-**Latest published release: 0.3.1** (npm + PyPI). See the `## 0.3.1 —
-2026-04-17` entry in `CHANGELOG.md` for the security + correctness fixes it
-contains (auth middleware, login session binding, schema migrations, SSE
-framing, concurrency fixes).
+**Latest published release: 0.3.9** (npm). See the `## 0.3.9 — 2026-05-03`
+entry in `CHANGELOG.md` for the playground + cliproxy device-code login,
+claude macOS Keychain validation, multi-backend chat routing, and missing
+wizard CSS token fixes. Versions 0.3.3–0.3.8 are present on npm but were
+not entered in the changelog in real time; recoverable from `git log`
+between the corresponding tags.
 
 ---
 
 ## 1. Dependency Inventory
 
-### 1.1 Python: ai-accounts-core (0.3.1)
+### 1.1 Python: ai-accounts-core (0.3.9)
 
 | Dependency      | Constraint   | Notes |
 |-----------------|-------------|-------|
@@ -24,11 +26,11 @@ framing, concurrency fixes).
 | `cryptography`  | `>=43.0`    | Mature, stable. (c) No upper bound -- major bumps occasionally drop old Python versions. |
 | `httpx`         | `>=0.27`    | (a) Pre-1.0. (c) No upper bound. (d) Also used by Agented backend (`>=0.28.1`) and duplicated conceptually with JS `fetch` in ts-core. |
 
-### 1.2 Python: ai-accounts-litestar (0.3.1)
+### 1.2 Python: ai-accounts-litestar (0.3.9)
 
 | Dependency                | Constraint              | Notes |
 |---------------------------|------------------------|-------|
-| `ai-accounts-core`        | workspace (dev), `==0.3.1` (Agented) | (b) Pinned exactly in Agented's pyproject.toml -- must bump on every release. |
+| `ai-accounts-core`        | workspace (dev), `==0.3.9` (Agented) | (b) Pinned exactly in Agented's pyproject.toml -- must bump on every release. |
 | `litestar[standard]`      | `>=2.12`               | (c) No upper bound. Litestar is pre-1.0 historically but now >= 2.x and stable. |
 
 ### 1.3 Python: Workspace dev dependencies (root pyproject.toml)
@@ -47,18 +49,18 @@ framing, concurrency fixes).
 
 | Dependency                 | Constraint       | Notes |
 |---------------------------|-----------------|-------|
-| `ai-accounts-core`        | `==0.3.1`     | (b) Exactly pinned. Must be bumped with each ai-accounts release. |
-| `ai-accounts-litestar`    | `==0.3.1`     | (b) Exactly pinned. Same. |
+| `ai-accounts-core`        | `==0.3.9`     | (b) Exactly pinned. Must be bumped with each ai-accounts release. |
+| `ai-accounts-litestar`    | `==0.3.9`     | (b) Exactly pinned. Same. |
 | `cryptography`            | `>=41.0.0`      | Also a transitive dep of ai-accounts-core (>=43.0). The lower bound here (41.0) is less restrictive -- ai-accounts-core's >=43.0 wins at resolve time, but the discrepancy should be harmonized. |
 | `httpx`                   | `>=0.28.1`      | Overlaps with ai-accounts-core's >=0.27. |
 | `litestar`                | Transitive only  | Pulled in by ai-accounts-litestar. |
 
-### 1.5 TypeScript: @ai-accounts/ts-core (0.3.1)
+### 1.5 TypeScript: @ai-accounts/ts-core (0.3.9)
 
 No runtime dependencies. Zero-dep package that uses the platform `fetch` API.
 Build-time: `tsup`, `typescript`, `vitest`.
 
-### 1.6 TypeScript: @ai-accounts/vue-headless (0.3.1)
+### 1.6 TypeScript: @ai-accounts/vue-headless (0.3.9)
 
 | Dependency                | Constraint        | Notes |
 |---------------------------|------------------|-------|
@@ -67,7 +69,7 @@ Build-time: `tsup`, `typescript`, `vitest`.
 
 Dev: `@vue/test-utils ^2.4.0`, `happy-dom ^15.0.0` (a: pre-1.0).
 
-### 1.7 TypeScript: @ai-accounts/vue-styled (0.3.1)
+### 1.7 TypeScript: @ai-accounts/vue-styled (0.3.9)
 
 | Dependency                    | Constraint        | Notes |
 |-------------------------------|------------------|-------|
@@ -96,9 +98,9 @@ Dev-only: `@changesets/cli ^2.30.0`, `@types/node ^22.0.0`,
 - `happy-dom` (15.0+) -- JS test env
 
 **(b) Pinned too tightly:**
-- Agented pins `ai-accounts-core==0.3.1` and `ai-accounts-litestar==0.3.1` exactly.
+- Agented pins `ai-accounts-core==0.3.9` and `ai-accounts-litestar==0.3.9` exactly.
   Every ai-accounts release requires a corresponding Agented pyproject.toml bump.
-  Consider using `~=0.3.1` (compatible release) once stable.
+  Consider using `~=0.3.9` (compatible release) once stable.
 
 **(c) Missing upper bounds:**
 - Every ai-accounts Python dependency uses only a floor (`>=`). A new major
@@ -116,11 +118,14 @@ Dev-only: `@changesets/cli ^2.30.0`, `@types/node ^22.0.0`,
 
 ## 2. Upgrade Paths
 
-### 2.1 Current state: 0.3.1 (stable)
+### 2.1 Current state: 0.3.9 (stable)
 
-The alpha sequence is complete. 0.3.0 stable shipped 2026-04-16; 0.3.1
-followed 2026-04-17 with security and correctness patches. Active
-pre-work for 0.3.2 lives on `feat/0.3.2-agented-parity`.
+The alpha sequence is complete. 0.3.0 stable shipped 2026-04-16; the
+0.3.x line has continued with security, correctness, and end-to-end
+playground polish through 0.3.9 (2026-05-03). 0.3.9 is the latest
+published release on npm. Versions 0.3.3 through 0.3.8 are present on
+npm but were not entered in `CHANGELOG.md` in real time — recoverable
+from `git log` between the corresponding tags.
 
 ### 2.2 Release history
 
