@@ -435,15 +435,20 @@ class CodexBackend:
         # CODEX_HOME must be absolute — codex resolves it against its own cwd
         # and our subprocess cwd defaults to the parent's, doubling the path.
         # NOTE: `codex login status` exits 0 even when "Not logged in" — must
-        # inspect stdout to distinguish actual auth from a missing session.
+        # inspect output text to distinguish actual auth from a missing session.
+        # Codex 0.128.0 routes the status line ("Logged in using ChatGPT") to
+        # STDERR, not stdout. Check both streams so this works on 0.121.0
+        # (stdout) and 0.128.0+ (stderr).
         iso = isolation_dir.resolve()
         env = self._env(credential, iso)
-        rc, stdout, _stderr = await self._run(
+        rc, stdout, stderr = await self._run(
             {"argv": [path, "login", "status"], "env": env}
         )
         if rc != 0:
             return False
-        text = stdout.decode("utf-8", errors="replace").lower()
+        out_text = stdout.decode("utf-8", errors="replace").lower()
+        err_text = stderr.decode("utf-8", errors="replace").lower()
+        text = f"{out_text}\n{err_text}"
         return "logged in" in text and "not logged in" not in text
 
     async def list_models(
