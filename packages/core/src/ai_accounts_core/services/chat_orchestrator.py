@@ -102,14 +102,29 @@ class ChatOrchestrator:
                 # Pick a real model id — passing model="auto" downstream causes
                 # CLIProxyAPI to mis-route (it has no "auto" provider mapping)
                 # and return 401/429 from a stranger provider's credentials.
-                # Use the backend's first advertised model as a sensible default.
+                # If list_models returns empty / throws, skip this backend with
+                # an explicit error rather than falling back to "auto" — the
+                # fallback would silently 502 with "unknown provider for model
+                # auto" and confuse the user.
                 try:
                     models = await impl.list_models(
                         result.credential, isolation_dir=Path(result.isolation_dir)
                     )
-                except Exception:
-                    models = []
-                model_id = models[0].id if models else "auto"
+                except Exception as exc:
+                    await queue.put(AllModeEvent(
+                        kind="backend_error", backend=bid, backend_kind=kind,
+                        account_label=label,
+                        error=f"could not enumerate models: {type(exc).__name__}: {exc}",
+                    ))
+                    return
+                if not models:
+                    await queue.put(AllModeEvent(
+                        kind="backend_error", backend=bid, backend_kind=kind,
+                        account_label=label,
+                        error=f"no models available for {kind}",
+                    ))
+                    return
+                model_id = models[0].id
                 request = ChatRequest(messages=tuple(history), model=model_id)
                 async for event in impl.chat(
                     request, result.credential, isolation_dir=Path(result.isolation_dir),
@@ -242,10 +257,20 @@ class ChatOrchestrator:
             synth_models = await impl.list_models(
                 result.credential, isolation_dir=Path(result.isolation_dir)
             )
-        except Exception:
-            synth_models = []
-        synth_model_id = synth_models[0].id if synth_models else "auto"
-        synth_request = ChatRequest(messages=(synth_msg,), model=synth_model_id)
+        except Exception as exc:
+            yield CompoundEvent(
+                kind="synthesis_error",
+                error=f"could not enumerate {primary} models for synthesis: "
+                f"{type(exc).__name__}: {exc}",
+            )
+            return
+        if not synth_models:
+            yield CompoundEvent(
+                kind="synthesis_error",
+                error=f"no models available for synthesis backend {primary}",
+            )
+            return
+        synth_request = ChatRequest(messages=(synth_msg,), model=synth_models[0].id)
         try:
             async for event in impl.chat(
                 synth_request, result.credential, isolation_dir=Path(result.isolation_dir),

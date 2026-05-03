@@ -53,7 +53,26 @@ async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEv
                 if resp.status_code != 200:
                     body = await resp.aread()
                     logger.warning("CLIProxy error %d: %s", resp.status_code, body[:200])
-                    yield ChatStreamEvent(kind="error", payload=f"Proxy error {resp.status_code}")
+                    # Surface the upstream error to the UI. CLIProxyAPI mostly
+                    # returns OpenAI-style {"error":{"message":...,"code":...}};
+                    # parse that out, fall back to a sanitized body excerpt.
+                    detail: str | None = None
+                    try:
+                        parsed = json.loads(body or b"{}")
+                        if isinstance(parsed, dict):
+                            err = parsed.get("error")
+                            if isinstance(err, dict):
+                                detail = err.get("message") or err.get("code")
+                            elif isinstance(err, str):
+                                detail = err
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        pass
+                    if not detail:
+                        # Last-resort: short text excerpt with control chars stripped.
+                        text = body.decode("utf-8", errors="replace")[:200]
+                        detail = " ".join(text.split())
+                    msg = f"Proxy error {resp.status_code}: {detail}" if detail else f"Proxy error {resp.status_code}"
+                    yield ChatStreamEvent(kind="error", payload=msg)
                     return
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):

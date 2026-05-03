@@ -45,3 +45,37 @@ clean:
     rm -rf packages/*/dist packages/*/.turbo
     find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
     find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
+
+# ── Release ──────────────────────────────────────────────────────────────
+# `just bump 0.3.10` updates every published package's version (JS package.json,
+# Python pyproject.toml) AND the source `version` constants in vue-styled /
+# vue-headless. Run before `just release`.
+bump VERSION:
+    @echo "Bumping all packages to {{VERSION}}…"
+    sed -i.bak 's/^version = "[0-9.]*"/version = "{{VERSION}}"/' packages/core/pyproject.toml packages/litestar/pyproject.toml
+    @for f in packages/ts-core/package.json packages/vue-headless/package.json packages/vue-styled/package.json; do \
+        sed -i.bak 's/"version": "[0-9.]*"/"version": "{{VERSION}}"/' "$f"; \
+    done
+    sed -i.bak "s/version = '[0-9.]*'/version = '{{VERSION}}'/" packages/vue-styled/src/index.ts packages/vue-headless/src/index.ts
+    rm -f packages/*/pyproject.toml.bak packages/*/package.json.bak packages/*/src/index.ts.bak
+    uv sync
+    @echo "Bumped. Verify with: git diff -- packages apps"
+
+# `just release VERSION` runs the full ship sequence:
+#   tests → build → tag → push → npm publish.
+# Assumes you've already run `just bump VERSION`, committed, and merged to main.
+release VERSION:
+    @echo "Releasing v{{VERSION}}…"
+    @# Bail if the working tree is dirty — releases must be from a clean main.
+    @test -z "$(git status --porcelain)" || (echo "ERROR: working tree dirty. Commit or stash first." && exit 1)
+    @test "$(git rev-parse --abbrev-ref HEAD)" = "main" || (echo "ERROR: not on main." && exit 1)
+    just test
+    just build
+    git tag -a v{{VERSION}} -m "v{{VERSION}}"
+    git push origin main
+    git push origin v{{VERSION}}
+    pnpm publish -r --access public --no-git-checks
+    @echo "Released v{{VERSION}}. Verify on npm:"
+    @for pkg in @ai-accounts/ts-core @ai-accounts/vue-headless @ai-accounts/vue-styled; do \
+        echo "  $pkg latest: $$(npm view $pkg version)"; \
+    done
