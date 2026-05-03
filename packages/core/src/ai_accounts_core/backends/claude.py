@@ -7,6 +7,8 @@ import logging
 import os
 import re
 import shutil
+import subprocess
+import sys
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -386,14 +388,46 @@ class ClaudeBackend:
         return DetectResult(installed=True, version=version, path=path)
 
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
-        # Claude CLI v1/v2 has no `auth status` subcommand. We validate by:
-        #   1. Confirming the binary is on PATH (sanity).
-        #   2. Confirming `<isolation>/.credentials.json` exists, is non-empty,
-        #      and parses as JSON. This is the file the CLI writes after a
-        #      successful /login flow.
+        # Claude CLI v1/v2 has no `auth status` subcommand. We validate by
+        # confirming the binary is on PATH and that a credential exists where
+        # the CLI stores it on this platform:
+        #
+        #   * macOS: the CLI uses the system Keychain (service "Claude Safe
+        #     Storage", account "Claude Key"). NOTE: keychain entries are
+        #     not scoped by CLAUDE_CONFIG_DIR, so multiple "isolated" claude
+        #     accounts on macOS share one credential — adding a second
+        #     account effectively swaps out the first. This is a known
+        #     limitation of the upstream CLI's storage model.
+        #   * Linux / no-keychain platforms: the CLI writes
+        #     `<CLAUDE_CONFIG_DIR>/.credentials.json` after /login. The file
+        #     existing and parsing as non-empty JSON is sufficient.
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return False
+
+        if sys.platform == "darwin":
+            # `security` is part of the OS; this never blocks on user input.
+            try:
+                proc = await asyncio.to_thread(
+                    subprocess.run,
+                    [
+                        "security",
+                        "find-generic-password",
+                        "-s",
+                        "Claude Safe Storage",
+                        "-a",
+                        "Claude Key",
+                    ],
+                    capture_output=True,
+                    timeout=5,
+                )
+                if proc.returncode == 0:
+                    return True
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                pass
+            # Fall through to the file probe — works for unusual setups
+            # (CLI configured to store in a file, headless macOS images, etc).
+
         iso = resolved_iso(isolation_dir)
         creds_file = iso / ".credentials.json"
         if not creds_file.is_file():
@@ -405,25 +439,23 @@ class ClaudeBackend:
         return bool(data)
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
-        # Claude CLI has no `models list` subcommand. Return a static set of
-        # the public Anthropic models; live discovery happens upstream via
-        # CLIProxyAPI's /v1/models when the proxy is registered.
+        # Claude CLI has no `models list` subcommand. The list mirrors what
+        # CLIProxyAPI 6.8.30 advertises for the claude provider — every id
+        # below is accepted by /v1/chat/completions when the account is
+        # registered through cliproxy. Picking a model not in cliproxy's
+        # mapping (e.g. an aspirational future name) causes the proxy to
+        # reject with "unknown provider for model …".
         return [
-            Model(
-                id="claude-opus-4-7",
-                display_name="Claude Opus 4.7",
-                context_window=1_000_000,
-            ),
-            Model(
-                id="claude-sonnet-4-6",
-                display_name="Claude Sonnet 4.6",
-                context_window=1_000_000,
-            ),
-            Model(
-                id="claude-haiku-4-5-20251001",
-                display_name="Claude Haiku 4.5",
-                context_window=200_000,
-            ),
+            Model(id="claude-opus-4-6", display_name="Claude Opus 4.6", context_window=1_000_000),
+            Model(id="claude-opus-4-5-20251101", display_name="Claude Opus 4.5", context_window=200_000),
+            Model(id="claude-opus-4-1-20250805", display_name="Claude Opus 4.1", context_window=200_000),
+            Model(id="claude-opus-4-20250514", display_name="Claude Opus 4", context_window=200_000),
+            Model(id="claude-sonnet-4-6", display_name="Claude Sonnet 4.6", context_window=1_000_000),
+            Model(id="claude-sonnet-4-5-20250929", display_name="Claude Sonnet 4.5", context_window=1_000_000),
+            Model(id="claude-sonnet-4-20250514", display_name="Claude Sonnet 4", context_window=200_000),
+            Model(id="claude-3-7-sonnet-20250219", display_name="Claude 3.7 Sonnet", context_window=200_000),
+            Model(id="claude-haiku-4-5-20251001", display_name="Claude Haiku 4.5", context_window=200_000),
+            Model(id="claude-3-5-haiku-20241022", display_name="Claude 3.5 Haiku", context_window=200_000),
         ]
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:

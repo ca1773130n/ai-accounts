@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -6,6 +7,18 @@ import pytest
 
 from ai_accounts_core.backends.claude import ClaudeBackend
 from ai_accounts_core.protocols.backend import ChatRequest, PtyRequest
+
+
+def _no_keychain():
+    """Force the macOS keychain probe in validate() to report 'not found'.
+
+    On developers' macOS the system keychain may have a real Claude entry,
+    which would short-circuit validate() to True and mask the file probe
+    these tests are exercising. Patch subprocess.run inside the claude
+    backend module to always return rc=1.
+    """
+    fake = subprocess.CompletedProcess(args=[], returncode=1, stdout=b"", stderr=b"")
+    return patch("ai_accounts_core.backends.claude.subprocess.run", return_value=fake)
 
 
 @pytest.mark.asyncio
@@ -55,7 +68,7 @@ async def test_validate_succeeds_when_credentials_file_present(tmp_path: Path):
     (isolation_dir / ".credentials.json").write_text(
         json.dumps({"oauth_token": "sk-ant-..."})
     )
-    with patch("shutil.which", return_value="/usr/local/bin/claude"):
+    with patch("shutil.which", return_value="/usr/local/bin/claude"), _no_keychain():
         result = await backend.validate(b"", isolation_dir=isolation_dir)
     assert result is True
 
@@ -63,7 +76,7 @@ async def test_validate_succeeds_when_credentials_file_present(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_validate_returns_false_when_credentials_file_missing(tmp_path: Path):
     backend = ClaudeBackend()
-    with patch("shutil.which", return_value="/usr/local/bin/claude"):
+    with patch("shutil.which", return_value="/usr/local/bin/claude"), _no_keychain():
         result = await backend.validate(b"", isolation_dir=tmp_path / "claude")
     assert result is False
 
@@ -74,7 +87,7 @@ async def test_validate_returns_false_when_credentials_corrupt(tmp_path: Path):
     isolation_dir = tmp_path / "claude"
     isolation_dir.mkdir(parents=True)
     (isolation_dir / ".credentials.json").write_text("not json{{")
-    with patch("shutil.which", return_value="/usr/local/bin/claude"):
+    with patch("shutil.which", return_value="/usr/local/bin/claude"), _no_keychain():
         result = await backend.validate(b"", isolation_dir=isolation_dir)
     assert result is False
 

@@ -63,14 +63,12 @@ async def test_validate_returns_false_when_not_logged_in(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_list_models_parses_json(tmp_path: Path):
-    import json as _json
+async def test_list_models_returns_static_set(tmp_path: Path):
+    """codex 0.128.0 has no `models list` subcommand; we return a static set
+    matching what CLIProxyAPI advertises for the codex provider."""
     backend = CodexBackend()
-    payload = _json.dumps([
-        {"id": "gpt-4o", "display_name": "GPT-4o", "context_window": 128_000},
-    ]).encode()
-    with patch("shutil.which", return_value="/usr/local/bin/codex"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, payload, b""))):
-        models = await backend.list_models(b"", isolation_dir=tmp_path / "codex")
-    assert len(models) == 1
-    assert models[0].id == "gpt-4o"
+    models = await backend.list_models(b"", isolation_dir=tmp_path / "codex")
+    ids = {m.id for m in models}
+    # gpt-5-codex is the canonical codex CLI default and must always be present.
+    assert "gpt-5-codex" in ids
+    assert all(m.context_window for m in models)

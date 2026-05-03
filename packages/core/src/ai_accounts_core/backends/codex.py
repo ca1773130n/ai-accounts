@@ -454,26 +454,24 @@ class CodexBackend:
     async def list_models(
         self, credential: bytes, *, isolation_dir: Path
     ) -> list[Model]:
-        path = shutil.which(self._CLI_NAME)
-        if path is None:
-            return []
-        env = self._env(credential, isolation_dir)
-        rc, stdout, _stderr = await self._run(
-            {"argv": [path, "models", "list", "--json"], "env": env}
-        )
-        if rc != 0:
-            return []
-        try:
-            raw = json.loads(stdout)
-        except json.JSONDecodeError:
-            return []
+        # Codex CLI 0.128.0 has no `models list` subcommand. Mirror the
+        # claude/gemini fixes (commits 8ec6372, 1b4c642): return a static
+        # set of the public Codex-reachable models. The list mirrors what
+        # CLIProxyAPI 6.8.30 advertises for the chatgpt-codex provider —
+        # users registering through cliproxy will see these names accepted
+        # by /v1/chat/completions. Live discovery is still possible via
+        # CLIProxyAPI's /v1/models when needed.
         return [
-            Model(
-                id=item["id"],
-                display_name=item.get("display_name", item["id"]),
-                context_window=item.get("context_window"),
-            )
-            for item in raw
+            Model(id="gpt-5.3-codex", display_name="GPT-5.3 Codex", context_window=400_000),
+            Model(id="gpt-5.3-codex-spark", display_name="GPT-5.3 Codex Spark", context_window=400_000),
+            Model(id="gpt-5.2-codex", display_name="GPT-5.2 Codex", context_window=400_000),
+            Model(id="gpt-5.1-codex-max", display_name="GPT-5.1 Codex Max", context_window=400_000),
+            Model(id="gpt-5.1-codex-mini", display_name="GPT-5.1 Codex Mini", context_window=400_000),
+            Model(id="gpt-5-codex", display_name="GPT-5 Codex", context_window=400_000),
+            Model(id="gpt-5-codex-mini", display_name="GPT-5 Codex Mini", context_window=400_000),
+            Model(id="gpt-5.2", display_name="GPT-5.2", context_window=400_000),
+            Model(id="gpt-5.1", display_name="GPT-5.1", context_window=400_000),
+            Model(id="gpt-5", display_name="GPT-5", context_window=400_000),
         ]
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
