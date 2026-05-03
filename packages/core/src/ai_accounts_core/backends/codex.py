@@ -102,24 +102,15 @@ class _CodexOAuthDeviceSession(LoginSession):
                     pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
-        # Codex 0.121.0 had a `--device-auth` flag that printed a URL + code.
-        # Codex 0.128.0 dropped it — `codex login` is now the only flow,
-        # using a localhost OAuth callback. The CLI prints a URL that the
-        # user opens in a browser; no user_code is shown.
-        #
-        # We use the bare `codex login` argv on both versions. On 0.121
-        # the URL parser still grabs the device-auth URL (a user_code may
-        # also appear, but we no longer gate UrlPrompt emission on it).
-        # On 0.128.0 the URL is the localhost-callback link.
-        #
-        # CODEX_HOME MUST be absolute — the codex CLI resolves it against
-        # its own cwd, and our cwd= chdir would otherwise cause it to
-        # look for backend_dirs/<id>/backend_dirs/<id> (doubled relative
-        # path).
+        # Codex 0.121.0 emits a device-code URL only when explicitly asked via
+        # --device-auth; bare `codex login` uses the local-callback browser flow.
+        # CODEX_HOME MUST be absolute — the codex CLI resolves it against its
+        # own cwd, and our cwd= chdir would otherwise cause it to look for
+        # backend_dirs/<id>/backend_dirs/<id> (doubled relative path).
         iso = self._isolation_dir.resolve()
         iso.mkdir(parents=True, exist_ok=True)
         self._orchestrator = CliOrchestrator(
-            argv=["codex", "login"],
+            argv=["codex", "login", "--device-auth"],
             env={"CODEX_HOME": str(iso)},
             cwd=iso,
         )
@@ -154,11 +145,7 @@ class _CodexOAuthDeviceSession(LoginSession):
                     m = _CODEX_USER_CODE_RE.search(buffer)
                     if m:
                         user_code = m.group(1)
-                # Codex 0.128.0 dropped the device-code flow — only a URL
-                # appears (no user_code). Emit the prompt as soon as we
-                # have a URL; user_code is forwarded when present (legacy
-                # 0.121.0 support) but no longer gates the emission.
-                if not emitted_url_prompt and url:
+                if not emitted_url_prompt and url and user_code:
                     emitted_url_prompt = True
                     yield UrlPrompt(prompt_id="device", url=url, user_code=user_code)
                 if any(mk in chunk for mk in _CODEX_SUCCESS_MARKERS):
