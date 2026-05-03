@@ -25,9 +25,7 @@ const props = withDefaults(
     /** When provided, render the chatMode radio strip on the right. */
     chatMode?: ChatMode
   }>(),
-  {
-    chatMode: undefined,
-  },
+  {},
 )
 
 const emit = defineEmits<{
