@@ -14,6 +14,7 @@ export { default as AiChatPanel } from './components/AiChatPanel.vue';
 export { default as ChatBubble } from './components/ChatBubble.vue';
 export { default as ChatControls } from './components/ChatControls.vue';
 export { default as ChatInput } from './components/ChatInput.vue';
+export { default as AiChatSelector } from './components/AiChatSelector.vue';
 export { default as AllModeResponses } from './components/AllModeResponses.vue';
 export { default as CompoundSynthesis } from './components/CompoundSynthesis.vue';
 export { default as ProcessGroup } from './components/ProcessGroup.vue';
