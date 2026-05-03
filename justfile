@@ -77,5 +77,5 @@ release VERSION:
     pnpm publish -r --access public --no-git-checks
     @echo "Released v{{VERSION}}. Verify on npm:"
     @for pkg in @ai-accounts/ts-core @ai-accounts/vue-headless @ai-accounts/vue-styled; do \
-        echo "  $pkg latest: $$(npm view $pkg version)"; \
+        printf '  %s latest: ' "$pkg"; npm view "$pkg" version; \
     done
