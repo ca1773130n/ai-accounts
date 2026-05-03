@@ -1,13 +1,35 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { marked } from 'marked';
 import type { BackendResponseState } from '@ai-accounts/vue-headless';
 
-const props = withDefaults(defineProps<{
+interface Props {
   responses: Map<string, BackendResponseState>;
   collapsible?: boolean;
-}>(), {
+  /**
+   * When true, render a single global toggle header
+   * ("N/total backends responded" + chevron) above the response cards.
+   * The cards are hidden until the user clicks the header. This is
+   * the Agented "compound mode" collapse: one summary, many cards.
+   * Default `false` preserves the upstream per-card `<details>` UX.
+   * Back-migrated from Agented.
+   */
+  summaryHeader?: boolean;
+  /**
+   * Optional placeholder text rendered in a streaming card whose
+   * `content` is still empty. When `null` (default) the body is
+   * suppressed exactly as today. When set (typically
+   * "Waiting for response...") the body is rendered with the
+   * placeholder string in italics.
+   * Back-migrated from Agented.
+   */
+  waitingPlaceholder?: string | null;
+}
+
+const props = withDefaults(defineProps<Props>(), {
   collapsible: false,
+  summaryHeader: false,
+  waitingPlaceholder: null,
 });
 
 const BACKEND_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
@@ -64,21 +86,72 @@ function explainError(raw: string): { title: string; hint: string | null } {
   return { title: 'Backend error', hint: null };
 }
 
-/** True when the card's body is empty for a non-success status — caller
- *  should suppress the markdown body so we don't render an empty box. */
-function bodyHidden(resp: BackendResponseState): boolean {
-  return (resp.status === 'error' || resp.status === 'timeout') && !resp.content;
-}
-
 const entries = computed(() => Array.from(props.responses.entries()));
 
 function renderMarkdown(content: string): string {
   return marked.parse(content || '') as string;
 }
+
+// --- Summary header collapse state. Back-migrated from Agented. ---
+const summaryExpanded = ref(false);
+
+/** Summary line: "N/total backends responded" or "total backend responses". */
+const collapsedSummary = computed(() => {
+  const total = entries.value.length;
+  const complete = entries.value.filter(([, r]) => r.status === 'complete').length;
+  const inFlight = total - complete;
+  if (inFlight > 0) return `${complete}/${total} backends responded`;
+  return `${total} backend responses`;
+});
+
+// If summaryHeader is turned off after being on, reset the expand state
+// so the next toggle starts collapsed.
+watch(
+  () => props.summaryHeader,
+  (val) => {
+    if (!val) summaryExpanded.value = false;
+  },
+);
+
+/** True when we should render the markdown body for this card. */
+function bodyShown(resp: BackendResponseState): boolean {
+  // Suppress the body for non-success states with no content (existing).
+  if ((resp.status === 'error' || resp.status === 'timeout') && !resp.content) return false;
+  // With waitingPlaceholder set, an empty streaming card now shows the
+  // placeholder text instead of an empty box. Back-migrated from Agented.
+  if (props.waitingPlaceholder && resp.status === 'streaming' && !resp.content) return true;
+  return true;
+}
+
+/** Render content if present, else fall back to the waitingPlaceholder
+ *  (italicized) — only used when bodyShown(resp) is true. */
+function bodyHtml(resp: BackendResponseState): string {
+  if (!resp.content && props.waitingPlaceholder && resp.status === 'streaming') {
+    return `<em class="aia-resp__waiting">${props.waitingPlaceholder}</em>`;
+  }
+  return renderMarkdown(resp.content);
+}
 </script>
 
 <template>
   <div class="aia-responses">
+    <!-- Optional global summary toggle. Back-migrated from Agented. -->
+    <button
+      v-if="summaryHeader && entries.length > 0"
+      class="aia-responses__summary"
+      @click="summaryExpanded = !summaryExpanded"
+    >
+      <svg
+        :class="['aia-responses__summary-chevron', { 'is-open': summaryExpanded }]"
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        width="14" height="14" aria-hidden="true"
+      >
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+      <span class="aia-responses__summary-label">Individual Responses</span>
+      <span class="aia-responses__summary-count">{{ collapsedSummary }}</span>
+    </button>
+    <template v-if="!summaryHeader || summaryExpanded">
     <div
       v-for="[key, resp] in entries" :key="key"
       class="aia-resp"
@@ -95,7 +168,7 @@ function renderMarkdown(content: string): string {
             {{ statusBadge(resp.status).text }}
           </span>
         </summary>
-        <div v-if="!bodyHidden(resp)" class="aia-resp__body" v-html="renderMarkdown(resp.content)" />
+        <div v-if="bodyShown(resp)" class="aia-resp__body" v-html="bodyHtml(resp)" />
         <div v-if="resp.error" class="aia-resp__error" role="alert">
           <!-- Status icon: triangle for error, clock for timeout. -->
           <svg
@@ -129,6 +202,7 @@ function renderMarkdown(content: string): string {
         </div>
       </details>
     </div>
+    </template>
   </div>
 </template>
 
@@ -222,5 +296,39 @@ function renderMarkdown(content: string): string {
   white-space: pre-wrap;
   max-height: 6em;
   overflow-y: auto;
+}
+/* Global summary toggle. Back-migrated from Agented. */
+.aia-responses__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--aia-space-2, 8px);
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--aia-bg-elevated, #141414);
+  border: 1px solid var(--aia-border, #27272a);
+  border-radius: var(--aia-radius, 8px);
+  color: var(--aia-fg-muted, #a1a1aa);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--aia-text-sm, 13px);
+  transition: background 0.15s;
+}
+.aia-responses__summary:hover { background: rgba(255, 255, 255, 0.04); }
+.aia-responses__summary-chevron {
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+.aia-responses__summary-chevron.is-open { transform: rotate(90deg); }
+.aia-responses__summary-label {
+  font-weight: 600;
+  color: var(--aia-fg, #fafafa);
+}
+.aia-responses__summary-count {
+  font-size: var(--aia-text-xs, 12px);
+  color: var(--aia-fg-subtle, #71717a);
+}
+.aia-resp__body :deep(.aia-resp__waiting) {
+  color: var(--aia-fg-subtle, #71717a);
+  font-style: italic;
 }
 </style>
