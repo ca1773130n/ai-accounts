@@ -13,6 +13,7 @@ export { default as ChatMessage } from './components/ChatMessage.vue';
 export { default as AiChatPanel } from './components/AiChatPanel.vue';
 export { default as ChatBubble } from './components/ChatBubble.vue';
 export { default as ChatControls } from './components/ChatControls.vue';
+export { default as ChatModeSelector } from './components/ChatModeSelector.vue';
 export { default as ChatInput } from './components/ChatInput.vue';
 export { default as AllModeResponses } from './components/AllModeResponses.vue';
 export { default as CompoundSynthesis } from './components/CompoundSynthesis.vue';
