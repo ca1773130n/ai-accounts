@@ -25,15 +25,32 @@ const renderer: import('marked').RendererObject = {
 };
 marked.use({ renderer });
 
-const props = defineProps<{
-  role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string;
-  backend?: string | null;
-  timestamp?: string | null;
-  streaming?: boolean;
-  showActions?: boolean;
-  allMessages?: MessageLike[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    role: 'user' | 'assistant' | 'system' | 'tool';
+    content: string;
+    backend?: string | null;
+    timestamp?: string | null;
+    streaming?: boolean;
+    showActions?: boolean;
+    allMessages?: MessageLike[];
+    /** Custom SVG path(s) for the avatar icon. If omitted, the role
+     *  letter (U/AI/S/T) is rendered. Back-migrated from Agented. */
+    avatarPaths?: string[];
+    /** Display name shown in the bubble header for non-user roles
+     *  (defaults to capitalized role). Back-migrated from Agented. */
+    assistantName?: string;
+    /** When true, suppress the 350ms fade-in animation (used for
+     *  mass-rendering historical messages). Back-migrated from
+     *  Agented. */
+    skipTransition?: boolean;
+  }>(),
+  {
+    streaming: false,
+    showActions: false,
+    skipTransition: false,
+  },
+);
 
 const html = computed(() => marked.parse(props.content || '') as string);
 const timeStr = computed(() => {
@@ -50,11 +67,34 @@ function copyCode(e: Event) {
 </script>
 
 <template>
-  <div class="aia-bubble" :class="[`aia-bubble--${role}`, { 'aia-bubble--streaming': streaming }]">
-    <div class="aia-bubble__avatar">{{ role === 'user' ? 'U' : role === 'tool' ? 'T' : 'AI' }}</div>
+  <div
+    class="aia-bubble"
+    :class="[
+      `aia-bubble--${role}`,
+      { 'aia-bubble--streaming': streaming, 'aia-bubble--fade-in': !skipTransition },
+    ]"
+  >
+    <div class="aia-bubble__avatar">
+      <svg
+        v-if="avatarPaths && avatarPaths.length > 0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path v-for="(d, i) in avatarPaths" :key="i" :d="d" />
+      </svg>
+      <template v-else>
+        {{ role === 'user' ? 'U' : role === 'tool' ? 'T' : 'AI' }}
+      </template>
+    </div>
     <div class="aia-bubble__body">
       <div class="aia-bubble__header">
-        <span class="aia-bubble__role">{{ role }}</span>
+        <span class="aia-bubble__role">{{
+          role === 'user'
+            ? 'You'
+            : assistantName ?? role
+        }}</span>
         <span v-if="backend" class="aia-bubble__backend">{{ backend }}</span>
         <span v-if="timeStr" class="aia-bubble__time">{{ timeStr }}</span>
       </div>
@@ -91,4 +131,14 @@ function copyCode(e: Event) {
 .aia-bubble__content :deep(p) { margin: 0.25rem 0; }
 .aia-bubble--streaming .aia-bubble__content::after { content: '\25AE'; animation: aia-blink 1s step-end infinite; }
 @keyframes aia-blink { 50% { opacity: 0; } }
+/* Fade-in animation: 350ms opacity 0->1 + translateY(8px)->0.
+ * Back-migrated from Agented MessageBubble. Suppressed when
+ * `skipTransition` is set (mass historical-render case). */
+.aia-bubble--fade-in { animation: aia-bubble-fade-in 350ms ease-out both; }
+@keyframes aia-bubble-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* Avatar SVG sizing — applies when `avatarPaths` prop renders an SVG. */
+.aia-bubble__avatar svg { width: 18px; height: 18px; }
 </style>
