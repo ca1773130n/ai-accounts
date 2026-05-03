@@ -3,12 +3,45 @@ import { computed } from 'vue';
 import { marked } from 'marked';
 import type { SynthesisStateRef } from '@ai-accounts/vue-headless';
 
-const props = defineProps<{
+interface Props {
   state: SynthesisStateRef;
-}>();
+  /**
+   * When true, prepend a sparkle (✨) glyph before the
+   * "Compound Synthesis" label. Default `false`.
+   * Back-migrated from Agented.
+   */
+  sparkleIcon?: boolean;
+  /**
+   * When true, render a pulsing placeholder body
+   * ("Generating synthesis..." / "Waiting for backend responses...")
+   * while `state.content` is empty and the status is `streaming` or
+   * `waiting`. Default `false` preserves the upstream behavior of
+   * showing an empty content box.
+   * Back-migrated from Agented.
+   */
+  loadingPlaceholders?: boolean;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  sparkleIcon: false,
+  loadingPlaceholders: false,
+});
 
 const html = computed(() => marked.parse(props.state.content || '') as string);
 const isStreaming = computed(() => props.state.status === 'streaming');
+const hasContent = computed(() => Boolean(props.state.content && props.state.content.length > 0));
+/** Show the back-migrated pulsing placeholder text. */
+const showPlaceholder = computed(
+  () =>
+    props.loadingPlaceholders &&
+    !hasContent.value &&
+    (props.state.status === 'streaming' || props.state.status === 'waiting'),
+);
+const placeholderText = computed(() =>
+  props.state.status === 'streaming'
+    ? 'Generating synthesis...'
+    : 'Waiting for backend responses...',
+);
 
 function statusBadge(status: SynthesisStateRef['status']) {
   switch (status) {
@@ -24,6 +57,8 @@ function statusBadge(status: SynthesisStateRef['status']) {
 <template>
   <div class="aia-synth" :class="{ 'aia-synth--streaming': isStreaming }">
     <div class="aia-synth__header">
+      <!-- Sparkle icon. Back-migrated from Agented. -->
+      <span v-if="sparkleIcon" class="aia-synth__sparkle" aria-hidden="true">&#x2728;</span>
       <span class="aia-synth__label">Compound Synthesis</span>
       <span v-if="state.primaryBackend" class="aia-synth__via">via {{ state.primaryBackend }}</span>
       <span class="aia-synth__badge" :class="statusBadge(state.status).cls">
@@ -33,7 +68,11 @@ function statusBadge(status: SynthesisStateRef['status']) {
     <div v-if="state.backendsCollected.length" class="aia-synth__sources">
       Sources: {{ state.backendsCollected.join(', ') }}
     </div>
-    <div class="aia-synth__content" v-html="html" />
+    <!-- Pulsing placeholder while empty + streaming/waiting. Back-migrated from Agented. -->
+    <div v-if="showPlaceholder" class="aia-synth__placeholder">
+      {{ placeholderText }}
+    </div>
+    <div v-else class="aia-synth__content" v-html="html" />
     <div v-if="state.error" class="aia-synth__error">{{ state.error }}</div>
   </div>
 </template>
@@ -73,4 +112,12 @@ function statusBadge(status: SynthesisStateRef['status']) {
 .aia-synth--streaming .aia-synth__content::after { content: '\25AE'; animation: aia-synth-blink 1s step-end infinite; }
 .aia-synth__error { padding: var(--aia-space-2, 8px) var(--aia-space-3, 12px); font-size: var(--aia-text-xs, 12px); color: var(--aia-danger, #ef4444); }
 @keyframes aia-synth-blink { 50% { opacity: 0; } }
+/* Sparkle glyph + pulsing placeholder. Back-migrated from Agented. */
+.aia-synth__sparkle { font-size: var(--aia-text-sm, 14px); }
+.aia-synth__placeholder {
+  padding: var(--aia-space-3, 12px); font-size: var(--aia-text-sm, 14px);
+  font-style: italic; color: var(--aia-fg-subtle, #71717a);
+  animation: aia-synth-pulse 1.5s ease-in-out infinite;
+}
+@keyframes aia-synth-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 </style>
