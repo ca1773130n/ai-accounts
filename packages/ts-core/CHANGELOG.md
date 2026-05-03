@@ -10,7 +10,58 @@
 - `CliproxyLoginBeginResponse` now carries `session_id` for the new polling endpoint.
 - `SmartChatEvent` `backend_*` variants gained `backend_kind` + `account_label` fields so the chat panel can render "Claude · user@example.com" instead of an opaque `bkd-…` hash.
 
-> Versions 0.2.3 through 0.3.8 ship on npm but were not entered here in real time (changesets-flow gap). Recoverable from git log between the corresponding tags. See the root `CHANGELOG.md` for the 0.3.9 monorepo summary.
+> Versions 0.2.3 through 0.3.8 backfilled from git log on 2026-05-04 — entries below.
+
+## 0.3.8
+
+### Patch Changes
+
+- No changes specific to ts-core; published as part of monorepo bump alongside Claude v1 REPL login fix and OAuth error detection.
+
+## 0.3.7
+
+### Patch Changes
+
+- `client.writeEagerLogin(accountId, sessionId, text)` for the new direct-PTY-write path that bypasses the prompt-detection regex (Claude CLI v2 occasionally never emits "Paste code here").
+
+## 0.3.6
+
+### Patch Changes
+
+- No changes specific to ts-core; LoginStream eager paste-code form is shipped from vue-styled.
+
+## 0.3.5
+
+### Patch Changes
+
+- **Fix**: `parseSseLoginEvents` normalises CRLF → LF (Litestar emits `\r\n\r\n` frames; the LF-only matcher was silently yielding nothing and the wizard hung). New regression tests cover both CRLF and LF separators.
+
+## 0.3.4
+
+### Patch Changes
+
+- No client changes; bumped alongside the core regex fix for `https://claude.com/*` OAuth URLs.
+
+## 0.3.3
+
+### Patch Changes
+
+- No new public API; published alongside SSE replay + wizard polish in core/vue-styled.
+
+## 0.3.0 — 0.3.2
+
+### Minor / Patch Changes
+
+The 0.3.0-alpha sequence and 0.3.2 stable rolled into ts-core in one block:
+- Smart-chat types, SSE parser, and `sendChat` client method.
+- Scheduler types and client methods.
+- CLIProxy server lifecycle client methods (`start`, `stop`, `status`).
+- `config_dir` exposed in backend API responses.
+- Auth middleware bound login sessions to backend_id.
+- Static binary rebuild after pre-1.0 type churn.
+
+See root `CHANGELOG.md` `## 0.3.2` and `## 0.3.1` entries for the full feature
+and security narrative.
 
 ## 0.2.2
 

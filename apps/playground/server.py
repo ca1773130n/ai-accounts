@@ -1,10 +1,20 @@
 """Run the ai-accounts playground server.
 
-Listens on 127.0.0.1:30000. The Vite dev server proxies /api/* to this port.
+Default: listens on ``127.0.0.1:30000``. The Vite dev server proxies
+``/api/*`` to this port.
+
+Override via env:
+
+* ``AIA_HOST=0.0.0.0`` — bind to all interfaces (e.g. when running behind
+  vite's network proxy on a remote machine).
+* ``AIA_PORT=6173`` — change the listen port.
+
+The vite proxy target in ``vite.config.ts`` must match ``AIA_PORT``.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ai_accounts_core.adapters.auth_noauth import NoAuth
@@ -39,7 +49,14 @@ app = create_app(
 def main() -> None:
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=30000)
+    host = os.environ.get("AIA_HOST", "127.0.0.1")
+    try:
+        port = int(os.environ.get("AIA_PORT", "30000"))
+    except ValueError:
+        raise SystemExit(
+            f"AIA_PORT must be an integer, got {os.environ['AIA_PORT']!r}"
+        ) from None
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,58 @@
 - Updated dependencies (chat type changes from ts-core)
   - @ai-accounts/ts-core@0.3.9
 
-> Versions 0.2.3 through 0.3.8 ship on npm but were not entered here in real time (changesets-flow gap). Recoverable from git log between the corresponding tags. See the root `CHANGELOG.md` for the 0.3.9 monorepo summary.
+> Versions 0.2.3 through 0.3.8 backfilled from git log on 2026-05-04 — entries below.
+
+## 0.3.8
+
+### Patch Changes
+
+- New `useLoginSession.reset()` for the wizard's "Add another account" flow (clears prior URL/status/error so a fresh add doesn't show stale state).
+- Updated dependencies: `@ai-accounts/ts-core@0.3.8`.
+
+## 0.3.7
+
+### Patch Changes
+
+- `useLoginSession.writeEager(text)` for the direct-PTY-write fallback path (Claude CLI v2 sometimes never emits the paste-code prompt).
+- Updated dependencies: `@ai-accounts/ts-core@0.3.7`.
+
+## 0.3.6
+
+### Patch Changes
+
+- No public composable changes; vue-styled's eager paste-code UX uses existing hooks.
+- Updated dependencies: `@ai-accounts/ts-core@0.3.6`.
+
+## 0.3.5
+
+### Patch Changes
+
+- Updated dependencies: `@ai-accounts/ts-core@0.3.5` (CRLF SSE parser fix unblocks login wizard end-to-end).
+
+## 0.3.4
+
+### Patch Changes
+
+- Updated dependencies: `@ai-accounts/ts-core@0.3.4`.
+
+## 0.3.3
+
+### Patch Changes
+
+- `useLoginSession` UrlPrompt cache → SSE replay surface for late subscribers (page refresh / network blip mid-OAuth no longer leaves the spinner stuck).
+- Updated dependencies: `@ai-accounts/ts-core@0.3.3`.
+
+## 0.3.0 — 0.3.2
+
+### Minor / Patch Changes
+
+- `useSmartChat` + `useSmartScroll` composables — single / all / compound modes, tool-call process groups, resilient streaming with replay-on-reconnect.
+- Per-session locks in chat state (no global serialization).
+- `injection-keys`, `aiAccountsKey` typed inject helpers.
+- Updated dependencies through `@ai-accounts/ts-core@0.3.2`.
+
+See root `CHANGELOG.md` `## 0.3.2` and `## 0.3.1` for the full release narrative.
 
 ## 0.2.2
 

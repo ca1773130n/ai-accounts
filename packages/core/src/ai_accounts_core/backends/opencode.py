@@ -298,6 +298,35 @@ class OpenCodeBackend:
         return True
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
+        # Live discovery from OpenRouter — same pattern as gemini's Google AI
+        # Studio probe. /v1/models is publicly readable; the api_key is sent
+        # for parity with chat() and to satisfy any future auth requirement.
+        # Returns OpenAI-style {data: [{id, name, context_length, ...}]}.
+        api_key = credential.decode("utf-8", errors="replace").strip() if credential else ""
+        if api_key:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as http:
+                    resp = await http.get(
+                        "https://openrouter.ai/api/v1/models",
+                        headers={"Authorization": f"Bearer {api_key}"},
+                    )
+                if resp.status_code == 200:
+                    raw = resp.json()
+                    items = raw.get("data") if isinstance(raw, dict) else None
+                    if isinstance(items, list) and items:
+                        return [
+                            Model(
+                                id=str(m["id"]),
+                                display_name=str(m.get("name") or m["id"]),
+                                context_window=m.get("context_length"),
+                            )
+                            for m in items
+                            if isinstance(m, dict) and m.get("id")
+                        ]
+            except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError):
+                pass  # fall through to CLI shellout
+        # CLI fallback for offline / API-down cases. opencode CLI's exact
+        # `models --json` shape varies by version; tolerated empty result.
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return []
@@ -307,14 +336,18 @@ class OpenCodeBackend:
         )
         if rc != 0:
             return []
-        raw: list[dict[str, Any]] = json.loads(stdout)
+        try:
+            raw_cli: list[dict[str, Any]] = json.loads(stdout)
+        except json.JSONDecodeError:
+            return []
         return [
             Model(
                 id=item["id"],
                 display_name=item.get("display_name", item["id"]),
                 context_window=item.get("context_window"),
             )
-            for item in raw
+            for item in raw_cli
+            if item.get("id")
         ]
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:

@@ -13,7 +13,62 @@
   - @ai-accounts/ts-core@0.3.9
   - @ai-accounts/vue-headless@0.3.9
 
-> Versions 0.2.3 through 0.3.8 ship on npm but were not entered here in real time (changesets-flow gap). Recoverable from git log between the corresponding tags. See the root `CHANGELOG.md` for the 0.3.9 monorepo summary.
+> Versions 0.2.3 through 0.3.8 backfilled from git log on 2026-05-04 — entries below.
+
+## 0.3.8
+
+### Patch Changes
+
+- `LoginStream` OAuth-error detection + verifying spinner on paste-code submit (was hanging silently when the upstream rejected the code).
+- Updated dependencies: `@ai-accounts/ts-core@0.3.8`, `@ai-accounts/vue-headless@0.3.8`.
+
+## 0.3.7
+
+### Patch Changes
+
+- `LoginStream` switches to `writeEager` first, falls back to queue+respond on throw.
+- Updated dependencies: `@ai-accounts/ts-core@0.3.7`, `@ai-accounts/vue-headless@0.3.7`.
+
+## 0.3.6
+
+### Patch Changes
+
+- `LoginStream` renders an **eager paste-code form** as soon as the OAuth URL arrives (Claude CLI v2.1 prints the prompt ~10s after the URL; users who finished OAuth in another tab were stuck).
+- Updated dependencies: `@ai-accounts/ts-core@0.3.6`, `@ai-accounts/vue-headless@0.3.6`.
+
+## 0.3.5
+
+### Patch Changes
+
+- Updated dependencies: `@ai-accounts/ts-core@0.3.5` (CRLF SSE parser fix), `@ai-accounts/vue-headless@0.3.5`.
+
+## 0.3.4
+
+### Patch Changes
+
+- Updated dependencies: `@ai-accounts/ts-core@0.3.4`, `@ai-accounts/vue-headless@0.3.4`.
+
+## 0.3.3
+
+### Patch Changes
+
+- `AccountWizard`: account name optional (pre-fills the per-kind default config dir like `~/.claude`).
+- `forceFreshAccountPrompt()` helper appends `prompt=select_account&consent` (Google) / `prompt=login` (Claude) + `login_hint` to OAuth URLs — prevents wrong-account logins when the default browser is signed into a different account.
+- `LoginStream`: "Copy for Incognito" button + ⌘⇧N hint box.
+- Updated dependencies: `@ai-accounts/vue-headless@0.3.3`.
+
+## 0.3.0 — 0.3.2
+
+### Minor / Patch Changes
+
+- `AiChatPanel` (markdown, controls, all-mode, compound synthesis).
+- `LoginStream` MenuPrompt structured UI; menu/text prompt handlers; translator prop for AccountWizard.
+- Smart chat v2 (tool calls, process groups, resilient streaming).
+- Restyled proxy login section, auto-open OAuth URL, login-status spinner.
+- Per-message tokens-in/out display.
+- Updated dependencies through `@ai-accounts/ts-core@0.3.2` and `@ai-accounts/vue-headless@0.3.2`.
+
+See root `CHANGELOG.md` `## 0.3.2` and `## 0.3.1` for the full feature narrative.
 
 ## 0.2.2
 

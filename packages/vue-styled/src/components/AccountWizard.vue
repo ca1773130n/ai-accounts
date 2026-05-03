@@ -435,6 +435,29 @@ async function installCli() {
   }
 }
 
+// Pre-existing claude accounts on macOS share one Keychain entry — if the
+// user is about to add a 2nd one, surface a one-line warning so they don't
+// think they have two independent accounts. The Claude CLI's storage scheme
+// is global per macOS user (service "Claude Safe Storage"), so adding a
+// new account silently replaces the previous credential.
+const existingClaudeCount = ref(0);
+const isMacOS = computed(() => {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform || '');
+});
+const showClaudeKeychainWarning = computed(() =>
+  backendKind.value === 'claude' && isMacOS.value && existingClaudeCount.value >= 1,
+);
+
+async function refreshExistingClaudeCount() {
+  try {
+    const res = await client.listBackends();
+    existingClaudeCount.value = (res.items || []).filter(b => b.kind === 'claude').length;
+  } catch {
+    existingClaudeCount.value = 0;
+  }
+}
+
 onMounted(async () => {
   if (!backendRegistry.loaded.value) {
     await backendRegistry.load();
@@ -447,6 +470,9 @@ onMounted(async () => {
   // Kick off a CLIProxyAPI status check so the proxy step can render
   // install/register UI without a spinner lag.
   checkCliproxyStatus();
+  // For the macOS Claude keychain warning — refresh the count once so we
+  // know whether the user is about to clobber an existing credential.
+  void refreshExistingClaudeCount();
   // Broadcast the FIRST substep — the activeTourSubstep watcher only fires
   // on changes, so without this the host tour overlay would keep showing the
   // parent tour-machine step's title/guide ("AI Backend Accounts: click Add
@@ -1263,8 +1289,33 @@ function skipWizard() {
       </div>
     </div>
 
-    <!-- Step indicators -->
-    <div v-else-if="currentStep !== 'done'" class="wizard-steps">
+    <!-- Step indicators (+ optional macOS Claude keychain warning above) -->
+    <template v-else-if="currentStep !== 'done'">
+      <!-- The Claude CLI on darwin stores its OAuth credential in a single
+           "Claude Safe Storage" / "Claude Key" Keychain entry that is NOT
+           scoped by CLAUDE_CONFIG_DIR. Adding a 2nd Claude account replaces
+           the first — the user gets two rows in the playground but only one
+           credential is actually live. -->
+      <div v-if="showClaudeKeychainWarning" class="wizard-warning" role="alert">
+        <svg
+          viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          width="18" height="18" aria-hidden="true"
+        >
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+        <div>
+          <strong>macOS Keychain limitation:</strong>
+          Claude CLI on macOS stores its credential in a single shared Keychain
+          entry, so logging in here will replace your existing Claude credential
+          ({{ existingClaudeCount }} account{{ existingClaudeCount === 1 ? '' : 's' }}
+          registered). The previous account row will appear "ready" but actually
+          point at this new login.
+        </div>
+      </div>
+      <div class="wizard-steps">
       <div
         v-for="(step, idx) in VISIBLE_STEPS"
         :key="step"
@@ -1286,7 +1337,8 @@ function skipWizard() {
         </span>
         <span class="step-label">{{ stepLabels[step] }}</span>
       </div>
-    </div>
+      </div>
+    </template>
 
     <!-- Step 1: Subscription -->
     <div v-if="backendKind && currentStep === 'subscription'" class="wizard-step" data-tour="wiz-subscription">
@@ -2549,6 +2601,27 @@ code.review-value {
   border-radius: 6px;
   margin-top: 0.25rem;
 }
+
+.wizard-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem 0.875rem;
+  margin: 0 1rem 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-left: 3px solid var(--accent-amber, #f59e0b);
+  border-radius: 6px;
+}
+.wizard-warning svg {
+  color: var(--accent-amber, #f59e0b);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.wizard-warning strong { color: var(--accent-amber, #f59e0b); }
 
 .proxy-callback-hint {
   margin: 0 0 0.5rem;

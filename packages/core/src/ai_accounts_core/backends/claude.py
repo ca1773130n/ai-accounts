@@ -398,6 +398,21 @@ class ClaudeBackend:
         #     accounts on macOS share one credential — adding a second
         #     account effectively swaps out the first. This is a known
         #     limitation of the upstream CLI's storage model.
+        #
+        #     There is no clean fix at this layer:
+        #       - The CLI exposes no per-account keychain service-name flag
+        #         or env override (verified against the published `--help`).
+        #       - `claude --bare` (CLAUDE_CODE_SIMPLIFIED=1) skips keychain
+        #         reads entirely, but only works with ANTHROPIC_API_KEY auth
+        #         — not the OAuth /login flow the wizard uses.
+        #       - Swapping keychain entries before/after each operation
+        #         would race with any other Claude process on the machine.
+        #     Tracked for 0.4.x: requires either upstream support or a
+        #     different isolation strategy (per-account container/sandbox).
+        #     The wizard surfaces a banner before the 2nd Claude add on
+        #     darwin (AccountWizard.vue: showClaudeKeychainWarning) so the
+        #     user gives informed consent rather than being surprised when
+        #     the second login replaces the first.
         #   * Linux / no-keychain platforms: the CLI writes
         #     `<CLAUDE_CONFIG_DIR>/.credentials.json` after /login. The file
         #     existing and parsing as non-empty JSON is sufficient.

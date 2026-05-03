@@ -68,13 +68,37 @@ async def test_validate_missing_cli_returns_false(tmp_path: Path):
     assert result is False
 
 
+def _openrouter_unavailable():
+    """Force the OpenRouter live-discovery probe to fail so the CLI fallback
+    path runs deterministically (the test machine may have working internet
+    that would otherwise return a real model list)."""
+    class _FakeClient:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, *a, **kw):
+            import httpx as _httpx
+            raise _httpx.ConnectError("no network in test")
+
+    return patch(
+        "ai_accounts_core.backends.opencode.httpx.AsyncClient", _FakeClient
+    )
+
+
 @pytest.mark.asyncio
 async def test_list_models_parses(tmp_path: Path):
     backend = OpenCodeBackend()
     payload = json.dumps([
         {"id": "opencode-default", "display_name": "OpenCode Default"},
     ]).encode()
-    with patch("shutil.which", return_value="/opt/bin/opencode"), \
+    with _openrouter_unavailable(), \
+         patch("shutil.which", return_value="/opt/bin/opencode"), \
          patch.object(backend, "_run", new=AsyncMock(return_value=(0, payload, b""))):
         models = await backend.list_models(b"oc-abc", isolation_dir=tmp_path / "opencode")
     assert len(models) == 1
@@ -84,7 +108,48 @@ async def test_list_models_parses(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_list_models_returns_empty_on_error(tmp_path: Path):
     backend = OpenCodeBackend()
-    with patch("shutil.which", return_value="/opt/bin/opencode"), \
+    with _openrouter_unavailable(), \
+         patch("shutil.which", return_value="/opt/bin/opencode"), \
          patch.object(backend, "_run", new=AsyncMock(return_value=(1, b"", b"err"))):
         models = await backend.list_models(b"oc-abc", isolation_dir=tmp_path / "opencode")
     assert models == []
+
+
+@pytest.mark.asyncio
+async def test_list_models_uses_openrouter_when_api_key_present(tmp_path: Path):
+    """With a working api_key, the OpenRouter probe wins over the CLI."""
+    backend = OpenCodeBackend()
+
+    class _FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {
+                "data": [
+                    {"id": "anthropic/claude-3.5-sonnet", "name": "Claude 3.5 Sonnet", "context_length": 200000},
+                    {"id": "openai/gpt-4o", "name": "GPT-4o", "context_length": 128000},
+                ]
+            }
+
+    class _FakeClient:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, *a, **kw):
+            return _FakeResp()
+
+    async def explode(*a, **kw):
+        raise AssertionError("CLI _run should NOT be called when openrouter answers")
+
+    with patch("ai_accounts_core.backends.opencode.httpx.AsyncClient", _FakeClient), \
+         patch.object(backend, "_run", side_effect=explode):
+        models = await backend.list_models(b"oc-abc", isolation_dir=tmp_path / "opencode")
+    ids = [m.id for m in models]
+    assert ids == ["anthropic/claude-3.5-sonnet", "openai/gpt-4o"]
+    assert models[0].context_window == 200000
