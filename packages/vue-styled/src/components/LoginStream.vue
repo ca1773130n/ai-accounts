@@ -30,19 +30,51 @@ const eagerCode = ref('');
 const eagerStatus = ref<'idle' | 'queued' | 'sent'>('idle');
 let queuedCode: string | null = null;
 
-// True between code submit and terminal login status (complete/failed).
-// Shows a "Verifying..." indicator so the wizard doesn't look frozen
-// while Claude CLI validates the OAuth code against the provider.
+// User-facing error from the most recent submit/cancel attempt. Surfaces
+// silent failures (network blip, sidecar 5xx, missing session/account
+// state) that previously left the wizard frozen with no feedback after
+// the user clicked Send.
+const submitError = ref<string | null>(null);
+// True from the moment the user clicks Send (or selects a menu option)
+// until the underlying `respond` call resolves AND the session leaves
+// the 'running' status. Shows a "Verifying..." indicator so the wizard
+// never looks frozen.
+const submitting = ref(false);
+
 const verifying = computed(() =>
-  eagerStatus.value === 'sent' && props.session.status.value === 'running'
+  (eagerStatus.value === 'sent' || submitting.value) &&
+  props.session.status.value === 'running'
 );
 
 async function submit() {
-  const value = answer.value;
+  const value = answer.value.trim();
+  if (!value) return;
+  submitError.value = null;
   answer.value = '';
   eagerStatus.value = 'sent';
-  await props.session.respond(value);
+  submitting.value = true;
+  try {
+    await props.session.respond(value);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    submitError.value = (
+      `Could not submit your response: ${msg}. ` +
+      `The login session may have ended; cancel and start again.`
+    );
+    submitting.value = false;
+    eagerStatus.value = 'idle';
+  }
 }
+
+// Clear submitting state once the session reaches a terminal status —
+// the parent (AccountWizard) handles the actual transition; we only
+// need the local indicator to follow the session.
+watch(
+  () => props.session.status.value,
+  (status) => {
+    if (status !== 'running') submitting.value = false;
+  },
+);
 
 /**
  * Eager submit: user pastes the OAuth code as soon as they get it
@@ -81,7 +113,18 @@ watch(
 );
 
 async function selectMenuOption(number: number) {
-  await props.session.respond(String(number));
+  submitError.value = null;
+  submitting.value = true;
+  try {
+    await props.session.respond(String(number));
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    submitError.value = (
+      `Could not submit your selection: ${msg}. ` +
+      `The login session may have ended; cancel and start again.`
+    );
+    submitting.value = false;
+  }
 }
 
 /**
@@ -302,10 +345,30 @@ function dismissIncognitoHint() {
           :placeholder="session.textPrompt.value.hidden ? '••••••••' : 'Type here…'"
           autocomplete="off"
           autofocus
+          :disabled="submitting"
         />
-        <button type="submit" class="aia-text-section__btn" :disabled="!answer.trim()">Send</button>
+        <button type="submit" class="aia-text-section__btn" :disabled="submitting || !answer.trim()">
+          {{ submitting ? 'Sending…' : 'Send' }}
+        </button>
       </div>
     </form>
+
+    <!-- Submit error (network blip, missing session/account, sidecar 5xx). -->
+    <div v-if="submitError" class="aia-submit-error">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="15" y1="9" x2="9" y2="15" />
+        <line x1="9" y1="9" x2="15" y2="15" />
+      </svg>
+      <p>{{ submitError }}</p>
+    </div>
+
+    <!-- Verifying indicator — visible while we wait for the backend to
+         process the response (validate API key, store credential, etc.). -->
+    <div v-if="verifying" class="aia-verifying">
+      <span class="aia-verifying__spinner"></span>
+      <span class="aia-verifying__text">Verifying…</span>
+    </div>
 
     <!-- Terminal Output -->
     <div v-if="showStdout && session.stdoutLines.value.length > 0" class="aia-terminal">
@@ -714,6 +777,41 @@ function dismissIncognitoHint() {
 }
 .aia-error-card p { margin: 0.25rem 0 0; }
 .aia-error-card strong { font-weight: 600; }
+
+/* ── Submit error (mirrors aia-error-card but slightly less alarming) ── */
+.aia-submit-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--accent-crimson, #ef4444);
+}
+.aia-submit-error p { margin: 0; }
+
+/* ── Verifying indicator ── */
+.aia-verifying {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary, var(--aia-text-secondary, #a1a1aa));
+}
+.aia-verifying__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--accent, #4a9eff);
+  border-radius: 50%;
+  animation: aia-verifying-spin 0.8s linear infinite;
+}
+@keyframes aia-verifying-spin {
+  to { transform: rotate(360deg); }
+}
 
 /* ── Cancel ── */
 .aia-cancel-btn {

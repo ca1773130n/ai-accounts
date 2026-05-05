@@ -138,9 +138,20 @@ export function useLoginSession(): UseLoginSession {
   }
 
   async function respond(answer: string): Promise<void> {
-    if (!sessionId.value || !accountId.value) return;
+    // Previously this swallowed missing-prereq cases as a silent
+    // no-op, leaving the wizard with the same prompt visible after
+    // Send was clicked and no clue why nothing happened. Throw with
+    // a precise reason so callers can surface it.
+    if (!sessionId.value) {
+      throw new Error('No active login session (sessionId is unset)');
+    }
+    if (!accountId.value) {
+      throw new Error('No active backend account (accountId is unset)');
+    }
     const activePrompt = textPrompt.value ?? menuPrompt.value;
-    if (!activePrompt) return;
+    if (!activePrompt) {
+      throw new Error('No active prompt to respond to');
+    }
     const promptId = activePrompt.prompt_id;
     textPrompt.value = null;
     menuPrompt.value = null;
