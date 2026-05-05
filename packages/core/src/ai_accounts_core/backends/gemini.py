@@ -60,6 +60,139 @@ _GEMINI_SUCCESS_MARKERS = ("Login successful", "Authenticated")
 _GEMINI_FAILURE_MARKERS = ("error:", "failed")
 
 
+class _GeminiCliProxySession(LoginSession):
+    """OAuth login that delegates to ``cliproxyapi --login``.
+
+    Gemini CLI 0.35+ has no scriptable OAuth subcommand we can drive
+    from a wizard subprocess. Sidesteps by spawning cliproxyapi which
+    handles the Google OAuth handshake (subscription / Google AI Pro)
+    and writes a ``gemini-<email>.json`` to its auth directory. The
+    user pastes the localhost callback URL the browser is redirected
+    to — same UX as the existing optional cliproxy registration step.
+
+    Yields:
+        UrlPrompt   — Google OAuth URL (open in browser)
+        TextPrompt  — "paste callback URL"
+        LoginComplete on success / LoginFailed on error.
+
+    The session's credential is empty bytes — cliproxyapi owns the
+    auth file. ``GeminiBackend.validate`` falls back to a cliproxy
+    /v1/models probe filtered by ``owned_by=google`` to confirm.
+    """
+
+    def __init__(self) -> None:
+        self._sid = f"sess-{uuid.uuid4().hex[:10]}"
+        self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
+        self._done = False
+        self._proc: Any = None
+        self._fake_dir: Path | None = None
+
+    @property
+    def session_id(self) -> str:
+        return self._sid
+
+    @property
+    def backend_kind(self) -> str:
+        return "gemini"
+
+    @property
+    def flow_kind(self) -> str:
+        return "cli_browser"
+
+    @property
+    def done(self) -> bool:
+        return self._done
+
+    async def events(self) -> AsyncIterator[LoginEvent]:
+        from ai_accounts_core.cliproxy import (
+            forward_cliproxy_callback,
+            start_cliproxy_login,
+        )
+
+        proc, info = await start_cliproxy_login("gemini")
+        self._proc = proc
+        if info.fake_dir:
+            self._fake_dir = Path(info.fake_dir)
+        if info.error:
+            self._done = True
+            yield LoginFailed(code="cliproxy_unavailable", message=info.error)
+            return
+        if info.imported:
+            # cliproxyapi reused a cached credential — already logged in.
+            self._done = True
+            yield LoginComplete(account_id="", backend_status="validating")
+            return
+        if not info.oauth_url:
+            self._done = True
+            yield LoginFailed(
+                code="no_oauth_url",
+                message="cliproxyapi did not produce an OAuth URL",
+            )
+            return
+        yield UrlPrompt(prompt_id="gemini_oauth", url=info.oauth_url)
+        # Same paste-callback shape as the cliproxy registration step in
+        # the wizard (Step 3.5). The OAuth provider redirects the browser
+        # to localhost:8085/oauth2callback?code=…&state=…; the wizard's
+        # paste-input captures it and we forward to cliproxyapi.
+        yield TextPrompt(
+            prompt_id="callback",
+            prompt="Paste the localhost callback URL after signing in",
+            hidden=False,
+        )
+        try:
+            ans = await asyncio.wait_for(self._answers.get(), timeout=300)
+        except asyncio.TimeoutError:
+            self._done = True
+            yield LoginFailed(
+                code="response_timeout", message="No response within 5 minutes"
+            )
+            return
+        if ans.prompt_id == "__cancel__":
+            self._done = True
+            yield LoginFailed(code="cancelled", message="Login cancelled")
+            return
+        if not ans.answer:
+            self._done = True
+            yield LoginFailed(
+                code="invalid_callback",
+                message="Callback URL cannot be empty",
+            )
+            return
+        result = await forward_cliproxy_callback(ans.answer)
+        self._done = True
+        if result.get("status") == "completed":
+            yield LoginComplete(account_id="", backend_status="validating")
+        else:
+            yield LoginFailed(
+                code="callback_forward_failed",
+                message=str(
+                    result.get("message") or "Callback forwarding failed"
+                ),
+            )
+
+    async def respond(self, answer: PromptAnswer) -> None:
+        if self._done:
+            return
+        await self._answers.put(answer)
+
+    async def cancel(self) -> None:
+        self._done = True
+        with contextlib.suppress(asyncio.QueueFull):
+            self._answers.put_nowait(
+                PromptAnswer(prompt_id="__cancel__", answer="")
+            )
+        # Best-effort proc kill + fake_dir cleanup — start_cliproxy_login
+        # spawns a subprocess and a temp PATH-shim dir; both must be
+        # reaped if the user aborts mid-flow.
+        proc = self._proc
+        if proc is not None:
+            with contextlib.suppress(Exception):
+                proc.kill()
+                await proc.wait()
+        if self._fake_dir is not None:
+            shutil.rmtree(self._fake_dir, ignore_errors=True)
+
+
 class _GeminiApiKeySession(LoginSession):
     def __init__(self) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
@@ -124,14 +257,16 @@ class GeminiBackend:
     _ISOLATION_ENV_VAR: ClassVar[str] = "GEMINI_CLI_HOME"
     _API_KEY_ENV_VAR: ClassVar[str] = "GEMINI_API_KEY"
     # Gemini CLI 0.35.3 has NO `auth` subcommand — `gemini auth login --device`
-    # does not exist. Authentication is set via env vars: GEMINI_API_KEY (API
-    # key flow), GOOGLE_GENAI_USE_VERTEXAI (Vertex), or GOOGLE_GENAI_USE_GCA
-    # (interactive Google Cloud OAuth, browser-only). The OAuth flows we used
-    # to advertise (oauth_device / direct_oauth) cannot be reliably driven
-    # from a wizard subprocess. Until that's reworked, only api_key is
-    # advertised; users paste a Google AI Studio key.
+    # does not exist. Two viable auth paths in this codebase:
+    #
+    #   * cli_browser: delegates to `cliproxyapi --login` for the Google
+    #     OAuth handshake (subscription / Gemini Code Assist / Pro).
+    #     cliproxyapi writes the credential to its auth dir; chat() then
+    #     routes through cliproxyapi's OpenAI-compatible endpoint.
+    #   * api_key: paste a Google AI Studio key — direct API access, no
+    #     subscription needed. Stored in our vault.
     supported_login_flows: ClassVar[frozenset[str]] = frozenset(
-        {"api_key"}
+        {"cli_browser", "api_key"}
     )
 
     metadata: ClassVar[BackendMetadata] = BackendMetadata(
@@ -143,13 +278,25 @@ class GeminiBackend:
             version_regex=r"(\d+\.\d+\.\d+)",
         ),
         login_flows=[
+            # cli_browser is listed first so the wizard's auto-pick prefers
+            # the subscription flow — most users have a Google account but
+            # not an AI Studio API key. api_key remains as fallback.
+            LoginFlowSpec(
+                kind="cli_browser",
+                display_name="Sign in with Google",
+                description=(
+                    "Sign in to your Google account (uses CLIProxyAPI). "
+                    "Works with Gemini Code Assist / Pro / Ultra subscriptions."
+                ),
+                requires_inputs=[],
+            ),
             LoginFlowSpec(
                 kind="api_key",
                 display_name="API key",
                 description=(
-                    "Paste a Google AI Studio API key (the OAuth flows for "
-                    "Gemini CLI 0.35+ are not yet supported here — get a key "
-                    "from https://aistudio.google.com/apikey)"
+                    "Paste a Google AI Studio API key — direct API access, "
+                    "no subscription needed. Get one at "
+                    "https://aistudio.google.com/apikey"
                 ),
                 requires_inputs=[InputSpec(name="api_key", label="API key", kind="secret")],
             ),
@@ -174,6 +321,8 @@ class GeminiBackend:
     ) -> LoginSession:
         if flow_kind == "api_key":
             return _GeminiApiKeySession()
+        if flow_kind == "cli_browser":
+            return _GeminiCliProxySession()
         raise ValueError(f"unsupported flow_kind: {flow_kind}")
 
     async def detect(self) -> DetectResult:
@@ -192,24 +341,36 @@ class GeminiBackend:
     async def validate(
         self, credential: bytes, *, isolation_dir: Path
     ) -> bool:
-        # Gemini CLI 0.35+ has no `auth status` subcommand. For the api_key
-        # flow we validate the credential directly against Google AI Studio's
-        # `models` endpoint — a 200 means the key is accepted, anything else
-        # is a failure.
-        if not credential:
-            return False
-        api_key = credential.decode("utf-8", errors="replace").strip()
-        if not api_key:
-            return False
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as http:
-                resp = await http.get(
-                    "https://generativelanguage.googleapis.com/v1beta/models",
-                    params={"key": api_key},
-                )
-        except (httpx.HTTPError, OSError):
-            return False
-        return resp.status_code == 200
+        # Gemini CLI 0.35+ has no `auth status` subcommand. Two paths:
+        #
+        #   * api_key flow — credential bytes hold the key. Validate by
+        #     hitting Google AI Studio's `models` endpoint; 200 = ready.
+        #   * cli_browser flow — credential is empty (cliproxyapi owns
+        #     the auth file at ~/.cli-proxy-api/gemini-<email>.json).
+        #     Validate by asking cliproxy if it lists any google-owned
+        #     models; non-empty list = ready.
+        api_key = (
+            credential.decode("utf-8", errors="replace").strip()
+            if credential
+            else ""
+        )
+        if api_key:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as http:
+                    resp = await http.get(
+                        "https://generativelanguage.googleapis.com/v1beta/models",
+                        params={"key": api_key},
+                    )
+                if resp.status_code == 200:
+                    return True
+            except (httpx.HTTPError, OSError):
+                pass  # fall through to cliproxy probe
+        # No api_key (or the api_key path failed) — try cliproxy. Empty
+        # credential is the normal case after the cli_browser flow.
+        from ai_accounts_core.cliproxy import cliproxy_list_models
+
+        live = await cliproxy_list_models("gemini")
+        return bool(live)
 
     async def list_models(
         self, credential: bytes, *, isolation_dir: Path

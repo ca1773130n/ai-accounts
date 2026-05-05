@@ -79,5 +79,6 @@ def test_gemini_metadata_shape():
     assert meta.supports_multi_account is True
     assert meta.isolation_env_var == "GEMINI_CLI_HOME"
     flow_kinds = {f.kind for f in meta.login_flows}
-    # Gemini CLI 0.35+ has no `auth` subcommand — only api_key is supported.
-    assert flow_kinds == {"api_key"}
+    # cli_browser delegates to cliproxyapi --login (Google subscription
+    # flow). api_key is kept as fallback for direct AI Studio access.
+    assert flow_kinds == {"cli_browser", "api_key"}

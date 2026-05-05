@@ -38,3 +38,6 @@ apps/playground/backend_dirs/
 *.db-shm
 *.db-wal
 *.db-journal
+
+# Playwright MCP debug snapshots — local-only diagnostics
+.playwright-mcp/

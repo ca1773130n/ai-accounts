@@ -149,10 +149,15 @@ async def start_cliproxy_login(
     # unchanged when the playground is reached over a remote URL — the
     # callback flow does not, because the OAuth provider would redirect to
     # localhost on the *user's* machine, not the playground host.
+    # Codex uses the device-code flow (URL + code) rather than the
+    # browser-callback flow — device-code works even when the playground
+    # is reached over a remote URL.
+    # Gemini uses the bare "--login" Google account flow (cliproxyapi has
+    # no separate "--gemini-login" — Google CLI auth is the default).
     flag_map = {
         "claude": "--claude-login",
         "codex": "--codex-device-login",
-        "gemini": "--gemini-login",
+        "gemini": "--login",
     }
     flag = flag_map.get(backend_kind)
     if flag is None:

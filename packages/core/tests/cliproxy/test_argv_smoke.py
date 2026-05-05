@@ -35,7 +35,10 @@ def _flag_map_from_source() -> dict[str, str]:
     return {
         "claude": "--claude-login" if '"claude": "--claude-login"' in src else None,
         "codex": "--codex-device-login" if '"codex": "--codex-device-login"' in src else None,
-        "gemini": "--gemini-login" if '"gemini": "--gemini-login"' in src else None,
+        # cliproxyapi has no separate "--gemini-login" flag; "--login" is
+        # the bare Google account login that handles Gemini Code Assist /
+        # Gemini Pro subscriptions.
+        "gemini": "--login" if '"gemini": "--login"' in src else None,
     }
 
 
@@ -48,7 +51,10 @@ def test_flag_map_uses_device_login_for_codex() -> None:
         "reached over a remote URL."
     )
     assert flag_map["claude"] == "--claude-login"
-    assert flag_map["gemini"] == "--gemini-login"
+    assert flag_map["gemini"] == "--login", (
+        "gemini flag must be --login (the bare Google account flow). "
+        "cliproxyapi 6.8.30 has no --gemini-login subcommand."
+    )
 
 
 def test_device_code_regex_captures_codex_45_format() -> None:
