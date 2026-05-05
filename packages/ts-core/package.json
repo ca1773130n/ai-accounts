@@ -1,6 +1,6 @@
 {
   "name": "@ai-accounts/ts-core",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "description": "Framework-agnostic TypeScript client and protocol for ai-accounts",
   "license": "Apache-2.0",
   "type": "module",
