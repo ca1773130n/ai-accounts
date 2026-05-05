@@ -41,6 +41,31 @@ docs-dev:
 docs-build:
     pnpm --filter docs build
 
+# ── Playground ──────────────────────────────────────────────────────────
+# Start the playground end-to-end: Litestar sidecar API on AIA_HOST:AIA_PORT
+# (default 127.0.0.1:30000) AND the Vite dev server on its configured port
+# (6173 — see apps/playground/vite.config.ts). Both run in foreground via
+# `concurrently`; Ctrl-C stops both.
+#
+#   just playground                      # 127.0.0.1:30000 (only this machine)
+#   just playground 0.0.0.0              # all interfaces — accessible over LAN/DDNS
+#   just playground 0.0.0.0 8080         # custom API port (also update vite proxy)
+#
+# Arg defaults are inlined into the env so a bare `just playground` matches
+# what server.py would do without any AIA_* env set.
+playground HOST="127.0.0.1" PORT="30000":
+    AIA_HOST={{HOST}} AIA_PORT={{PORT}} pnpm --filter playground start
+
+# Build a production bundle of the playground frontend (just the Vue app —
+# the Python API is always run from source). Output: apps/playground/dist/.
+playground-build:
+    pnpm --filter playground build
+
+# API only — no Vite — for hosts that serve their own pre-built frontend
+# or want to point a different UI at the API.
+playground-api HOST="127.0.0.1" PORT="30000":
+    AIA_HOST={{HOST}} AIA_PORT={{PORT}} pnpm --filter playground server
+
 clean:
     rm -rf packages/*/dist packages/*/.turbo
     find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
