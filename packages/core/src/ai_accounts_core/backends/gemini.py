@@ -131,12 +131,23 @@ class _GeminiCliProxySession(LoginSession):
             return
         yield UrlPrompt(prompt_id="gemini_oauth", url=info.oauth_url)
         # Same paste-callback shape as the cliproxy registration step in
-        # the wizard (Step 3.5). The OAuth provider redirects the browser
-        # to localhost:8085/oauth2callback?code=…&state=…; the wizard's
-        # paste-input captures it and we forward to cliproxyapi.
+        # the wizard (Step 3.5). After signing in, Google redirects the
+        # browser to http://localhost:8085/oauth2callback?code=…&state=…;
+        # when the user is on a remote machine that localhost is THEIR
+        # machine, not the playground host, so the redirect appears to
+        # hang ("this site can't be reached" / spinner). The URL itself
+        # is still in the address bar and contains the auth code we need
+        # — tell the user explicitly so they don't think login is broken.
         yield TextPrompt(
             prompt_id="callback",
-            prompt="Paste the localhost callback URL after signing in",
+            prompt=(
+                "After signing in, your browser will try to load "
+                "http://localhost:8085/oauth2callback?... and likely "
+                "show 'this site can't be reached' or just keep loading. "
+                "That's expected — the URL itself contains your auth "
+                "code. Copy the FULL URL from the address bar and paste "
+                "it here, then click Send."
+            ),
             hidden=False,
         )
         try:
