@@ -164,9 +164,21 @@ export function useLoginSession(): UseLoginSession {
   }
 
   async function cancel(): Promise<void> {
-    if (!sessionId.value || !accountId.value) return;
-    await client.cancelLogin(accountId.value, sessionId.value);
+    // Always update local status to 'cancelled', even if there's no
+    // active session or the network call fails. The user clicked Cancel
+    // — they expect the UI to escape the running state regardless of
+    // whether the sidecar is still reachable. A 404 from cancelLogin
+    // (session already terminated) used to leave status stuck on
+    // 'running' because the line below the throw never executed.
+    const id = accountId.value;
+    const sid = sessionId.value;
     status.value = 'cancelled';
+    if (!id || !sid) return;
+    try {
+      await client.cancelLogin(id, sid);
+    } catch {
+      /* swallow — local UI is already cancelled */
+    }
   }
 
   function reset(): void {
