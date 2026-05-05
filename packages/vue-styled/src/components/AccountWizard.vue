@@ -526,6 +526,12 @@ watch(currentStep, async (_step) => {
 // etc.). Now we set a local error ref that the login step renders.
 const loginStartError = ref<string | null>(null);
 
+// Selected login flow override. When null, pickLoginFlow's default order
+// applies. The flow-switcher UI in the login step writes here so the user
+// can bail to a different flow (e.g. api_key) when OAuth is broken on
+// Google's side.
+const selectedFlow = ref<LoginFlowKind | null>(null);
+
 async function startUnifiedLogin() {
   const meta = backendMeta.value;
   if (!meta) {
@@ -546,8 +552,9 @@ async function startUnifiedLogin() {
       });
       draftAccountId.value = created.id;
     }
-    // Pick the first available login flow (cli_browser > oauth_device > api_key).
-    const flow = pickLoginFlow(meta);
+    // Honour the user's flow override first; otherwise fall back to the
+    // default (cli_browser > oauth_device > api_key).
+    const flow = selectedFlow.value ?? pickLoginFlow(meta);
     busEmit({
       type: 'wizard.step',
       backendKind: meta.kind,
@@ -570,6 +577,36 @@ function pickLoginFlow(meta: BackendMetadata): LoginFlowKind {
   if (available.includes('cli_browser')) return 'cli_browser';
   if (available.includes('oauth_device')) return 'oauth_device';
   return 'api_key';
+}
+
+/** The flow currently in use — explicit selection if set, else the auto-pick. */
+const activeFlow = computed<LoginFlowKind>(() => {
+  return selectedFlow.value
+    ?? (backendMeta.value ? pickLoginFlow(backendMeta.value) : 'cli_browser');
+});
+
+/** True when the backend advertises >1 flow — only then does the switcher
+ *  add value (a single-flow backend has nothing to choose). */
+const hasMultipleFlows = computed(() =>
+  (backendMeta.value?.login_flows.length ?? 0) > 1,
+);
+
+/** Cancel the current session, override the flow, restart fresh. Used
+ *  when the user is stuck mid-flow (e.g. Google's OAuth consent gate is
+ *  broken) and wants to try a different flow without leaving the wizard. */
+async function switchLoginFlow(kind: LoginFlowKind) {
+  if (kind === activeFlow.value) return;
+  // Best-effort cancel — the session may already be terminal.
+  try {
+    await loginSession.cancel();
+  } catch {
+    /* ignore */
+  }
+  loginSession.reset();
+  selectedFlow.value = kind;
+  // Re-arm the auto-advance gate (only fires after a fresh 'running' state).
+  autoAdvanceOnLoginComplete.value = false;
+  await startUnifiedLogin();
 }
 
 function collectInputs(_meta: BackendMetadata): Record<string, string> {
@@ -1515,6 +1552,25 @@ function skipWizard() {
     <!-- Step 3: Login -->
     <div v-if="backendKind && currentStep === 'login'" class="wizard-step" data-tour="wiz-login">
       <div class="step-body">
+        <!-- Flow switcher: shown when the backend advertises >1 login flow,
+             so the user can bail out of a broken flow (e.g. Google's OAuth
+             consent page hanging) and try another (e.g. api_key). -->
+        <div v-if="hasMultipleFlows && backendMeta" class="login-flow-switcher">
+          <span class="login-flow-switcher__label">Login method:</span>
+          <div class="login-flow-switcher__options">
+            <button
+              v-for="f in backendMeta.login_flows"
+              :key="f.kind"
+              type="button"
+              class="login-flow-switcher__btn"
+              :class="{ 'login-flow-switcher__btn--active': activeFlow === f.kind }"
+              :disabled="loginStatus === 'completed'"
+              :title="f.description"
+              @click="switchLoginFlow(f.kind as LoginFlowKind)"
+            >{{ f.display_name }}</button>
+          </div>
+        </div>
+
         <!-- v0.6.4: surface login-start failures so the user isn't stuck
              on a spinner when the /begin call fails. Includes a Retry
              button so they don't have to leave the wizard. -->
@@ -2631,6 +2687,53 @@ code.review-value {
   background: var(--bg-tertiary, rgba(0, 0, 0, 0.3));
   border-radius: 6px;
   margin-top: 0.25rem;
+}
+
+.login-flow-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0 0 0.875rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.2));
+  font-size: 0.8125rem;
+}
+.login-flow-switcher__label {
+  color: var(--text-secondary);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.login-flow-switcher__options {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+.login-flow-switcher__btn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.login-flow-switcher__btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.login-flow-switcher__btn--active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+.login-flow-switcher__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .wizard-warning {
