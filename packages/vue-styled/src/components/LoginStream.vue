@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import type { UseLoginSession } from '@ai-accounts/vue-headless';
 import { forceFreshAccountPrompt } from './forceFreshAccountPrompt';
 
@@ -45,6 +45,50 @@ const verifying = computed(() =>
   (eagerStatus.value === 'sent' || submitting.value) &&
   props.session.status.value === 'running'
 );
+
+// Track elapsed time since verifying started so we can warn the user
+// when the underlying CLI is taking longer than expected (e.g. Claude
+// CLI hanging on validation, network unreachable). After 15s we show a
+// "taking longer than usual" message + emphasize the Cancel button.
+const verifyingElapsed = ref(0);
+let verifyingTimer: ReturnType<typeof setInterval> | null = null;
+let verifyingStartedAt = 0;
+
+watch(verifying, (active) => {
+  if (active) {
+    verifyingStartedAt = Date.now();
+    verifyingElapsed.value = 0;
+    if (verifyingTimer) clearInterval(verifyingTimer);
+    verifyingTimer = setInterval(() => {
+      verifyingElapsed.value = Math.floor((Date.now() - verifyingStartedAt) / 1000);
+    }, 1000);
+  } else {
+    if (verifyingTimer) {
+      clearInterval(verifyingTimer);
+      verifyingTimer = null;
+    }
+    verifyingElapsed.value = 0;
+  }
+});
+
+onUnmounted(() => {
+  if (verifyingTimer) clearInterval(verifyingTimer);
+});
+
+const verifyingTakingTooLong = computed(() =>
+  verifying.value && verifyingElapsed.value >= 15
+);
+
+async function cancelAndReset() {
+  try {
+    await props.session.cancel();
+  } catch {
+    /* swallow — UI will update via status watcher */
+  }
+  eagerStatus.value = 'idle';
+  submitting.value = false;
+  submitError.value = null;
+}
 
 async function submit() {
   const value = answer.value.trim();
@@ -364,14 +408,41 @@ function dismissIncognitoHint() {
     </div>
 
     <!-- Verifying indicator — visible while we wait for the backend to
-         process the response (validate API key, store credential, etc.). -->
+         process the response (validate API key, store credential, etc.).
+         Includes an explicit Cancel button so the user is never stuck:
+         the global cancel button below covers the running state, but
+         when the spinner takes over the visual focus, operators don't
+         always notice it. After 15s of verifying, we surface a "taking
+         longer than usual" hint so the user knows it's not normal. -->
     <div v-if="verifying" class="aia-verifying">
-      <span class="aia-verifying__spinner"></span>
-      <span class="aia-verifying__text">Verifying…</span>
+      <div class="aia-verifying__row">
+        <span class="aia-verifying__spinner"></span>
+        <span class="aia-verifying__text">
+          Verifying…
+          <span v-if="verifyingElapsed > 0" class="aia-verifying__elapsed">
+            ({{ verifyingElapsed }}s)
+          </span>
+        </span>
+        <button
+          type="button"
+          class="aia-verifying__cancel"
+          @click="cancelAndReset"
+        >
+          Cancel
+        </button>
+      </div>
+      <p v-if="verifyingTakingTooLong" class="aia-verifying__warning">
+        This is taking longer than usual. Check the terminal output below
+        for clues, or click Cancel and try again.
+      </p>
     </div>
 
-    <!-- Terminal Output -->
-    <div v-if="showStdout && session.stdoutLines.value.length > 0" class="aia-terminal">
+    <!-- Terminal Output — shown by default while we're waiting on the
+         CLI so the user has visibility into what's happening (especially
+         important during long verification flows like Claude OAuth code
+         validation). The showStdout prop, when explicitly true, also
+         reveals output during prompt phases. -->
+    <div v-if="(showStdout || verifying) && session.stdoutLines.value.length > 0" class="aia-terminal">
       <div class="aia-terminal__output">
         <div v-for="(line, i) in session.stdoutLines.value" :key="i" class="aia-terminal__line">{{ line }}</div>
       </div>
@@ -795,11 +866,19 @@ function dismissIncognitoHint() {
 /* ── Verifying indicator ── */
 .aia-verifying {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem;
   font-size: 0.8125rem;
   color: var(--text-secondary, var(--aia-text-secondary, #a1a1aa));
+  background: rgba(74, 158, 255, 0.06);
+  border: 1px solid rgba(74, 158, 255, 0.2);
+  border-radius: 8px;
+}
+.aia-verifying__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 .aia-verifying__spinner {
   width: 14px;
@@ -808,6 +887,34 @@ function dismissIncognitoHint() {
   border-top-color: var(--accent, #4a9eff);
   border-radius: 50%;
   animation: aia-verifying-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+.aia-verifying__text {
+  flex: 1;
+}
+.aia-verifying__elapsed {
+  color: var(--text-tertiary, #71717a);
+  font-variant-numeric: tabular-nums;
+}
+.aia-verifying__cancel {
+  padding: 0.25rem 0.625rem;
+  background: transparent;
+  border: 1px solid var(--border-default, var(--aia-border, #27272a));
+  border-radius: 6px;
+  color: var(--text-secondary, var(--aia-text-secondary, #a1a1aa));
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.aia-verifying__cancel:hover {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.04));
+  color: var(--text-primary, var(--aia-text-primary, #f4f4f5));
+}
+.aia-verifying__warning {
+  margin: 0;
+  padding-left: 1.375rem;
+  color: var(--accent-amber, #f59e0b);
+  font-size: 0.75rem;
+  line-height: 1.4;
 }
 @keyframes aia-verifying-spin {
   to { transform: rotate(360deg); }
