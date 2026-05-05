@@ -44,16 +44,30 @@ docs-build:
 # ── Playground ──────────────────────────────────────────────────────────
 # Start the playground end-to-end: Litestar sidecar API on AIA_HOST:AIA_PORT
 # (default 127.0.0.1:30000) AND the Vite dev server on its configured port
-# (6173 — see apps/playground/vite.config.ts). Both run in foreground via
-# `concurrently`; Ctrl-C stops both.
+# (6173 — see apps/playground/vite.config.ts, strictPort: true). Both run in
+# foreground via `concurrently`; Ctrl-C stops both.
 #
 #   just playground                      # 127.0.0.1:30000 (only this machine)
 #   just playground 0.0.0.0              # all interfaces — accessible over LAN/DDNS
 #   just playground 0.0.0.0 8080         # custom API port (also update vite proxy)
 #
+# PORT may NOT be 6173 — that's the Vite port. Passing 6173 here would cause
+# both processes to fight for the socket. The recipe rejects it upfront.
+#
+# Before starting, any existing listener on the chosen API port AND on 6173
+# is killed (TERM, then KILL after 500 ms) so a leftover from a previous
+# `just playground` (Ctrl-C didn't reap it, crashed, etc.) doesn't block
+# the new run with EADDRINUSE.
+#
 # Arg defaults are inlined into the env so a bare `just playground` matches
 # what server.py would do without any AIA_* env set.
 playground HOST="127.0.0.1" PORT="30000":
+    @if [ "{{PORT}}" = "6173" ]; then \
+        echo "ERROR: API port cannot be 6173 — Vite owns that port (strictPort: true)."; \
+        echo "       Pass a different port, e.g. 'just playground 0.0.0.0 30000'."; \
+        exit 1; \
+    fi
+    @{{justfile_directory()}}/scripts/kill-port.sh {{PORT}} 6173
     AIA_HOST={{HOST}} AIA_PORT={{PORT}} pnpm --filter playground start
 
 # Build a production bundle of the playground frontend (just the Vue app —
@@ -62,8 +76,9 @@ playground-build:
     pnpm --filter playground build
 
 # API only — no Vite — for hosts that serve their own pre-built frontend
-# or want to point a different UI at the API.
+# or want to point a different UI at the API. Same pre-flight kill logic.
 playground-api HOST="127.0.0.1" PORT="30000":
+    @{{justfile_directory()}}/scripts/kill-port.sh {{PORT}}
     AIA_HOST={{HOST}} AIA_PORT={{PORT}} pnpm --filter playground server
 
 clean:
