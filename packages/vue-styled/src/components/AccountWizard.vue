@@ -519,9 +519,23 @@ watch(currentStep, async (_step) => {
   }
 }, { immediate: true });
 
+// v0.6.4: surface login-start failures to the UI. The previous
+// implementation only console.warn'd, leaving the wizard stuck on
+// the "Starting login…" spinner forever when the sidecar /begin
+// call failed (network, malformed metadata, missing backend kind,
+// etc.). Now we set a local error ref that the login step renders.
+const loginStartError = ref<string | null>(null);
+
 async function startUnifiedLogin() {
   const meta = backendMeta.value;
-  if (!meta) return;
+  if (!meta) {
+    loginStartError.value = (
+      'Cannot start login: backend metadata is not loaded yet. ' +
+      'Refresh the page and try again.'
+    );
+    return;
+  }
+  loginStartError.value = null;
   try {
     // Ensure a draft backend row exists so login can attach to it.
     if (!draftAccountId.value) {
@@ -541,7 +555,13 @@ async function startUnifiedLogin() {
     });
     await loginSession.start(draftAccountId.value, flow, collectInputs(meta));
   } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
     console.warn('[AccountWizard] login failed:', e);
+    loginStartError.value = (
+      `Could not start the login flow: ${msg}. ` +
+      `Check that the sidecar is running on :20001 and that ` +
+      `the ${meta.kind} backend metadata is reachable.`
+    );
   }
 }
 
@@ -1495,8 +1515,19 @@ function skipWizard() {
     <!-- Step 3: Login -->
     <div v-if="backendKind && currentStep === 'login'" class="wizard-step" data-tour="wiz-login">
       <div class="step-body">
+        <!-- v0.6.4: surface login-start failures so the user isn't stuck
+             on a spinner when the /begin call fails. Includes a Retry
+             button so they don't have to leave the wizard. -->
+        <div v-if="loginStartError" class="login-status login-error">
+          <strong>Login could not start.</strong>
+          <p>{{ loginStartError }}</p>
+          <button class="btn btn-secondary" @click="startUnifiedLogin">
+            Retry
+          </button>
+        </div>
+
         <!-- Idle / Connecting -->
-        <template v-if="loginStatus === 'idle' || loginStatus === 'connecting'">
+        <template v-else-if="loginStatus === 'idle' || loginStatus === 'connecting'">
           <div class="login-status login-connecting">
             <div class="spinner-sm"></div>
             <span>{{ t('accountWizard.startingLogin') }}</span>
