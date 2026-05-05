@@ -46,6 +46,16 @@ const verifying = computed(() =>
   props.session.status.value === 'running'
 );
 
+// Device-code flow detection. When the backend yields a UrlPrompt
+// with a `user_code`, the user enters that code in the browser at the
+// shown URL — there is NOTHING to paste back into the wizard. The
+// eager paste form is for the OAuth-authorization-code flow (e.g.
+// Claude's `auth login --claudeai`) where the user copies a code
+// from the redirect page and pastes it back here.
+const isDeviceCodeFlow = computed(() =>
+  !!props.session.urlPrompt.value?.user_code
+);
+
 // Track elapsed time since verifying started so we can warn the user
 // when the underlying CLI is taking longer than expected (e.g. Claude
 // CLI hanging on validation, network unreachable). After 15s we show a
@@ -110,35 +120,13 @@ async function submit() {
   }
 }
 
-// Clear submitting state once the session reaches a terminal status —
-// the parent (AccountWizard) handles the actual transition; we only
-// need the local indicator to follow the session.
+// Clear submitting + eager state once the session reaches a terminal
+// status — the parent (AccountWizard) handles the actual transition;
+// we only need the local indicator to follow the session.
 watch(
   () => props.session.status.value,
   (status) => {
     if (status !== 'running') {
-      submitting.value = false;
-      eagerStatus.value = 'idle';
-    }
-  },
-);
-
-// A fresh prompt arrival means the previous response was acknowledged
-// by the backend. Drop the verifying spinner so intermediate steps
-// (menu → url, url → text, etc.) render the next prompt cleanly
-// instead of staying behind a stale verifying overlay.
-watch(
-  () => [
-    props.session.urlPrompt.value,
-    props.session.textPrompt.value,
-    props.session.menuPrompt.value,
-  ],
-  (now, prev) => {
-    const wasAny = prev?.some((p) => !!p) ?? false;
-    const isAny = now.some((p) => !!p);
-    if (isAny && !wasAny) {
-      // Transitioned from "no prompt" to "some prompt" — this is the
-      // backend asking for the next input, not a stale spinner state.
       submitting.value = false;
       eagerStatus.value = 'idle';
     }
@@ -337,8 +325,13 @@ function dismissIncognitoHint() {
       </div>
 
       <div v-if="session.urlPrompt.value.user_code" class="aia-device-code">
-        <span class="aia-device-code__label">Your device code:</span>
+        <span class="aia-device-code__label">Enter this code in the browser:</span>
         <code class="aia-device-code__value">{{ session.urlPrompt.value.user_code }}</code>
+        <p class="aia-device-code__hint">
+          The CLI is polling for your sign-in. Once you confirm in the
+          browser, this wizard advances automatically — no need to
+          paste anything back here.
+        </p>
       </div>
 
       <!-- Eager paste-code input. Shown as soon as the OAuth URL arrives,
@@ -359,7 +352,7 @@ function dismissIncognitoHint() {
         <span class="aia-verifying__text">Verifying authorization code…</span>
       </div>
 
-      <form v-if="!session.textPrompt.value && eagerStatus !== 'sent'" class="aia-text-section aia-text-section--eager" data-tour="wiz-login-paste" @submit.prevent="submitEagerCode">
+      <form v-if="!isDeviceCodeFlow && !session.textPrompt.value && eagerStatus !== 'sent'" class="aia-text-section aia-text-section--eager" data-tour="wiz-login-paste" @submit.prevent="submitEagerCode">
         <label class="aia-text-section__label">
           After signing in, paste the authorization code here:
           <span v-if="eagerStatus === 'queued'" class="aia-text-section__queued">(queued — waiting for CLI prompt)</span>
@@ -707,6 +700,14 @@ function dismissIncognitoHint() {
   padding: 0.375rem 1rem;
   background: var(--bg-tertiary, rgba(0, 0, 0, 0.4));
   border-radius: 6px;
+}
+.aia-device-code__hint {
+  margin: 0;
+  text-align: center;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-tertiary, #71717a);
+  max-width: 28rem;
 }
 
 /* ── Menu Options ── */
