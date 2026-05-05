@@ -232,6 +232,15 @@ class _GeminiApiKeySession(LoginSession):
         return self._done
 
     async def events(self) -> AsyncIterator[LoginEvent]:
+        # Surface the AI Studio key page first so the user can grab a key
+        # in one click — saves searching for the URL. The wizard's
+        # LoginStream renders this as a clickable link with a "Copy /
+        # Open" button. The TextPrompt that follows is what they paste
+        # into.
+        yield UrlPrompt(
+            prompt_id="aistudio",
+            url="https://aistudio.google.com/apikey",
+        )
         yield TextPrompt(prompt_id="api_key", prompt="Google AI Studio API key", hidden=True)
         try:
             ans = await asyncio.wait_for(self._answers.get(), timeout=300)
@@ -289,27 +298,34 @@ class GeminiBackend:
             version_regex=r"(\d+\.\d+\.\d+)",
         ),
         login_flows=[
-            # cli_browser is listed first so the wizard's auto-pick prefers
-            # the subscription flow — most users have a Google account but
-            # not an AI Studio API key. api_key remains as fallback.
-            LoginFlowSpec(
-                kind="cli_browser",
-                display_name="Sign in with Google",
-                description=(
-                    "Sign in to your Google account (uses CLIProxyAPI). "
-                    "Works with Gemini Code Assist / Pro / Ultra subscriptions."
-                ),
-                requires_inputs=[],
-            ),
+            # api_key is FIRST so the wizard's auto-pick lands on the path
+            # that actually works for everyone. cli_browser delegates to
+            # cliproxyapi --login which uses a hardcoded OAuth client that
+            # frequently hangs on Google's consent screen (unverified app
+            # gate, Workspace policy blocks, browser extension issues).
+            # cli_browser stays available via the wizard's flow switcher
+            # for users where it does work (Gemini Code Assist / Pro).
             LoginFlowSpec(
                 kind="api_key",
                 display_name="API key",
                 description=(
-                    "Paste a Google AI Studio API key — direct API access, "
-                    "no subscription needed. Get one at "
-                    "https://aistudio.google.com/apikey"
+                    "Paste a Google AI Studio API key — direct, no OAuth. "
+                    "Get one at https://aistudio.google.com/apikey "
+                    "(opens automatically in the next step)."
                 ),
                 requires_inputs=[InputSpec(name="api_key", label="API key", kind="secret")],
+            ),
+            LoginFlowSpec(
+                kind="cli_browser",
+                display_name="Sign in with Google (subscription)",
+                description=(
+                    "Sign in to your Google account via CLIProxyAPI. "
+                    "Works with Gemini Code Assist / Pro / Ultra "
+                    "subscriptions. NOTE: Google's OAuth consent gate is "
+                    "unreliable for this client; if it hangs, switch back "
+                    "to API key."
+                ),
+                requires_inputs=[],
             ),
         ],
         plan_options=None,
