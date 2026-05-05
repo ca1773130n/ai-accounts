@@ -63,8 +63,19 @@ docs-build:
 # what server.py would do without any AIA_* env set.
 playground HOST="127.0.0.1" PORT="30000":
     @if [ "{{PORT}}" = "6173" ]; then \
-        echo "ERROR: API port cannot be 6173 — Vite owns that port (strictPort: true)."; \
-        echo "       Pass a different port, e.g. 'just playground 0.0.0.0 30000'."; \
+        echo ""; \
+        echo "  6173 is the Vite port (the URL your browser hits) — NOT the API port."; \
+        echo ""; \
+        echo "  The PORT arg sets the Python API's listen port (default 30000)."; \
+        echo "  Vite always runs on 6173 and proxies /api/*, /health, /schema"; \
+        echo "  to the API. Vite already binds 0.0.0.0 in vite.config.ts."; \
+        echo ""; \
+        echo "  You probably want:"; \
+        echo "    just playground 0.0.0.0"; \
+        echo ""; \
+        echo "  → API on 127.0.0.1:30000, Vite on 0.0.0.0:6173"; \
+        echo "  → open http://<this-host>:6173/ from any machine that can reach it"; \
+        echo ""; \
         exit 1; \
     fi
     @{{justfile_directory()}}/scripts/kill-port.sh {{PORT}} 6173
