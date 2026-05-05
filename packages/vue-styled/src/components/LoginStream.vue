@@ -116,7 +116,32 @@ async function submit() {
 watch(
   () => props.session.status.value,
   (status) => {
-    if (status !== 'running') submitting.value = false;
+    if (status !== 'running') {
+      submitting.value = false;
+      eagerStatus.value = 'idle';
+    }
+  },
+);
+
+// A fresh prompt arrival means the previous response was acknowledged
+// by the backend. Drop the verifying spinner so intermediate steps
+// (menu → url, url → text, etc.) render the next prompt cleanly
+// instead of staying behind a stale verifying overlay.
+watch(
+  () => [
+    props.session.urlPrompt.value,
+    props.session.textPrompt.value,
+    props.session.menuPrompt.value,
+  ],
+  (now, prev) => {
+    const wasAny = prev?.some((p) => !!p) ?? false;
+    const isAny = now.some((p) => !!p);
+    if (isAny && !wasAny) {
+      // Transitioned from "no prompt" to "some prompt" — this is the
+      // backend asking for the next input, not a stale spinner state.
+      submitting.value = false;
+      eagerStatus.value = 'idle';
+    }
   },
 );
 
@@ -157,8 +182,12 @@ watch(
 );
 
 async function selectMenuOption(number: number) {
+  // Do NOT set `submitting=true` here. Menu picks are intermediate —
+  // the session stays in 'running' status while the next prompt
+  // (urlPrompt for OAuth backends) loads, so a `submitting` flag set
+  // here would never clear and the verifying spinner would block the
+  // subsequent paste/auth UI forever.
   submitError.value = null;
-  submitting.value = true;
   try {
     await props.session.respond(String(number));
   } catch (e: unknown) {
@@ -167,7 +196,6 @@ async function selectMenuOption(number: number) {
       `Could not submit your selection: ${msg}. ` +
       `The login session may have ended; cancel and start again.`
     );
-    submitting.value = false;
   }
 }
 
