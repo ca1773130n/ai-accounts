@@ -232,16 +232,18 @@ class _GeminiApiKeySession(LoginSession):
         return self._done
 
     async def events(self) -> AsyncIterator[LoginEvent]:
-        # Surface the AI Studio key page first so the user can grab a key
-        # in one click — saves searching for the URL. The wizard's
-        # LoginStream renders this as a clickable link with a "Copy /
-        # Open" button. The TextPrompt that follows is what they paste
-        # into.
-        yield UrlPrompt(
-            prompt_id="aistudio",
-            url="https://aistudio.google.com/apikey",
+        # The TextPrompt's `prompt` text is the input label rendered by
+        # LoginStream. Mention the AI Studio URL there so the user knows
+        # where to get a key — but DON'T auto-open the URL: the user
+        # wanted control over when (and whether) a new tab pops up.
+        yield TextPrompt(
+            prompt_id="api_key",
+            prompt=(
+                "Paste a Google AI Studio API key "
+                "(get one at https://aistudio.google.com/apikey)"
+            ),
+            hidden=True,
         )
-        yield TextPrompt(prompt_id="api_key", prompt="Google AI Studio API key", hidden=True)
         try:
             ans = await asyncio.wait_for(self._answers.get(), timeout=300)
         except asyncio.TimeoutError:

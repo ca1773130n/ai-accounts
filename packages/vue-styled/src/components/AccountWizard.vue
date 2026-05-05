@@ -515,6 +515,15 @@ watch(currentStep, async (_step) => {
   // tour-spotlight wiring further down (after every ref the predicates
   // close over). Here we only auto-start login.
   if (currentStep.value === 'login' && loginSession.status.value === 'idle') {
+    // When the backend advertises multiple login flows (e.g. gemini's
+    // api_key + cli_browser), don't auto-start — show the method picker
+    // first so the user explicitly chooses. Single-flow backends still
+    // auto-start as before. The user's pick (selectedFlow) overrides
+    // pickLoginFlow's default.
+    const meta = backendMeta.value;
+    if (meta && meta.login_flows.length > 1 && selectedFlow.value === null) {
+      return;
+    }
     await startUnifiedLogin();
   }
 }, { immediate: true });
@@ -1552,10 +1561,41 @@ function skipWizard() {
     <!-- Step 3: Login -->
     <div v-if="backendKind && currentStep === 'login'" class="wizard-step" data-tour="wiz-login">
       <div class="step-body">
-        <!-- Flow switcher: shown when the backend advertises >1 login flow,
-             so the user can bail out of a broken flow (e.g. Google's OAuth
-             consent page hanging) and try another (e.g. api_key). -->
-        <div v-if="hasMultipleFlows && backendMeta" class="login-flow-switcher">
+        <!-- Method picker: shown when the backend advertises >1 login
+             flow AND the user hasn't picked one yet. The login step's
+             auto-start is gated until a pick happens, so we mirror the
+             claude-style "choose how to log in" menu UX rather than
+             silently committing the user to a flow they'd then have to
+             switch out of. -->
+        <div
+          v-if="hasMultipleFlows && backendMeta && selectedFlow === null && loginStatus === 'idle'"
+          class="login-method-picker"
+        >
+          <h4 class="login-method-picker__heading">Choose a login method</h4>
+          <p class="login-method-picker__hint">
+            Pick how you want to authenticate {{ backendName }}. You can switch
+            later if your first choice doesn't work.
+          </p>
+          <div class="login-method-picker__options">
+            <button
+              v-for="f in backendMeta.login_flows"
+              :key="f.kind"
+              type="button"
+              class="login-method-picker__btn"
+              @click="switchLoginFlow(f.kind as LoginFlowKind)"
+            >
+              <strong class="login-method-picker__title">{{ f.display_name }}</strong>
+              <span v-if="f.description" class="login-method-picker__desc">{{ f.description }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Compact flow switcher: shown once a method is chosen so the
+             user can switch mid-flow without leaving the wizard. -->
+        <div
+          v-if="hasMultipleFlows && backendMeta && (selectedFlow !== null || loginStatus !== 'idle')"
+          class="login-flow-switcher"
+        >
           <span class="login-flow-switcher__label">Login method:</span>
           <div class="login-flow-switcher__options">
             <button
@@ -1582,8 +1622,14 @@ function skipWizard() {
           </button>
         </div>
 
-        <!-- Idle / Connecting -->
-        <template v-else-if="loginStatus === 'idle' || loginStatus === 'connecting'">
+        <!-- Idle / Connecting — only render the spinner when we've actually
+             dispatched a login (single-flow backend OR user picked a method).
+             Without this gate the multi-flow case showed "Starting login…"
+             forever because we'd never call startUnifiedLogin. -->
+        <template
+          v-else-if="(loginStatus === 'idle' || loginStatus === 'connecting') &&
+                     !(hasMultipleFlows && selectedFlow === null)"
+        >
           <div class="login-status login-connecting">
             <div class="spinner-sm"></div>
             <span>{{ t('accountWizard.startingLogin') }}</span>
@@ -2687,6 +2733,61 @@ code.review-value {
   background: var(--bg-tertiary, rgba(0, 0, 0, 0.3));
   border-radius: 6px;
   margin-top: 0.25rem;
+}
+
+.login-method-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.2));
+}
+.login-method-picker__heading {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.login-method-picker__hint {
+  margin: 0 0 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.login-method-picker__options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.login-method-picker__btn {
+  appearance: none;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.login-method-picker__btn:hover {
+  border-color: var(--primary-color);
+  background: var(--bg-hover);
+}
+.login-method-picker__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.login-method-picker__desc {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
 }
 
 .login-flow-switcher {
