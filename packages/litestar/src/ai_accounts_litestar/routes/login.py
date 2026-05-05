@@ -114,16 +114,17 @@ class LoginController(Controller):
                         and event is cached_url
                     ):
                         continue
-                    yield {
-                        "event": "login",
-                        "data": msgspec.json.encode(event).decode(),
-                    }
-                    # After LoginComplete, auto-store credential so the
-                    # backend transitions to READY. For CLI-browser/OAuth
-                    # flows, the CLI wrote the token to its config dir —
-                    # we store empty bytes as the "credential" since
-                    # validate()/list_models()/chat() use the config dir
-                    # via CLAUDE_CONFIG_DIR / CODEX_HOME / etc.
+                    # LoginComplete is the session's "I'm done collecting
+                    # credentials" event — the wizard auto-advances past the
+                    # login step on it. We must NOT emit it until after
+                    # store_credential + validate have actually succeeded;
+                    # otherwise an invalid api-key (or any validation
+                    # failure) shows the user a green "Login complete"
+                    # while the backend silently transitions to error and
+                    # the wizard has already moved on. Hold the event,
+                    # run the side-effects, then emit either the original
+                    # LoginComplete (success path) OR a LoginFailed-shaped
+                    # error frame (failure path) — never both.
                     if isinstance(event, LoginComplete):
                         try:
                             # API key flows store the key; CLI-browser
@@ -134,15 +135,7 @@ class LoginController(Controller):
                                 backend_id, cred
                             )
                             await account_service.validate(backend_id)
-                            logger.info(
-                                "auto-stored credential for %s after login",
-                                backend_id,
-                            )
                         except Exception as exc:
-                            # Don't leave the client believing login succeeded
-                            # while the backend is actually unusable. Emit an
-                            # explicit terminal error event so the UI can
-                            # surface the failure.
                             logger.warning(
                                 "failed to auto-store credential for %s",
                                 backend_id,
@@ -161,6 +154,22 @@ class LoginController(Controller):
                                 "event": "login",
                                 "data": msgspec.json.encode(err_payload).decode(),
                             }
+                            continue
+                        # Validate succeeded — now safe to tell the client
+                        # the login completed.
+                        logger.info(
+                            "auto-stored credential for %s after login",
+                            backend_id,
+                        )
+                        yield {
+                            "event": "login",
+                            "data": msgspec.json.encode(event).decode(),
+                        }
+                    else:
+                        yield {
+                            "event": "login",
+                            "data": msgspec.json.encode(event).decode(),
+                        }
             finally:
                 await session.cancel()
                 await registry.remove(session_id)
