@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
+import zlib
 from collections.abc import AsyncIterator
 
 import httpx
@@ -11,6 +13,38 @@ import httpx
 from ai_accounts_core.protocols.backend import ChatRequest, ChatStreamEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _maybe_decompress(body: bytes, encoding: str) -> bytes:
+    """Decompress an httpx streaming-response error body when the upstream
+    sent a Content-Encoding header. httpx's streaming mode does not auto-
+    decode, so error bodies can land here as raw gzip/deflate bytes — which
+    used to be stringified and rendered as garbage in the UI.
+
+    Falls back to the original body on any decompression failure (e.g.
+    declared encoding but body is plaintext, truncated stream)."""
+    enc = (encoding or "").lower().strip()
+    if enc == "gzip":
+        try:
+            return gzip.decompress(body)
+        except (OSError, EOFError, zlib.error):
+            pass
+    elif enc in {"deflate", "compress", "x-deflate"}:
+        try:
+            return zlib.decompress(body)
+        except zlib.error:
+            try:
+                return zlib.decompress(body, -zlib.MAX_WBITS)
+            except zlib.error:
+                pass
+    # Heuristic fallback: detect gzip magic bytes (1f 8b) even when the
+    # server forgot the Content-Encoding header.
+    if body[:2] == b"\x1f\x8b":
+        try:
+            return gzip.decompress(body)
+        except (OSError, EOFError, zlib.error):
+            pass
+    return body
 
 
 async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEvent]:
@@ -52,6 +86,14 @@ async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEv
             ) as resp:
                 if resp.status_code != 200:
                     body = await resp.aread()
+                    encoding = ""
+                    headers = getattr(resp, "headers", None)
+                    if headers is not None:
+                        try:
+                            encoding = headers.get("content-encoding", "") or ""
+                        except (AttributeError, TypeError):
+                            encoding = ""
+                    body = _maybe_decompress(body, encoding)
                     logger.warning("CLIProxy error %d: %s", resp.status_code, body[:200])
                     # Surface the upstream error to the UI. CLIProxyAPI mostly
                     # returns OpenAI-style {"error":{"message":...,"code":...}};

@@ -28,9 +28,10 @@ def _msg(role: str, content: str) -> ChatMessage:
 class _FakeStreamResp:
     """Async-context-manager mimicking httpx.AsyncClient.stream(...)."""
 
-    def __init__(self, status_code: int, body: bytes):
+    def __init__(self, status_code: int, body: bytes, headers: dict | None = None):
         self.status_code = status_code
         self._body = body
+        self.headers = headers or {}
 
     async def __aenter__(self):
         return self
@@ -47,7 +48,7 @@ class _FakeStreamResp:
             yield ""
 
 
-def _patch_cliproxy_returning(status_code: int, body: bytes):
+def _patch_cliproxy_returning(status_code: int, body: bytes, headers: dict | None = None):
     """Patch detect_cliproxy + httpx.AsyncClient.stream so the next chat
     call sees a `status_code` response with the given body."""
 
@@ -62,7 +63,7 @@ def _patch_cliproxy_returning(status_code: int, body: bytes):
             return None
 
         def stream(self, *a, **kw):
-            return _FakeStreamResp(status_code, body)
+            return _FakeStreamResp(status_code, body, headers)
 
     # detect_cliproxy is imported lazily inside _chat_via_cliproxy via
     # `from ai_accounts_core.cliproxy import detect_cliproxy` — patch at the
@@ -174,3 +175,45 @@ async def test_malformed_json_falls_back_to_excerpt():
     # Excerpt of the body is included — the literal text shows up.
     assert "Proxy error 500" in events[0].payload
     assert "not actually json" in events[0].payload
+
+
+@pytest.mark.asyncio
+async def test_gzipped_error_body_is_decompressed():
+    """When the upstream sends Content-Encoding: gzip, httpx streaming
+    mode returns raw compressed bytes — and we used to render them as
+    garbage in the UI. Verify decompression."""
+    import gzip
+    plaintext = b'{"error":{"message":"upstream rate limit exceeded"}}'
+    body = gzip.compress(plaintext)
+    patches = _patch_cliproxy_returning(429, body, {"content-encoding": "gzip"})
+    req = ChatRequest(messages=(_msg("user", "hi"),), model="x")
+    for p in patches:
+        p.start()
+    try:
+        events = await _collect(req)
+    finally:
+        for p in patches:
+            p.stop()
+    assert events[0].kind == "error"
+    assert "Proxy error 429" in events[0].payload
+    assert "upstream rate limit exceeded" in events[0].payload
+
+
+@pytest.mark.asyncio
+async def test_gzipped_body_without_header_decoded_via_magic_bytes():
+    """Server forgot the Content-Encoding header but body is still gzip.
+    Heuristic falls back to gzip-magic-byte detection."""
+    import gzip
+    plaintext = b'{"error":{"message":"oops"}}'
+    body = gzip.compress(plaintext)
+    patches = _patch_cliproxy_returning(500, body, {})  # no header
+    req = ChatRequest(messages=(_msg("user", "hi"),), model="x")
+    for p in patches:
+        p.start()
+    try:
+        events = await _collect(req)
+    finally:
+        for p in patches:
+            p.stop()
+    assert events[0].kind == "error"
+    assert "oops" in events[0].payload
