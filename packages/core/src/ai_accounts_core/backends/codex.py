@@ -15,6 +15,7 @@ from typing import Any, ClassVar
 import httpx
 
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
+from ai_accounts_core.backends._iso import resolved_iso
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
@@ -454,11 +455,20 @@ class CodexBackend:
     async def list_models(
         self, credential: bytes, *, isolation_dir: Path
     ) -> list[Model]:
-        # Resolution order (v0.7.10):
-        # 1. Direct OpenAI /v1/models with stored credential — authoritative,
-        #    subscription-filtered for ChatGPT-OAuth, full catalog for API keys.
-        # 2. CLIProxyAPI live list.
-        # 3. Static curated list (codex CLI has no `models list` subcommand).
+        # Resolution order (v0.7.12):
+        # 1. Codex CLI's local models_cache.json — the codex binary maintains
+        #    this against OpenAI's account-aware Codex backend, so it's both
+        #    SUBSCRIPTION-FILTERED and CURRENT (refreshed by the CLI on use).
+        #    Beats /v1/models because OpenAI's public /v1/models endpoint
+        #    rejects ChatGPT-OAuth tokens (only API keys are accepted there).
+        # 2. Direct OpenAI /v1/models with stored credential — authoritative
+        #    for API-key auth, no-op for ChatGPT-OAuth.
+        # 3. CLIProxyAPI live list.
+        # 4. Static curated list (codex CLI has no `models list` subcommand).
+        local_cache = self._list_models_from_codex_cache(isolation_dir)
+        if local_cache:
+            return local_cache
+
         api_models = await self._list_models_via_provider_api(credential)
         if api_models:
             return api_models
@@ -476,6 +486,7 @@ class CodexBackend:
                 for m in live
             ]
         return [
+            Model(id="gpt-5.5", display_name="GPT-5.5", context_window=400_000),
             Model(id="gpt-5.3-codex", display_name="GPT-5.3 Codex", context_window=400_000),
             Model(id="gpt-5.3-codex-spark", display_name="GPT-5.3 Codex Spark", context_window=400_000),
             Model(id="gpt-5.2-codex", display_name="GPT-5.2 Codex", context_window=400_000),
@@ -484,9 +495,72 @@ class CodexBackend:
             Model(id="gpt-5-codex", display_name="GPT-5 Codex", context_window=400_000),
             Model(id="gpt-5-codex-mini", display_name="GPT-5 Codex Mini", context_window=400_000),
             Model(id="gpt-5.2", display_name="GPT-5.2", context_window=400_000),
-            Model(id="gpt-5.1", display_name="GPT-5.1", context_window=400_000),
             Model(id="gpt-5", display_name="GPT-5", context_window=400_000),
         ]
+
+    def _list_models_from_codex_cache(
+        self, isolation_dir: Path
+    ) -> list[Model] | None:
+        """Read the codex CLI's own ``models_cache.json``. The codex binary
+        refreshes this against OpenAI's account-aware backend on use, so it
+        captures the user's actual subscription tier — including newer
+        models like ``gpt-5.5`` that aren't in our static fallback.
+
+        Schema (codex 0.130+): ``{"fetched_at", "etag", "client_version",
+        "models": [{"slug", "display_name", "visibility", ...}, ...]}``.
+        Only entries with ``visibility != "hidden"`` are surfaced.
+
+        Looks up the file in this priority:
+          1. ``<isolation_dir>/models_cache.json``
+          2. ``$CODEX_HOME/models_cache.json``
+          3. ``~/.codex/models_cache.json``
+        Returns None on missing/corrupt cache so the caller falls through.
+        """
+        import os
+
+        candidates: list[Path] = []
+        try:
+            candidates.append(resolved_iso(isolation_dir) / "models_cache.json")
+        except Exception:
+            pass
+        codex_home = os.environ.get("CODEX_HOME")
+        if codex_home:
+            candidates.append(Path(codex_home) / "models_cache.json")
+        candidates.append(Path.home() / ".codex" / "models_cache.json")
+
+        for path in candidates:
+            try:
+                if not path.is_file():
+                    continue
+                data = json.loads(path.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            entries = data.get("models")
+            if not isinstance(entries, list) or not entries:
+                continue
+            out: list[Model] = []
+            seen: set[str] = set()
+            for e in entries:
+                if not isinstance(e, dict):
+                    continue
+                if e.get("visibility") == "hidden":
+                    continue
+                slug = e.get("slug") or e.get("id")
+                if not isinstance(slug, str) or slug in seen:
+                    continue
+                seen.add(slug)
+                out.append(
+                    Model(
+                        id=slug,
+                        display_name=str(e.get("display_name") or slug),
+                        context_window=e.get("context_window") or 400_000,
+                    )
+                )
+            if out:
+                return out
+        return None
 
     async def _list_models_via_provider_api(
         self, credential: bytes
