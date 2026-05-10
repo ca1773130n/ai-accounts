@@ -114,6 +114,28 @@ function statusBadge(status: SynthesisStateRef['status']) {
 .aia-synth__content :deep(li) { margin: 0.125rem 0; }
 .aia-synth__content :deep(li > ul),
 .aia-synth__content :deep(li > ol) { margin: 0.125rem 0; }
+.aia-synth__content :deep(h1),
+.aia-synth__content :deep(h2),
+.aia-synth__content :deep(h3),
+.aia-synth__content :deep(h4),
+.aia-synth__content :deep(h5),
+.aia-synth__content :deep(h6) { font-weight: 700; line-height: 1.25; margin: 0.75rem 0 0.35rem; color: var(--aia-fg, #fafafa); }
+.aia-synth__content :deep(h1) { font-size: 1.35rem; }
+.aia-synth__content :deep(h2) { font-size: 1.15rem; }
+.aia-synth__content :deep(h3) { font-size: 1.0rem; }
+.aia-synth__content :deep(h4) { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--aia-fg-muted, #a1a1aa); }
+.aia-synth__content :deep(h5),
+.aia-synth__content :deep(h6) { font-size: 0.9rem; color: var(--aia-fg-muted, #a1a1aa); }
+.aia-synth__content :deep(blockquote) { border-left: 3px solid var(--aia-border-strong, #3f3f46); padding: 0.15rem 0.6rem; margin: 0.4rem 0; color: var(--aia-fg-muted, #a1a1aa); }
+.aia-synth__content :deep(table) { border-collapse: collapse; margin: 0.5rem 0; font-size: 0.85rem; }
+.aia-synth__content :deep(th),
+.aia-synth__content :deep(td) { border: 1px solid var(--aia-border, #27272a); padding: 0.3rem 0.55rem; text-align: left; }
+.aia-synth__content :deep(th) { background: var(--aia-bg-hover, #1f1f1f); font-weight: 600; }
+.aia-synth__content :deep(hr) { border: 0; border-top: 1px solid var(--aia-border, #27272a); margin: 0.6rem 0; }
+.aia-synth__content :deep(a) { color: var(--aia-link, #60a5fa); text-decoration: underline; }
+.aia-synth__content :deep(a:hover) { text-decoration: none; }
+.aia-synth__content :deep(strong) { color: var(--aia-fg, #fafafa); }
+.aia-synth__content :deep(em) { font-style: italic; }
 .aia-synth--streaming .aia-synth__content::after { content: '\25AE'; animation: aia-synth-blink 1s step-end infinite; }
 .aia-synth__error { padding: var(--aia-space-2, 8px) var(--aia-space-3, 12px); font-size: var(--aia-text-xs, 12px); color: var(--aia-danger, #ef4444); }
 @keyframes aia-synth-blink { 50% { opacity: 0; } }
