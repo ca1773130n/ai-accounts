@@ -454,12 +454,19 @@ class ClaudeBackend:
         return bool(data)
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
-        # Prefer live discovery from CLIProxyAPI when registered: this is the
-        # single source of truth for which model ids actually round-trip
-        # through /v1/chat/completions, so the dropdown can never advertise a
-        # name cliproxy doesn't know. Falls back to the static set when
-        # cliproxy isn't running (e.g. dev without the proxy installed,
-        # tests). Static list mirrors what cliproxyapi 6.8.30 advertises.
+        # Resolution order:
+        # 1. Direct Anthropic /v1/models call using the stored credential —
+        #    authoritative, account-scoped, no curation needed.
+        # 2. CLIProxyAPI live list — fallback when proxy is registered.
+        # 3. Static curated list — last resort (offline/throttled/unauthorized).
+        #
+        # The static list is intentionally narrow (current frontier + recent
+        # stable). v0.7.10 dropped deprecated 3.x and 4.0/4.1 entries that
+        # subscription tiers no longer serve.
+        api_models = await self._list_models_via_provider_api(credential)
+        if api_models:
+            return api_models
+
         from ai_accounts_core.cliproxy import cliproxy_list_models
 
         live = await cliproxy_list_models("claude")
@@ -473,17 +480,73 @@ class ClaudeBackend:
                 for m in live
             ]
         return [
+            Model(id="claude-opus-4-7", display_name="Claude Opus 4.7", context_window=1_000_000),
             Model(id="claude-opus-4-6", display_name="Claude Opus 4.6", context_window=1_000_000),
             Model(id="claude-opus-4-5-20251101", display_name="Claude Opus 4.5", context_window=200_000),
-            Model(id="claude-opus-4-1-20250805", display_name="Claude Opus 4.1", context_window=200_000),
-            Model(id="claude-opus-4-20250514", display_name="Claude Opus 4", context_window=200_000),
+            Model(id="claude-sonnet-4-7", display_name="Claude Sonnet 4.7", context_window=1_000_000),
             Model(id="claude-sonnet-4-6", display_name="Claude Sonnet 4.6", context_window=1_000_000),
             Model(id="claude-sonnet-4-5-20250929", display_name="Claude Sonnet 4.5", context_window=1_000_000),
-            Model(id="claude-sonnet-4-20250514", display_name="Claude Sonnet 4", context_window=200_000),
-            Model(id="claude-3-7-sonnet-20250219", display_name="Claude 3.7 Sonnet", context_window=200_000),
             Model(id="claude-haiku-4-5-20251001", display_name="Claude Haiku 4.5", context_window=200_000),
-            Model(id="claude-3-5-haiku-20241022", display_name="Claude 3.5 Haiku", context_window=200_000),
         ]
+
+    async def _list_models_via_provider_api(
+        self, credential: bytes
+    ) -> list[Model] | None:
+        """Call Anthropic ``GET /v1/models`` directly with the stored credential.
+
+        Returns the parsed model list on a 200 response, or ``None`` on any
+        non-200 status / network error so the caller can fall through to the
+        next discovery path. Never raises.
+
+        Auth selection:
+        - API keys (``sk-ant-...`` but not ``sk-ant-oat-``) → ``x-api-key``
+          + ``anthropic-version`` headers.
+        - OAuth tokens (``sk-ant-oat-...``) → ``Authorization: Bearer ...``
+          + ``anthropic-beta: oauth-2025-04-20`` (matches ``get_usage``).
+        - Empty credential (cli_browser without bearer access) → skip.
+        """
+        token = credential.decode("utf-8", errors="replace").strip()
+        if not token:
+            return None
+        if token.startswith("sk-ant-oat-"):
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "anthropic-beta": "oauth-2025-04-20",
+                "anthropic-version": "2023-06-01",
+            }
+        elif token.startswith("sk-ant-"):
+            headers = {
+                "x-api-key": token,
+                "anthropic-version": "2023-06-01",
+            }
+        else:
+            return None
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers=headers,
+                    timeout=15.0,
+                )
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+        except (httpx.HTTPError, ValueError, OSError) as exc:
+            logger.debug("claude /v1/models direct call failed: %r", exc)
+            return None
+        items = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(items, list) or not items:
+            return None
+        out: list[Model] = []
+        for entry in items:
+            if not isinstance(entry, dict):
+                continue
+            model_id = entry.get("id")
+            if not model_id:
+                continue
+            display = entry.get("display_name") or model_id
+            out.append(Model(id=str(model_id), display_name=str(display)))
+        return out or None
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
         from ai_accounts_core.domain.usage import UsageWindow

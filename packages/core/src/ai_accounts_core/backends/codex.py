@@ -454,12 +454,15 @@ class CodexBackend:
     async def list_models(
         self, credential: bytes, *, isolation_dir: Path
     ) -> list[Model]:
-        # Prefer live discovery from CLIProxyAPI when registered (single
-        # source of truth for which model ids round-trip through
-        # /v1/chat/completions). Falls back to the static set when cliproxy
-        # isn't running. Codex CLI 0.128.0 has no `models list` subcommand,
-        # so the static list matches what cliproxyapi 6.8.30 advertises for
-        # the openai provider — kept around for offline/test environments.
+        # Resolution order (v0.7.10):
+        # 1. Direct OpenAI /v1/models with stored credential — authoritative,
+        #    subscription-filtered for ChatGPT-OAuth, full catalog for API keys.
+        # 2. CLIProxyAPI live list.
+        # 3. Static curated list (codex CLI has no `models list` subcommand).
+        api_models = await self._list_models_via_provider_api(credential)
+        if api_models:
+            return api_models
+
         from ai_accounts_core.cliproxy import cliproxy_list_models
 
         live = await cliproxy_list_models("codex")
@@ -484,6 +487,49 @@ class CodexBackend:
             Model(id="gpt-5.1", display_name="GPT-5.1", context_window=400_000),
             Model(id="gpt-5", display_name="GPT-5", context_window=400_000),
         ]
+
+    async def _list_models_via_provider_api(
+        self, credential: bytes
+    ) -> list[Model] | None:
+        """Call OpenAI ``GET /v1/models`` directly with the stored credential.
+
+        Both API keys (``sk-...``) and ChatGPT-OAuth bearer tokens are sent as
+        ``Authorization: Bearer <credential>`` — codex stores both in the
+        same shape and OpenAI accepts the OAuth token at this endpoint.
+
+        Returns the parsed list on a 200 response, ``None`` otherwise so the
+        caller can fall through. Never raises.
+        """
+        token = credential.decode("utf-8", errors="replace").strip()
+        if not token:
+            return None
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=15.0,
+                )
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+        except (httpx.HTTPError, ValueError, OSError) as exc:
+            logging.getLogger(__name__).debug(
+                "codex /v1/models direct call failed: %r", exc
+            )
+            return None
+        items = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(items, list) or not items:
+            return None
+        out: list[Model] = []
+        for entry in items:
+            if not isinstance(entry, dict):
+                continue
+            model_id = entry.get("id")
+            if not model_id:
+                continue
+            out.append(Model(id=str(model_id), display_name=str(model_id)))
+        return out or None
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
         from ai_accounts_core.domain.usage import UsageWindow
