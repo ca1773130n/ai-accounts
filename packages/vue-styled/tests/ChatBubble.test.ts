@@ -70,4 +70,43 @@ describe('ChatBubble — back-migrated upgrades from Agented', () => {
     expect(cls).toContain('aia-bubble--streaming')
     expect(cls).toContain('aia-bubble--fade-in')
   })
+
+  // Regression: bad timestamps (e.g. SQLite's "2026-05-10 12:34:56"
+  // without the ISO ``T`` / ``Z``) used to render as the literal
+  // string ``"Invalid Date"`` because
+  // ``new Date(bad).toLocaleTimeString()`` doesn't throw — the catch
+  // branch never fired. Pin the ``isNaN(getTime())`` guard so the
+  // bubble shows nothing instead.
+
+  it('omits timestamp when prop is null', () => {
+    const wrapper = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', timestamp: null },
+    })
+    expect(wrapper.find('.aia-bubble__time').exists()).toBe(false)
+  })
+
+  it('does not leak the literal "Invalid Date" string for unparseable timestamps', () => {
+    const wrapper = mount(ChatBubble, {
+      props: {
+        role: 'assistant',
+        content: 'hi',
+        timestamp: 'not-a-date-at-all',
+      },
+    })
+    expect(wrapper.text()).not.toContain('Invalid Date')
+  })
+
+  it('renders ISO timestamps as a localized time string', () => {
+    const wrapper = mount(ChatBubble, {
+      props: {
+        role: 'assistant',
+        content: 'hi',
+        timestamp: '2026-05-10T12:34:56Z',
+      },
+    })
+    const time = wrapper.find('.aia-bubble__time')
+    expect(time.exists()).toBe(true)
+    expect(time.text()).not.toBe('')
+    expect(time.text()).not.toContain('Invalid')
+  })
 })
