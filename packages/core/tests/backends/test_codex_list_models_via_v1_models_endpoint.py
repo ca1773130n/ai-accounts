@@ -16,8 +16,20 @@ _API_MODELS_RESPONSE = {
 }
 
 
+def _isolate_local_cache(tmp_path, monkeypatch):
+    """Stub the v0.7.12 local-cache discovery so /v1/models tests run cleanly."""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "no-codex-home"))
+    monkeypatch.setenv("HOME", str(tmp_path / "no-home"))
+    monkeypatch.setattr(
+        CodexBackend,
+        "_list_models_from_codex_cache",
+        lambda self, isolation_dir: None,
+    )
+
+
 @pytest.mark.asyncio
-async def test_api_key_credential_sends_bearer_header(tmp_path, httpx_mock):
+async def test_api_key_credential_sends_bearer_header(tmp_path, httpx_mock, monkeypatch):
+    _isolate_local_cache(tmp_path, monkeypatch)
     httpx_mock.add_response(
         url="https://api.openai.com/v1/models",
         match_headers={"Authorization": "Bearer sk-proj-abc123"},
@@ -30,8 +42,9 @@ async def test_api_key_credential_sends_bearer_header(tmp_path, httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_chatgpt_oauth_token_sends_bearer_header(tmp_path, httpx_mock):
+async def test_chatgpt_oauth_token_sends_bearer_header(tmp_path, httpx_mock, monkeypatch):
     """ChatGPT-OAuth bearer tokens use the same Authorization header."""
+    _isolate_local_cache(tmp_path, monkeypatch)
     httpx_mock.add_response(
         url="https://api.openai.com/v1/models",
         match_headers={"Authorization": "Bearer eyJhbGciOiJSUzI1NiJ9.fake.oauth.token"},
@@ -47,6 +60,7 @@ async def test_chatgpt_oauth_token_sends_bearer_header(tmp_path, httpx_mock):
 @pytest.mark.asyncio
 async def test_non_200_response_falls_through_to_static(tmp_path, httpx_mock, monkeypatch):
     """A 401/403 should drop to the static curated list (no cliproxy)."""
+    _isolate_local_cache(tmp_path, monkeypatch)
     httpx_mock.add_response(
         url="https://api.openai.com/v1/models",
         status_code=401,
@@ -62,13 +76,13 @@ async def test_non_200_response_falls_through_to_static(tmp_path, httpx_mock, mo
     backend = CodexBackend()
     models = await backend.list_models(b"sk-proj-bad", isolation_dir=tmp_path)
     ids = [m.id for m in models]
-    # Static fallback fires — codex static list contains gpt-5* family.
     assert any(i.startswith("gpt-5") for i in ids)
 
 
 @pytest.mark.asyncio
 async def test_empty_credential_falls_through(tmp_path, monkeypatch):
     """No stored credential → skip provider API and drop to static."""
+    _isolate_local_cache(tmp_path, monkeypatch)
 
     async def _no_cliproxy(_kind: str):
         return None
