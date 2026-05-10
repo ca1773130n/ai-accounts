@@ -228,4 +228,54 @@ describe('AiChatPanelManaged — caller-managed sibling', () => {
     })
     expect(wrapper.findAll('.aia-resp')).toHaveLength(0)
   })
+
+  // ────────────────────────────────────────────────────────────────────
+  // CLI-runner toggle. The panel exposes a per-instance switch that
+  // signals to the host whether the next message should go through the
+  // host's autonomous CLI runner (tool-using agent) or the legacy
+  // CLIProxyAPI path. The panel itself does no routing — these tests
+  // pin the prop default, the emit, and the toggle visibility.
+
+  it('renders the CLI runner toggle in CLIProxy mode by default', async () => {
+    const AiChatPanelManaged = (await import('../src/components/AiChatPanelManaged.vue')).default
+    const wrapper = mount(AiChatPanelManaged)
+    const btn = wrapper.find('.cli-runner-toggle__btn')
+    expect(btn.exists()).toBe(true)
+    expect(btn.attributes('aria-pressed')).toBe('false')
+    expect(btn.text()).toContain('CLIProxy')
+    expect(btn.classes()).not.toContain('cli-runner-toggle__btn--active')
+  })
+
+  it('reflects useCliRunner=true with active styling and label', async () => {
+    const AiChatPanelManaged = (await import('../src/components/AiChatPanelManaged.vue')).default
+    const wrapper = mount(AiChatPanelManaged, {
+      props: { useCliRunner: true },
+    })
+    const btn = wrapper.find('.cli-runner-toggle__btn')
+    expect(btn.attributes('aria-pressed')).toBe('true')
+    expect(btn.text()).toContain('CLI runner')
+    expect(btn.classes()).toContain('cli-runner-toggle__btn--active')
+  })
+
+  it('emits update:useCliRunner with the inverted value on click', async () => {
+    const AiChatPanelManaged = (await import('../src/components/AiChatPanelManaged.vue')).default
+    const wrapper = mount(AiChatPanelManaged, {
+      props: { useCliRunner: false },
+    })
+    await wrapper.find('.cli-runner-toggle__btn').trigger('click')
+    expect(wrapper.emitted('update:useCliRunner')).toEqual([[true]])
+
+    await wrapper.setProps({ useCliRunner: true })
+    await wrapper.find('.cli-runner-toggle__btn').trigger('click')
+    expect(wrapper.emitted('update:useCliRunner')?.[1]).toEqual([false])
+  })
+
+  it('hides the toggle entirely when hideCliRunnerToggle is set', async () => {
+    const AiChatPanelManaged = (await import('../src/components/AiChatPanelManaged.vue')).default
+    const wrapper = mount(AiChatPanelManaged, {
+      props: { hideCliRunnerToggle: true },
+    })
+    expect(wrapper.find('.cli-runner-toggle').exists()).toBe(false)
+    expect(wrapper.find('.cli-runner-toggle__btn').exists()).toBe(false)
+  })
 })

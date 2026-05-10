@@ -96,6 +96,23 @@ const props = withDefaults(
     synthesisState?: SynthesisStateRef | null;
     /** Whether All/Compound mode is actively streaming. */
     isAllModeActive?: boolean;
+    /**
+     * When ``true``, render a toggle that signals "use the host app's
+     * autonomous CLI runner" instead of CLIProxyAPI. The panel emits
+     * ``update:useCliRunner`` when the user flips it; routing is the
+     * caller's responsibility — the panel itself stays generic.
+     *
+     * Default ``false`` so panels embedded in CLIProxy-driven flows
+     * (the original use case) keep their pure-token behavior unless a
+     * host explicitly opts in.
+     */
+    useCliRunner?: boolean;
+    /**
+     * When ``true``, hide the CLI-runner toggle entirely. Use this for
+     * read-only panels or contexts where the host doesn't support the
+     * CLI runner path. Implies ``useCliRunner=false``.
+     */
+    hideCliRunnerToggle?: boolean;
   }>(),
   {
     messages: () => [],
@@ -120,6 +137,8 @@ const props = withDefaults(
     chatMode: 'single',
     synthesisState: null,
     isAllModeActive: false,
+    useCliRunner: false,
+    hideCliRunnerToggle: false,
   },
 );
 
@@ -132,6 +151,7 @@ const emit = defineEmits<{
   (e: 'update:selectedAccountId', value: string | null): void;
   (e: 'update:selectedModel', value: string | null): void;
   (e: 'update:chatMode', mode: ChatMode): void;
+  (e: 'update:useCliRunner', value: boolean): void;
 }>();
 
 const chatContainer = ref<HTMLElement | null>(null);
@@ -281,6 +301,33 @@ const processGroupEntries = computed(() => {
     </AiChatSelector>
 
     <slot name="header-extra" />
+
+    <!-- CLI runner toggle. Default off → caller routes through
+         CLIProxyAPI (or whatever the host's pure-chat path is). When
+         flipped on, the host should route the next send through its
+         autonomous CLI runner so agents can use tools. The panel
+         itself does no routing — it just exposes the flag.
+
+         The pill is hidden entirely when ``hideCliRunnerToggle`` is
+         set so panels in read-only or CLIProxy-only contexts don't
+         confuse the user with a non-functional control. -->
+    <div v-if="!hideCliRunnerToggle" class="cli-runner-toggle">
+      <button
+        type="button"
+        class="cli-runner-toggle__btn"
+        :class="{ 'cli-runner-toggle__btn--active': useCliRunner }"
+        :aria-pressed="useCliRunner ? 'true' : 'false'"
+        :title="useCliRunner
+          ? 'CLI runner mode — agent uses tools (filesystem, shell, edits) in the project worktree'
+          : 'CLIProxy mode — pure token chat, no tool use'"
+        @click="emit('update:useCliRunner', !useCliRunner)"
+      >
+        <span class="cli-runner-toggle__dot" />
+        <span class="cli-runner-toggle__label">
+          {{ useCliRunner ? 'CLI runner' : 'CLIProxy' }}
+        </span>
+      </button>
+    </div>
 
     <div class="chat-container" ref="chatContainer" @scroll="onChatScroll">
       <slot name="welcome">
@@ -445,6 +492,55 @@ const processGroupEntries = computed(() => {
   overflow: hidden;
   min-width: 0;
   position: relative;
+}
+
+/* CLI-runner / CLIProxy mode pill. Sits above the chat container so
+   the user always knows whether the agent has tool privileges. */
+.cli-runner-toggle {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px 0;
+}
+.cli-runner-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--aia-border, #27272a);
+  background: var(--aia-bg-elevated, #141414);
+  color: var(--aia-fg-muted, #a1a1aa);
+  font-size: var(--aia-text-xs, 12px);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.cli-runner-toggle__btn:hover {
+  background: var(--aia-bg-hover, #1f1f1f);
+  color: var(--aia-fg, #fafafa);
+}
+.cli-runner-toggle__btn--active {
+  border-color: var(--aia-warning, #f59e0b);
+  color: var(--aia-warning, #f59e0b);
+  background: rgba(245, 158, 11, 0.08);
+}
+.cli-runner-toggle__btn--active:hover {
+  background: rgba(245, 158, 11, 0.14);
+}
+.cli-runner-toggle__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+.cli-runner-toggle__btn--active .cli-runner-toggle__dot {
+  opacity: 1;
+  box-shadow: 0 0 6px currentColor;
+}
+.cli-runner-toggle__label {
+  font-family: var(--aia-font-mono, ui-monospace, monospace);
+  letter-spacing: 0.02em;
 }
 
 .chat-container {
