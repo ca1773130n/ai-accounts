@@ -77,6 +77,17 @@ function explainError(raw: string): { title: string; hint: string | null } {
       hint: 'No ready account is registered for this backend kind.',
     };
   }
+  // Specific upstream rejection: model not supported on this auth method.
+  // Renders as a soft notice instead of a scary "Upstream proxy error" —
+  // this is a known constraint, not a bug. Common case: ChatGPT-auth Codex
+  // can't serve gpt-5.1 / gpt-5.1-codex-mini without an API key.
+  const notSupported = msg.match(/'([^']+)' (?:model )?is not supported when using (\w+) with a ([^']+?) account/i);
+  if (notSupported) {
+    return {
+      title: `${notSupported[1]} not available`,
+      hint: `Your ${notSupported[2]} account is authenticated via ${notSupported[3]}, which doesn't expose this model. Switch to an API-key login or pick a different model.`,
+    };
+  }
   if (/^Proxy error/i.test(msg)) {
     return { title: 'Upstream proxy error', hint: null };
   }
