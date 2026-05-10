@@ -302,7 +302,8 @@ async function handleFinalize() {
 
 <style scoped>
 .aia-smart-panel {
-  display: flex; flex-direction: column; height: 100%;
+  display: flex; flex-direction: column; height: 100%; width: 100%;
+  flex: 1 1 auto; min-width: 0;
   font-family: var(--aia-font-sans, system-ui, sans-serif);
   background: var(--aia-bg, #0a0a0a); color: var(--aia-fg, #fafafa);
   position: relative;
