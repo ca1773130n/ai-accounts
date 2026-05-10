@@ -23,6 +23,25 @@ _DEPRECATED_OR_REMOVED_IDS = {
 }
 
 
+def _stub_oauth_fallbacks(monkeypatch):
+    """Stub the v0.7.11 keychain/.credentials.json fallbacks so empty-
+    credential tests don't accidentally reach the developer's real
+    Claude OAuth token via the keychain."""
+
+    async def _no_keychain(self):
+        return None
+
+    async def _no_creds_file(self, _iso):
+        return None
+
+    monkeypatch.setattr(
+        ClaudeBackend, "_try_macos_keychain_oauth_token", _no_keychain
+    )
+    monkeypatch.setattr(
+        ClaudeBackend, "_try_credentials_file_oauth_token", _no_creds_file
+    )
+
+
 @pytest.mark.asyncio
 async def test_static_fallback_omits_deprecated_ids(tmp_path, monkeypatch):
     """Empty credential + no cliproxy → static list. None of the deprecated ids may appear."""
@@ -33,6 +52,7 @@ async def test_static_fallback_omits_deprecated_ids(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy
     )
+    _stub_oauth_fallbacks(monkeypatch)
 
     backend = ClaudeBackend()
     models = await backend.list_models(b"", isolation_dir=tmp_path)
@@ -52,6 +72,7 @@ async def test_static_fallback_includes_current_frontier(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy
     )
+    _stub_oauth_fallbacks(monkeypatch)
 
     backend = ClaudeBackend()
     models = await backend.list_models(b"", isolation_dir=tmp_path)
@@ -71,6 +92,7 @@ async def test_static_fallback_size_matches_spec(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy
     )
+    _stub_oauth_fallbacks(monkeypatch)
 
     backend = ClaudeBackend()
     models = await backend.list_models(b"", isolation_dir=tmp_path)

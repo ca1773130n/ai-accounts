@@ -463,7 +463,7 @@ class ClaudeBackend:
         # The static list is intentionally narrow (current frontier + recent
         # stable). v0.7.10 dropped deprecated 3.x and 4.0/4.1 entries that
         # subscription tiers no longer serve.
-        api_models = await self._list_models_via_provider_api(credential)
+        api_models = await self._list_models_via_provider_api(credential, isolation_dir)
         if api_models:
             return api_models
 
@@ -489,8 +489,90 @@ class ClaudeBackend:
             Model(id="claude-haiku-4-5-20251001", display_name="Claude Haiku 4.5", context_window=200_000),
         ]
 
+    async def _try_macos_keychain_oauth_token(self) -> str | None:
+        """Walk the macOS keychain for any ``Claude Code-credentials-*``
+        entry and extract ``claudeAiOauth.accessToken``.
+
+        Returns the first valid token found, or ``None`` when no entry
+        exists / dump-keychain fails / nothing parses. May trigger a
+        one-time user grant prompt on first call after install — the
+        same prompt ``security find-generic-password`` already shows
+        for ``Claude Safe Storage``.
+
+        Each ``find-generic-password`` lookup is wrapped in try/except so
+        a single corrupted entry can't poison the whole sweep.
+        """
+        if sys.platform != "darwin":
+            return None
+        try:
+            dump = await asyncio.to_thread(
+                subprocess.run,
+                ["security", "dump-keychain"],
+                capture_output=True,
+                timeout=10,
+                text=True,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            logger.debug("security dump-keychain failed: %r", exc)
+            return None
+        if dump.returncode != 0:
+            return None
+        services = re.findall(
+            r'"svce"<blob>="(Claude Code-credentials-[^"]+)"', dump.stdout
+        )
+        for service in services:
+            try:
+                proc = await asyncio.to_thread(
+                    subprocess.run,
+                    ["security", "find-generic-password", "-s", service, "-w"],
+                    capture_output=True,
+                    timeout=5,
+                    text=True,
+                )
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+                logger.debug("find-generic-password %s failed: %r", service, exc)
+                continue
+            if proc.returncode != 0 or not proc.stdout.strip():
+                continue
+            try:
+                data = json.loads(proc.stdout.strip())
+            except json.JSONDecodeError:
+                continue
+            inner = data.get("claudeAiOauth") if isinstance(data, dict) else None
+            if isinstance(inner, dict):
+                token = inner.get("accessToken")
+                if isinstance(token, str) and token:
+                    return token
+        return None
+
+    async def _try_credentials_file_oauth_token(
+        self, isolation_dir: Path
+    ) -> str | None:
+        """Read ``<isolation_dir>/.credentials.json`` and extract the OAuth
+        access token.
+
+        On Linux/non-keychain platforms the Claude CLI persists the OAuth
+        token to ``.credentials.json`` with the same shape used by the
+        keychain blob (``{"claudeAiOauth": {"accessToken": "..."}}``).
+        Returns ``None`` when the file is missing / unreadable / malformed.
+        """
+        iso = resolved_iso(isolation_dir)
+        creds_file = iso / ".credentials.json"
+        if not creds_file.is_file():
+            return None
+        try:
+            data = json.loads(creds_file.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None
+        inner = data.get("claudeAiOauth") if isinstance(data, dict) else None
+        if isinstance(inner, dict):
+            token = inner.get("accessToken")
+            if isinstance(token, str) and token:
+                return token
+        return None
+
     async def _list_models_via_provider_api(
-        self, credential: bytes
+        self, credential: bytes, isolation_dir: Path
     ) -> list[Model] | None:
         """Call Anthropic ``GET /v1/models`` directly with the stored credential.
 
@@ -503,11 +585,21 @@ class ClaudeBackend:
           + ``anthropic-version`` headers.
         - OAuth tokens (``sk-ant-oat-...``) → ``Authorization: Bearer ...``
           + ``anthropic-beta: oauth-2025-04-20`` (matches ``get_usage``).
-        - Empty credential (cli_browser without bearer access) → skip.
+        - Empty credential (cli_browser auth) → fall back to the macOS
+          keychain (``Claude Code-credentials-*`` entries) or the
+          ``.credentials.json`` file under ``CLAUDE_CONFIG_DIR``. The CLI
+          stores the OAuth token there, not in the credential vault.
         """
         token = credential.decode("utf-8", errors="replace").strip()
         if not token:
-            return None
+            # cli_browser auth: OAuth token lives in OS keychain or
+            # .credentials.json, not in the credential vault. Try those
+            # before giving up.
+            token = await self._try_macos_keychain_oauth_token()
+            if not token:
+                token = await self._try_credentials_file_oauth_token(isolation_dir)
+            if not token:
+                return None
         if token.startswith("sk-ant-oat-"):
             headers = {
                 "Authorization": f"Bearer {token}",
