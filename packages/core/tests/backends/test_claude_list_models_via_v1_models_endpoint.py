@@ -90,13 +90,29 @@ async def test_empty_credential_falls_through(tmp_path, monkeypatch):
     The httpx_mock fixture is intentionally absent — if the helper attempted a
     real network call here, pytest-httpx would fail it; instead we expect a
     direct fall-through to the static curated list.
+
+    v0.7.11 added keychain/.credentials.json fallbacks for cli_browser auth,
+    so we stub both helpers to return None to preserve the original
+    "no-bearer → no /v1/models call → static list" assertion.
     """
 
     async def _no_cliproxy(_kind: str):
         return None
 
+    async def _no_keychain(self):
+        return None
+
+    async def _no_creds_file(self, _iso):
+        return None
+
     monkeypatch.setattr(
         "ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy
+    )
+    monkeypatch.setattr(
+        ClaudeBackend, "_try_macos_keychain_oauth_token", _no_keychain
+    )
+    monkeypatch.setattr(
+        ClaudeBackend, "_try_credentials_file_oauth_token", _no_creds_file
     )
     backend = ClaudeBackend()
     models = await backend.list_models(b"", isolation_dir=tmp_path)

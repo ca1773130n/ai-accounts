@@ -63,11 +63,24 @@ async def test_validate_returns_true_when_macos_keychain_has_entry(tmp_path):
 async def test_list_models_returns_known_set(tmp_path):
     """Static fallback when cliproxy isn't reachable. Force the live path
     to 'unavailable' so the test machine's real cliproxyapi (if any)
-    doesn't shadow the static set."""
+    doesn't shadow the static set.
+
+    v0.7.11 added keychain/.credentials.json fallbacks for the empty-
+    credential case, so we also stub those helpers — otherwise this test
+    runs against the developer's real keychain on macOS and reaches the
+    live Anthropic /v1/models response (which has no context_window)."""
     from unittest.mock import AsyncMock as _AsyncMock
     backend = ClaudeBackend()
     with patch(
         "ai_accounts_core.cliproxy.cliproxy_list_models",
+        new=_AsyncMock(return_value=None),
+    ), patch.object(
+        ClaudeBackend,
+        "_try_macos_keychain_oauth_token",
+        new=_AsyncMock(return_value=None),
+    ), patch.object(
+        ClaudeBackend,
+        "_try_credentials_file_oauth_token",
         new=_AsyncMock(return_value=None),
     ):
         models = await backend.list_models(b"", isolation_dir=tmp_path)
