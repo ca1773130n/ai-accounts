@@ -55,7 +55,15 @@ const props = withDefaults(
 const html = computed(() => marked.parse(props.content || '') as string);
 const timeStr = computed(() => {
   if (!props.timestamp) return '';
-  try { return new Date(props.timestamp).toLocaleTimeString(); } catch { return ''; }
+  // ``new Date('2026-05-10 12:34:56')`` (SQLite default format without
+  // the ``T`` / ``Z``) silently returns an Invalid Date object on some
+  // engines; ``toLocaleTimeString()`` then renders the literal string
+  // ``"Invalid Date"`` without throwing, so a try/catch around the
+  // conversion never fires. Guard with ``isNaN(getTime())`` so bad
+  // timestamps render as empty instead of leaking into the bubble UI.
+  const d = new Date(props.timestamp);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString();
 });
 
 function copyCode(e: Event) {
