@@ -604,7 +604,15 @@ const hasMultipleFlows = computed(() =>
  *  when the user is stuck mid-flow (e.g. Google's OAuth consent gate is
  *  broken) and wants to try a different flow without leaving the wizard. */
 async function switchLoginFlow(kind: LoginFlowKind) {
-  if (kind === activeFlow.value) return;
+  // Only early-return on a true no-op switch — when the user has ALREADY
+  // picked a flow and is clicking the same one again. On the first pick
+  // (`selectedFlow.value === null`), we always proceed even if `kind`
+  // matches `pickLoginFlow`'s default — otherwise clicking the highlighted
+  // option in the method-picker silently no-ops because `activeFlow`
+  // already reflects that default. Bug surfaced for Claude where
+  // `pickLoginFlow → 'cli_browser'`, so clicking "Sign in with browser"
+  // matched the default and nothing happened.
+  if (selectedFlow.value !== null && kind === activeFlow.value) return;
   // Best-effort cancel — the session may already be terminal.
   try {
     await loginSession.cancel();
