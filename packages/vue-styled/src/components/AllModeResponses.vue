@@ -255,6 +255,11 @@ function bodyHtml(resp: BackendResponseState): string {
 .aia-resp__body :deep(pre) { background: var(--aia-bg, #0a0a0a); border-radius: var(--aia-radius, 8px); padding: 0.75rem; overflow-x: auto; margin: 0.5rem 0; font-size: 0.8rem; }
 .aia-resp__body :deep(code) { font-family: var(--aia-font-mono, monospace); }
 .aia-resp__body :deep(p) { margin: 0.25rem 0; }
+.aia-resp__body :deep(ul),
+.aia-resp__body :deep(ol) { padding-inline-start: 1.5rem; margin: 0.25rem 0; }
+.aia-resp__body :deep(li) { margin: 0.125rem 0; }
+.aia-resp__body :deep(li > ul),
+.aia-resp__body :deep(li > ol) { margin: 0.125rem 0; }
 .aia-resp--error {
   border-color: rgba(239, 68, 68, 0.4);
   box-shadow: inset 3px 0 0 var(--aia-danger, #ef4444);

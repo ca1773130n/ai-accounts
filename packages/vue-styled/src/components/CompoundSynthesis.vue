@@ -109,6 +109,11 @@ function statusBadge(status: SynthesisStateRef['status']) {
 .aia-synth__content :deep(pre) { background: var(--aia-bg, #0a0a0a); border-radius: var(--aia-radius, 8px); padding: 0.75rem; overflow-x: auto; margin: 0.5rem 0; font-size: 0.8rem; }
 .aia-synth__content :deep(code) { font-family: var(--aia-font-mono, monospace); }
 .aia-synth__content :deep(p) { margin: 0.25rem 0; }
+.aia-synth__content :deep(ul),
+.aia-synth__content :deep(ol) { padding-inline-start: 1.5rem; margin: 0.25rem 0; }
+.aia-synth__content :deep(li) { margin: 0.125rem 0; }
+.aia-synth__content :deep(li > ul),
+.aia-synth__content :deep(li > ol) { margin: 0.125rem 0; }
 .aia-synth--streaming .aia-synth__content::after { content: '\25AE'; animation: aia-synth-blink 1s step-end infinite; }
 .aia-synth__error { padding: var(--aia-space-2, 8px) var(--aia-space-3, 12px); font-size: var(--aia-text-xs, 12px); color: var(--aia-danger, #ef4444); }
 @keyframes aia-synth-blink { 50% { opacity: 0; } }
