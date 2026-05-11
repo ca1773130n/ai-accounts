@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
+import DOMPurify from 'dompurify';
 import MessageActions from './MessageActions.vue';
 
 interface MessageLike {
@@ -52,7 +53,17 @@ const props = withDefaults(
   },
 );
 
-const html = computed(() => marked.parse(props.content || '') as string);
+// Sanitize the rendered markdown HTML before v-html. Without this,
+// user-controlled prompts and model output that contain raw HTML
+// (`<script>`, `<img onerror=…>`, `javascript:` href, etc.) get
+// rendered as live DOM — an XSS vector for any host that feeds
+// untrusted content to ChatBubble. DOMPurify's default config strips
+// scripts, event handlers, and dangerous URL schemes while keeping
+// the standard markdown-output subset (headings, lists, tables,
+// code, formatting, safe links).
+const html = computed(() =>
+  DOMPurify.sanitize(marked.parse(props.content || '') as string) as string,
+);
 const timeStr = computed(() => {
   if (!props.timestamp) return '';
   // ``new Date('2026-05-10 12:34:56')`` (SQLite default format without
