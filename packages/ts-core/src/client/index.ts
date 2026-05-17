@@ -303,6 +303,48 @@ export class AiAccountsClient {
     yield* parseSseLoginEvents(r);
   }
 
+  async discoverConfigs(): Promise<{
+    items: Array<{
+      kind: string;
+      path: string;
+      suggested_name: string;
+      is_logged_in: boolean;
+      error: string | null;
+    }>;
+  }> {
+    // Probes real CLI prompts ("claude -p hello") against each glob match —
+    // can take up to ~12s per candidate (parallelized). Caller should
+    // surface a spinner; don't call on every page load.
+    const r = await this._fetch(`${this.baseUrl}/api/v1/discovery/`, {
+      method: 'GET',
+      headers: this.headers(),
+    });
+    if (!r.ok) throw await toError(r);
+    return r.json() as Promise<{
+      items: Array<{
+        kind: string;
+        path: string;
+        suggested_name: string;
+        is_logged_in: boolean;
+        error: string | null;
+      }>;
+    }>;
+  }
+
+  async importDiscovered(input: {
+    kind: string;
+    path: string;
+    display_name?: string;
+  }): Promise<BackendDTO> {
+    const r = await this._fetch(`${this.baseUrl}/api/v1/discovery/import`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(input),
+    });
+    if (!r.ok) throw await toError(r);
+    return r.json() as Promise<BackendDTO>;
+  }
+
   async listModels(backendId: string): Promise<{ items: Array<{ id: string; display_name: string; context_window: number | null }> }> {
     const r = await this._fetch(
       `${this.baseUrl}/api/v1/backends/${encodeURIComponent(backendId)}/models/`,

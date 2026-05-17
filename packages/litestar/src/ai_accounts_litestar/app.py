@@ -26,6 +26,7 @@ from .routes.backends import BackendsController
 from .routes.chat_send import ChatSendController
 from .routes.cliproxy import CliproxyController
 from .routes.conversations import ConversationsController
+from .routes.discovery import DiscoveryController
 from .routes.install import InstallController
 from .routes.login import LoginController
 from .routes.meta import MetaController
@@ -202,6 +203,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
             ChatSendController,
             CliproxyController,
             ConversationsController,
+            DiscoveryController,
             InstallController,
             LoginController,
             MetaController,

@@ -112,6 +112,65 @@ class AccountService:
     def available_kinds(self) -> builtins.list[str]:
         return sorted(self._backend_impls.keys())
 
+    async def discover_existing(
+        self, *, probe_timeout: float = 12.0
+    ) -> builtins.list["DiscoveredConfig"]:
+        """Auto-detect CLI config directories the user already authenticated.
+
+        Globs ``~/.<kind>*`` for every registered backend kind and runs a
+        small non-interactive prompt against each candidate to verify the
+        directory is actually logged in. The UI uses this to offer one-click
+        import of pre-existing accounts.
+
+        Excludes paths that already have a backend row pointing at them, so
+        the user isn't tempted to "re-import" something they already have.
+        """
+        # Lazy import — keeps the service module light when discovery isn't used.
+        from ai_accounts_core.services.discovery import (
+            DiscoveredConfig,
+            discover_all,
+        )
+
+        found = await discover_all(self.available_kinds(), probe_timeout=probe_timeout)
+        # Hide paths already imported.
+        existing_paths = {
+            str(Path(str(b.config.get("config_path") or "")).expanduser().resolve())
+            for b in await self.list()
+            if b.config.get("config_path")
+        }
+        return [
+            c for c in found
+            if str(Path(c.path).expanduser().resolve()) not in existing_paths
+        ]
+
+    async def import_discovered(
+        self,
+        kind: str,
+        config_path: str,
+        *,
+        display_name: str | None = None,
+    ) -> Backend:
+        """Create a backend row pointing at an existing CLI config directory.
+
+        Stores an empty credential (CLI-browser flow shape — the CLI owns
+        the auth in its config dir) and runs validate to flip the status
+        to READY (or ERROR). Reuses AccountService.create's dedup logic.
+        """
+        cfg: dict[str, object] = {"config_path": config_path}
+        backend = await self.create(
+            kind,
+            display_name=display_name or config_path.split("/")[-1],
+            config=cfg,
+        )
+        await self.store_credential(backend.id, b"")
+        try:
+            return await self.validate(backend.id)
+        except Exception:
+            # validate raises BackendValidationFailed on a non-ready backend;
+            # the row exists with status=error, which is fine for the UI to
+            # surface. Re-fetch so the caller sees the actual final status.
+            return await self.get(backend.id)
+
     def _impl_for(self, kind: str) -> BackendProtocol:
         return self._backend_impls[kind]
 

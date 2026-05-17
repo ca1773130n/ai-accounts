@@ -11,17 +11,69 @@ type Backend = {
   config?: Record<string, unknown>;
 };
 
+type DiscoveredItem = {
+  kind: string;
+  path: string;
+  suggested_name: string;
+  is_logged_in: boolean;
+  error: string | null;
+};
+
 const { client } = useAiAccounts();
 const accounts = ref<Backend[]>([]);
 const showWizard = ref(false);
 const lastSavedId = ref<string | null>(null);
 const removingId = ref<string | null>(null);
 
+// Discovery state — populated when user clicks "Auto-detect". Each probe
+// is a real CLI prompt run (claude -p hello, etc.) so it's user-triggered
+// rather than auto-fired on every page load.
+const discovered = ref<DiscoveredItem[]>([]);
+const discovering = ref(false);
+const discoveryError = ref<string | null>(null);
+const discoveryRan = ref(false);
+const importingPath = ref<string | null>(null);
+
 const readyCount = computed(() => accounts.value.filter(a => a.status === 'ready').length);
+const discoveredReady = computed(() => discovered.value.filter(d => d.is_logged_in));
+const discoveredOther = computed(() => discovered.value.filter(d => !d.is_logged_in));
 
 async function refresh() {
   const { items } = await client.listBackends();
   accounts.value = items as unknown as Backend[];
+}
+
+async function runDiscovery() {
+  discovering.value = true;
+  discoveryError.value = null;
+  try {
+    const res = await client.discoverConfigs();
+    discovered.value = res.items;
+    discoveryRan.value = true;
+  } catch (e) {
+    discoveryError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    discovering.value = false;
+  }
+}
+
+async function importDiscovered(item: DiscoveredItem) {
+  importingPath.value = item.path;
+  try {
+    const backend = await client.importDiscovered({
+      kind: item.kind,
+      path: item.path,
+      display_name: item.suggested_name,
+    });
+    lastSavedId.value = backend.id;
+    // Drop the imported row from the list so the user can't double-import.
+    discovered.value = discovered.value.filter(d => d.path !== item.path);
+    await refresh();
+  } catch (e) {
+    discoveryError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    importingPath.value = null;
+  }
 }
 
 async function removeAccount(acc: Backend) {
@@ -72,6 +124,85 @@ onMounted(refresh);
         <button class="btn btn--primary" @click="openWizard">+ Add account</button>
       </div>
     </header>
+
+    <!-- Auto-detect existing CLI logins. Probes ~/.kind* dirs with a real
+         prompt (e.g. `claude -p hello`) — costs upstream tokens, so it's
+         user-triggered, not auto-fired. -->
+    <section class="card section">
+      <header class="section__head">
+        <h2 class="section__title">Existing CLI logins</h2>
+        <button
+          class="btn"
+          :disabled="discovering"
+          @click="runDiscovery"
+        >
+          {{ discovering ? 'Probing…' : (discoveryRan ? 'Re-scan' : 'Auto-detect') }}
+        </button>
+      </header>
+      <p v-if="!discoveryRan && !discovering" class="empty" style="text-align: left; padding: 0;">
+        Scans <code>~/.claude*</code>, <code>~/.codex*</code>, <code>~/.gemini*</code>,
+        <code>~/.opencode*</code> and runs a small prompt against each to find
+        accounts you're already signed into. Already-imported paths are hidden.
+      </p>
+      <p v-if="discoveryError" class="error-text">{{ discoveryError }}</p>
+      <ul v-if="discoveredReady.length" class="account-list">
+        <li
+          v-for="item in discoveredReady"
+          :key="item.path"
+          class="account-row"
+          :class="`account-row--${item.kind}`"
+        >
+          <div class="account-row__rail" />
+          <div class="account-row__body">
+            <div class="account-row__main">
+              <span class="account-row__kind">{{ item.kind }}</span>
+              <strong class="account-row__name">{{ item.suggested_name }}</strong>
+              <span class="account-row__status status--ready">
+                <span class="status__dot" />logged in
+              </span>
+            </div>
+            <div class="account-row__meta">
+              <code>{{ item.path }}</code>
+            </div>
+          </div>
+          <div class="account-row__actions">
+            <button
+              class="btn btn--primary"
+              :disabled="importingPath === item.path"
+              @click="importDiscovered(item)"
+            >
+              {{ importingPath === item.path ? 'Importing…' : '+ Import' }}
+            </button>
+          </div>
+        </li>
+      </ul>
+      <details v-if="discoveredOther.length" class="discovered-other">
+        <summary>{{ discoveredOther.length }} not-signed-in dir(s)</summary>
+        <ul class="account-list">
+          <li
+            v-for="item in discoveredOther"
+            :key="item.path"
+            class="account-row account-row--dim"
+            :class="`account-row--${item.kind}`"
+          >
+            <div class="account-row__rail" />
+            <div class="account-row__body">
+              <div class="account-row__main">
+                <span class="account-row__kind">{{ item.kind }}</span>
+                <strong class="account-row__name">{{ item.suggested_name }}</strong>
+              </div>
+              <div class="account-row__meta">
+                <code>{{ item.path }}</code>
+                <span v-if="item.error" class="account-row__err">{{ item.error }}</span>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </details>
+      <p v-if="discoveryRan && !discovered.length" class="empty" style="text-align: left; padding: 0;">
+        No new CLI config directories found.
+      </p>
+    </section>
 
     <section class="card section">
       <header class="section__head">
@@ -309,6 +440,31 @@ html, body, #app {
 }
 .account-row:hover { background: var(--pg-bg-hover); border-color: var(--pg-border-strong); }
 .account-row--new { border-color: var(--pg-success); box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.25); }
+.account-row--dim { opacity: 0.55; }
+.account-row__err {
+  color: var(--pg-danger);
+  font-size: 0.72rem;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.discovered-other {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--pg-fg-muted);
+}
+.discovered-other summary {
+  cursor: pointer;
+  padding: 0.25rem 0;
+  user-select: none;
+}
+.error-text {
+  color: var(--pg-danger);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
 
 .account-row__rail {
   align-self: stretch;
