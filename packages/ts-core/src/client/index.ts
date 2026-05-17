@@ -310,11 +310,15 @@ export class AiAccountsClient {
       suggested_name: string;
       is_logged_in: boolean;
       error: string | null;
+      // Set when the path is already an imported backend — the server
+      // has already synced that backend's status to is_logged_in.
+      backend_id: string | null;
     }>;
   }> {
-    // Probes real CLI prompts ("claude -p hello") against each glob match —
-    // can take up to ~12s per candidate (parallelized). Caller should
-    // surface a spinner; don't call on every page load.
+    // Probes real CLI prompts ("claude -p hello") against each glob match
+    // AND each already-imported account, so stale "ready" statuses (token
+    // expiry, manual logout, etc.) surface in the same call. Can take up
+    // to ~12s per candidate (parallelized); user-triggered.
     const r = await this._fetch(`${this.baseUrl}/api/v1/discovery/`, {
       method: 'GET',
       headers: this.headers(),
@@ -327,6 +331,7 @@ export class AiAccountsClient {
         suggested_name: string;
         is_logged_in: boolean;
         error: string | null;
+        backend_id: string | null;
       }>;
     }>;
   }

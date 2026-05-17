@@ -23,6 +23,10 @@ class _DiscoveredItem(msgspec.Struct, kw_only=True):
     suggested_name: str
     is_logged_in: bool
     error: str | None = None
+    # Populated when this path is already represented as a backend row.
+    # When set, the UI hides the Import button and the backend's status
+    # has been synced to the probe result.
+    backend_id: str | None = None
 
 
 class _DiscoverResponse(msgspec.Struct, kw_only=True):
@@ -52,6 +56,7 @@ class DiscoveryController(Controller):
                     suggested_name=c.suggested_name,
                     is_logged_in=c.is_logged_in,
                     error=c.error,
+                    backend_id=c.backend_id,
                 )
                 for c in items
             ]

@@ -119,11 +119,16 @@ class AccountService:
 
         Globs ``~/.<kind>*`` for every registered backend kind and runs a
         small non-interactive prompt against each candidate to verify the
-        directory is actually logged in. The UI uses this to offer one-click
-        import of pre-existing accounts.
+        directory is actually logged in. Used by the UI to:
 
-        Excludes paths that already have a backend row pointing at them, so
-        the user isn't tempted to "re-import" something they already have.
+          1. Surface NEW candidates for one-click import.
+          2. Re-check ALREADY-IMPORTED accounts so a stale "ready" status
+             (e.g. an OAuth token that expired since the last validate()
+             call) surfaces immediately.
+
+        For each imported path, the matching backend row's status is
+        synced to the probe result (ready ↔ error) before returning, so
+        the caller's next ``list()`` reflects reality.
         """
         # Lazy import — keeps the service module light when discovery isn't used.
         from ai_accounts_core.services.discovery import (
@@ -132,16 +137,45 @@ class AccountService:
         )
 
         found = await discover_all(self.available_kinds(), probe_timeout=probe_timeout)
-        # Hide paths already imported.
-        existing_paths = {
-            str(Path(str(b.config.get("config_path") or "")).expanduser().resolve())
-            for b in await self.list()
-            if b.config.get("config_path")
-        }
-        return [
-            c for c in found
-            if str(Path(c.path).expanduser().resolve()) not in existing_paths
-        ]
+        # Build path → backend lookup so we can annotate + sync status.
+        path_to_backend: dict[str, Backend] = {}
+        for b in await self.list():
+            cfg_path = b.config.get("config_path")
+            if cfg_path:
+                resolved = str(Path(str(cfg_path)).expanduser().resolve())
+                path_to_backend[resolved] = b
+
+        enriched: builtins.list[DiscoveredConfig] = []
+        for c in found:
+            resolved = str(Path(c.path).expanduser().resolve())
+            backend = path_to_backend.get(resolved)
+            if backend is None:
+                enriched.append(c)
+                continue
+            # Already imported — sync the backend's status to the probe
+            # result. The probe is a real prompt (claude -p hello, etc.),
+            # so it catches expired tokens that the file-probe validate()
+            # would miss on macOS.
+            new_status = (
+                BackendStatus.READY if c.is_logged_in else BackendStatus.ERROR
+            )
+            if backend.status != new_status:
+                logger.info(
+                    "discovery: syncing %s status %s → %s",
+                    backend.id, backend.status, new_status,
+                )
+                backend = await self._update_status(backend, new_status)
+            enriched.append(
+                DiscoveredConfig(
+                    kind=c.kind,
+                    path=c.path,
+                    suggested_name=c.suggested_name,
+                    is_logged_in=c.is_logged_in,
+                    error=c.error,
+                    backend_id=backend.id,
+                )
+            )
+        return enriched
 
     async def import_discovered(
         self,

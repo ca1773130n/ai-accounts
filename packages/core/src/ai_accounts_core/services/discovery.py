@@ -85,6 +85,11 @@ class DiscoveredConfig:
     suggested_name: str
     is_logged_in: bool
     error: str | None = None
+    # Set when this path is already represented by an existing backend
+    # row — the UI hides the Import button and instead surfaces the
+    # current backend status (which the service syncs to the probe
+    # result before returning). None means "not yet imported".
+    backend_id: str | None = None
 
 
 async def _run_probe(

@@ -47,6 +47,16 @@ def test_discovery_list_returns_items(client):
             is_logged_in=False,
             error="Not logged in",
         ),
+        # Already-imported, still healthy — backend_id surfaces so the UI
+        # can hide its Import button and surface a "re-verified" badge.
+        DiscoveredConfig(
+            kind="claude",
+            path="/home/u/.claude-personal",
+            suggested_name="personal",
+            is_logged_in=True,
+            error=None,
+            backend_id="bkd-abc123",
+        ),
     ]
     with patch(
         "ai_accounts_core.services.accounts.AccountService.discover_existing",
@@ -55,12 +65,15 @@ def test_discovery_list_returns_items(client):
         r = client.get("/api/v1/discovery/")
     assert r.status_code == 200
     body = r.json()
-    assert len(body["items"]) == 2
-    ready = next(i for i in body["items"] if i["is_logged_in"])
-    assert ready["kind"] == "claude"
-    assert ready["suggested_name"] == "work"
+    assert len(body["items"]) == 3
+    new_ready = next(i for i in body["items"] if i["is_logged_in"] and not i["backend_id"])
+    assert new_ready["kind"] == "claude"
+    assert new_ready["suggested_name"] == "work"
     not_ready = next(i for i in body["items"] if not i["is_logged_in"])
     assert not_ready["error"] == "Not logged in"
+    imported = next(i for i in body["items"] if i["backend_id"])
+    assert imported["backend_id"] == "bkd-abc123"
+    assert imported["is_logged_in"] is True
 
 
 def test_discovery_list_empty(client):
@@ -72,17 +85,39 @@ def test_discovery_list_empty(client):
     assert body == {"items": []}
 
 
-def test_discovery_import_creates_backend(client, tmp_path):
-    """POST /discovery/import calls import_discovered and returns the BackendDTO."""
-    # Use a real path so config_path validation passes (it checks dir exists).
-    cfg_dir = tmp_path / ".fake-personal"
-    cfg_dir.mkdir()
-    r = client.post(
-        "/api/v1/discovery/import",
-        json={"kind": "fake", "path": str(cfg_dir), "display_name": "personal"},
+def test_discovery_import_creates_backend(client):
+    """POST /discovery/import calls AccountService.import_discovered with the
+    submitted fields and returns the resulting BackendDTO.
+
+    We mock import_discovered to sidestep AccountService.create's config_path
+    validation (which requires the path to live under $HOME or the isolation
+    base dir — tmp_path satisfies neither in test_session scope). The
+    contract under test is the route's wiring, not the service.
+    """
+    from ai_accounts_core.domain.backend import Backend, BackendStatus
+    from datetime import datetime, timezone
+
+    stub_backend = Backend(
+        id="bkd-newimport",
+        kind="fake",
+        display_name="personal",
+        config={"config_path": "/home/u/.fake-personal"},
+        status=BackendStatus.READY,
+        created_at=datetime.now(timezone.utc),
     )
+    with patch(
+        "ai_accounts_core.services.accounts.AccountService.import_discovered",
+        new=AsyncMock(return_value=stub_backend),
+    ) as mock_import:
+        r = client.post(
+            "/api/v1/discovery/import",
+            json={"kind": "fake", "path": "/home/u/.fake-personal", "display_name": "personal"},
+        )
     assert r.status_code == 201, r.text
     body = r.json()
+    assert body["id"] == "bkd-newimport"
     assert body["kind"] == "fake"
     assert body["display_name"] == "personal"
-    assert body["config"]["config_path"] == str(cfg_dir)
+    mock_import.assert_awaited_once_with(
+        "fake", "/home/u/.fake-personal", display_name="personal"
+    )

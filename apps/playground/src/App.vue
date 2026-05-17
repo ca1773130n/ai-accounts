@@ -17,6 +17,7 @@ type DiscoveredItem = {
   suggested_name: string;
   is_logged_in: boolean;
   error: string | null;
+  backend_id: string | null;
 };
 
 const { client } = useAiAccounts();
@@ -35,8 +36,20 @@ const discoveryRan = ref(false);
 const importingPath = ref<string | null>(null);
 
 const readyCount = computed(() => accounts.value.filter(a => a.status === 'ready').length);
-const discoveredReady = computed(() => discovered.value.filter(d => d.is_logged_in));
-const discoveredOther = computed(() => discovered.value.filter(d => !d.is_logged_in));
+// New: ready-to-import (not yet a backend row, probe succeeded).
+const discoveredReady = computed(() =>
+  discovered.value.filter(d => d.is_logged_in && !d.backend_id),
+);
+// New-but-broken or already-imported-but-broken. Either way the import
+// UI doesn't apply — keep them folded under a details summary for diagnosis.
+const discoveredOther = computed(() =>
+  discovered.value.filter(d => !d.is_logged_in),
+);
+// Already imported AND still healthy. Surfaced as a "re-verified" badge so
+// the user knows the auto-detect actually re-tested live state.
+const discoveredImportedReady = computed(() =>
+  discovered.value.filter(d => d.is_logged_in && d.backend_id),
+);
 
 async function refresh() {
   const { items } = await client.listBackends();
@@ -50,6 +63,10 @@ async function runDiscovery() {
     const res = await client.discoverConfigs();
     discovered.value = res.items;
     discoveryRan.value = true;
+    // Discovery side-effects: the service syncs imported-backend statuses
+    // to the probe result (e.g. flips a stale "ready" to "error" if the
+    // OAuth token expired). Re-fetch so the accounts list reflects that.
+    await refresh();
   } catch (e) {
     discoveryError.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -145,6 +162,15 @@ onMounted(refresh);
         accounts you're already signed into. Already-imported paths are hidden.
       </p>
       <p v-if="discoveryError" class="error-text">{{ discoveryError }}</p>
+      <p
+        v-if="discoveryRan && discoveredImportedReady.length"
+        class="empty"
+        style="text-align: left; padding: 0; color: var(--pg-success);"
+      >
+        ✓ Re-verified
+        {{ discoveredImportedReady.length }} already-imported account{{ discoveredImportedReady.length === 1 ? '' : 's' }}
+        — still logged in.
+      </p>
       <ul v-if="discoveredReady.length" class="account-list">
         <li
           v-for="item in discoveredReady"

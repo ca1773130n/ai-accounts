@@ -132,3 +132,4 @@ async def test_discover_for_kind_probes_each_candidate(tmp_path, monkeypatch):
     assert len(fail_items) == 1
     assert fail_items[0].path.endswith(".claude-work")
     assert fail_items[0].error == "stub fail"
+
