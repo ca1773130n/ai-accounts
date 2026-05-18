@@ -3,6 +3,10 @@ from __future__ import annotations
 import builtins
 import logging
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ai_accounts_core.services.discovery import DiscoveredConfig
 import shutil
 from collections.abc import Mapping
 from datetime import UTC, datetime

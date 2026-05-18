@@ -463,7 +463,11 @@ async def run_interactive_cli_login(
                     # "Press Enter to retry" — harmless.
                     delay = eager_followup_enter_seconds
 
-                    async def _poke_tui_after_paste() -> None:
+                    # Bind `delay` via default arg so each iteration's task
+                    # captures its own value — otherwise a later iteration
+                    # could reassign `delay` before this task wakes from
+                    # asyncio.sleep, sending the wrong follow-up timing.
+                    async def _poke_tui_after_paste(delay: float = delay) -> None:
                         await asyncio.sleep(delay)
                         try:
                             await orchestrator.write(b"\r")
