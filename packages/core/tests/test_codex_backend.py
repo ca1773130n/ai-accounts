@@ -64,12 +64,27 @@ async def test_validate_returns_false_when_not_logged_in(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_list_models_returns_static_set(tmp_path: Path):
-    """codex 0.128.0 has no `models list` subcommand; with cliproxy
-    unavailable we return a static set matching what CLIProxyAPI advertises
-    for the codex provider."""
+    """When every live source is unavailable, list_models() returns the
+    static curated fallback.
+
+    list_models() walks four sources before the static set:
+      1. ~/.codex/models_cache.json or <isolation>/models_cache.json
+      2. Direct OpenAI /v1/models with the credential
+      3. CLIProxyAPI live list
+      4. Static fallback (asserted here)
+    All three must be mocked off so the test isn't shadowed by a real
+    cache or network on the dev machine.
+    """
     from unittest.mock import AsyncMock as _AsyncMock
     backend = CodexBackend()
     with patch(
+        "ai_accounts_core.backends.codex.CodexBackend._list_models_from_codex_cache",
+        return_value=None,
+    ), patch.object(
+        backend,
+        "_list_models_via_provider_api",
+        new=_AsyncMock(return_value=[]),
+    ), patch(
         "ai_accounts_core.cliproxy.cliproxy_list_models",
         new=_AsyncMock(return_value=None),
     ):
