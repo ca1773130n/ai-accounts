@@ -2,6 +2,28 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.13 — 2026-05-19
+
+Codebase review pass: dedup the four CLI backends, unify the chat wire shape, externalize the cliproxyapi compatibility table, and add the e2e SSE test that would have caught the 0.3.9/0.3.10/0.3.12 chat regressions.
+
+### Added
+
+- **Live model cache** (`ai-accounts-core`, `backends/_models_fallback.py`). `cliproxy_list_models()` now persists every successful `/v1/models` response to `~/.ai-accounts/models_cache.json` (override via `AI_ACCOUNTS_CACHE_DIR`). Offline / cliproxy-stopped calls serve the cached snapshot before falling through to the version-pinned static set — eliminates the empty-dropdown UX when the wizard added an account through cliproxy but the proxy isn't running on the next launch. (1f33a18)
+- **`CliBackendBase` mixin** (`ai-accounts-core`, `backends/_base.py`). `ClaudeBackend`, `CodexBackend`, `GeminiBackend`, `OpenCodeBackend` now inherit shared `_run()` + `detect()` instead of carrying four byte-identical copies. ~100 LOC of duplication removed; future per-CLI quirks (validate, list_models, chat) stay in the subclass where they belong.
+- **Versioned cliproxyapi compat table** (`ai-accounts-core`, `cliproxy/cliproxy_compat.toml` + `cliproxy/_compat.py`). The device-code regex, SSRF callback allowlists (ports, paths, hosts), and the kind→`owned_by` provider map are loaded from a TOML data file. Future cliproxyapi releases that shift a port or callback prefix become a one-line diff instead of edits across `manager.py`. Falls back to the previous hardcoded defaults on any parse error.
+- **End-to-end SSE wire-shape test** (`ai-accounts-litestar`, `tests/test_chat_send_e2e.py`). Drives `POST /api/v1/chat/send` through `AsyncTestClient` for `mode=single`, `mode=all`, and `mode=compound`, asserting the dict shape of every SSE event (`ChatDelta.payload`, `AllModeEvent.text`, `CompoundEvent` synthesis frames, monotonic `_seq`). The three chat regressions in 0.3.9/0.3.10/0.3.12 escaped because no test asserted the byte-level wire shape for fan-out modes; this closes that gap.
+
+### Changed
+
+- **Unified chat wire shape on `payload`** (`ai-accounts-core`, `@ai-accounts/ts-core`, `@ai-accounts/vue-headless`). `ChatDelta.text → ChatDelta.payload` end-to-end, matching the `SmartChatEvent.token` shape `useSmartChat.dispatch` already consumes. The text→payload rename shim added to `routes/chat_send.py` in 0.3.9 is deleted — there is one canonical name for the field now. **Breaking** for any direct consumer of the `ChatDelta` TS type; in-tree call sites (`useConversation`) are updated.
+- **Static model fallback consolidated** (`ai-accounts-core`). Per-backend hardcoded `_STATIC` lists in `claude.py` and `codex.py` moved into `backends/_models_fallback.py`. Each backend now calls `fallback(provider)` instead of duplicating the curated list — adding/removing a model is a one-file edit. Resolves the drift class that needed three separate fixes across 0.3.9/0.3.10/0.3.12.
+- **Core test layout** — 12 flat tests under `packages/core/tests/` moved into matching subdirs (`backends/`, `domain/`, `services/`, `storage/`) so navigation mirrors the source tree. Per-test `AI_ACCOUNTS_CACHE_DIR` isolation (new `conftest.py` in `core` + `litestar`) so a real cliproxyapi on the dev machine can't shadow static-fallback assertions.
+
+### Documentation
+
+- **README — opencode in the packages table** and a new **Known Limitations** section that promotes the macOS Claude keychain isolation constraint from inline source comments to a place anyone reading the README before install will see it. The constraint (keychain entries are not scoped by `CLAUDE_CONFIG_DIR`, so a second OAuth `/login` on darwin replaces the first) is tracked for a future release; the wizard already shows a consent banner before the 2nd Claude add.
+- **`docs/superpowers/REVIEW-2026-05-19.md`** — the source review that produced this release. Lists all 8 findings with effort/impact and the rationale for each.
+
 ## 0.3.12 — 2026-05-17
 
 Auto-discovery of existing CLI logins, chat-bubble safety + rendering fixes, OAuth probe fallbacks, and release-pipeline reliability.
