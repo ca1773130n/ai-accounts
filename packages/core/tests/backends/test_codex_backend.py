@@ -87,6 +87,9 @@ async def test_list_models_returns_static_set(tmp_path: Path):
     ), patch(
         "ai_accounts_core.cliproxy.cliproxy_list_models",
         new=_AsyncMock(return_value=None),
+    ), patch(
+        "ai_accounts_core.backends._models_fallback.cached_live",
+        return_value=None,
     ):
         models = await backend.list_models(b"", isolation_dir=tmp_path / "codex")
     ids = {m.id for m in models}

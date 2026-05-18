@@ -1,0 +1,45 @@
+# cliproxyapi compatibility table.
+#
+# Each release of cliproxyapi can shift the OAuth callback port, callback
+# path prefix, or device-code format. Centralizing those values here means an
+# upstream change is a one-line toml edit rather than a hunt through
+# manager.py.
+#
+# This file is loaded once on import (`cliproxy._compat:load_compat`) and the
+# resolved values shadow the hardcoded defaults in manager.py. If parsing
+# fails for any reason, the defaults stay in effect — never raises.
+#
+# Version detection is not yet wired up: today the union of all entries is
+# applied. When upstream removes a port we will gate by version.
+
+[device_code]
+# Regex captures the device code printed by cliproxyapi/codex/claude login.
+# Group 1 must hold the code. Two formats observed in the wild:
+#   - "FXEJ-GY37O"  (codex 0.121+, 4-5 alphanumeric)
+#   - "XXXX-YYYY"   (claude / older codex, 4-4)
+# Greedy {4,8} matches both without truncating the 9th char of 4-5 codes.
+pattern = '''code[:\s]+([A-Z0-9]{4}-?[A-Z0-9]{4,8})'''
+flags_ignorecase = true
+
+[callback]
+# Local ports cliproxyapi is allowed to bind for OAuth callback. The list is
+# an SSRF allowlist around `forward_cliproxy_callback`. Order is irrelevant;
+# membership is a set.
+#   54545, 8085 — historical cliproxyapi defaults
+#   1455        — cliproxyapi 0.16+ shares Codex codex_cli_simplified_flow
+allowed_ports = [1455, 8085, 54545]
+
+# Path prefixes the callback URL may use. URL-encoded traversal (%2e%2e) and
+# "../" segments are rejected separately.
+allowed_path_prefixes = ["/auth/callback", "/callback", "/cb", "/oauth"]
+
+# Hosts the callback URL may resolve to. Public IPs are never allowed.
+allowed_hosts = ["localhost", "127.0.0.1"]
+
+[providers]
+# Maps our backend kind → cliproxy's `owned_by` filter on /v1/models. New
+# providers added here are immediately consumable by `cliproxy_list_models`.
+# Backends without an entry (e.g. opencode) skip the cliproxy live path.
+claude = "anthropic"
+codex = "openai"
+gemini = "google"

@@ -22,7 +22,8 @@ export interface ChatSessionDetailDTO extends ChatSessionDTO {
 
 export interface ChatDelta {
   kind: 'token' | 'done' | 'error';
-  text: string | null;
+  /** For kind="token"/"error", carries the text. Matches SmartChatEvent. */
+  payload: string | null;
   finish_reason: string | null;
   model: string | null;
   tokens_in: number | null;

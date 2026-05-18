@@ -25,12 +25,12 @@ _CLIPROXY_INSTALL_COMMANDS = [
     ["brew", "install", "cliproxyapi"],
 ]
 
+from ai_accounts_core.cliproxy._compat import COMPAT
+
 _OAUTH_URL_RE = re.compile(r"https?://[^\s\"'<>]+")
-# Codex device codes are 4-5 alphanumeric (e.g. "FXEJ-GY37O" — 9 chars total
-# excluding the dash). Claude/older formats are 4-4 (8 chars). Allow the
-# second group to be 4-8 chars so both fit; greedy matching naturally takes
-# the longest run, so we don't truncate the trailing character of a 4-5 code.
-_DEVICE_CODE_RE = re.compile(r"code[:\s]+([A-Z0-9]{4}-?[A-Z0-9]{4,8})", re.IGNORECASE)
+# Device-code regex is version-coupled to cliproxyapi; loaded from
+# cliproxy_compat.toml. See that file for the supported formats.
+_DEVICE_CODE_RE = COMPAT.device_code_re
 _SUCCESS_MARKERS = (
     "Successfully authenticated",
     "Login successful",
@@ -254,17 +254,11 @@ async def start_cliproxy_login(
     return proc, info
 
 
-# Allowed local callback ports for cliproxyapi's OAuth registration. The
-# allowlist is an SSRF guard around the upstream HTTP forward. Extend as
-# new cliproxyapi versions / providers add ports:
-#   54545, 8085 — historical cliproxyapi defaults
-#   1455        — cliproxyapi 0.16+ uses the same port as Codex's
-#                 codex_cli_simplified_flow (shares OAuth client app id)
-_CLIPROXY_ALLOWED_PORTS = frozenset({1455, 8085, 54545})
-# Allowed callback path prefixes. cliproxyapi 0.16+ uses /auth/callback
-# (matches Codex's codex_cli_simplified_flow); older versions used /callback.
-_CLIPROXY_ALLOWED_PATH_PREFIXES = ("/auth/callback", "/callback", "/cb", "/oauth")
-_CLIPROXY_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1"})
+# Callback SSRF allowlists are version-coupled to cliproxyapi; loaded from
+# cliproxy_compat.toml. See that file for the rationale per entry.
+_CLIPROXY_ALLOWED_PORTS = COMPAT.allowed_ports
+_CLIPROXY_ALLOWED_PATH_PREFIXES = COMPAT.allowed_path_prefixes
+_CLIPROXY_ALLOWED_HOSTS = COMPAT.allowed_hosts
 
 
 async def forward_cliproxy_callback(callback_url: str) -> dict:
@@ -340,12 +334,8 @@ _CLIPROXY_CONFIG = Path.home() / ".cli-proxy-api" / "config.yaml"
 
 
 # Backend kind → cliproxy `owned_by` value used to filter /v1/models.
-# Cliproxyapi 6.8.30 uses standard OpenAI-style provider names.
-_CLIPROXY_OWNED_BY: dict[str, str] = {
-    "claude": "anthropic",
-    "codex": "openai",
-    "gemini": "google",
-}
+# Loaded from cliproxy_compat.toml [providers].
+_CLIPROXY_OWNED_BY: dict[str, str] = COMPAT.owned_by
 
 
 async def cliproxy_list_models(kind: str) -> list[dict[str, object]] | None:
@@ -383,10 +373,18 @@ async def cliproxy_list_models(kind: str) -> list[dict[str, object]] | None:
     items = data.get("data") if isinstance(data, dict) else None
     if not isinstance(items, list):
         return None
-    return [
+    filtered = [
         m for m in items
         if isinstance(m, dict) and m.get("owned_by") == expected_owner and m.get("id")
     ]
+    # Best-effort: persist successful results so subsequent offline calls
+    # (cliproxy stopped, network gone) can serve a recent snapshot instead
+    # of falling all the way through to the version-pinned static set.
+    if filtered:
+        from ai_accounts_core.backends import _models_fallback
+
+        _models_fallback.write_cache(kind, filtered)
+    return filtered
 
 
 def detect_cliproxy() -> tuple[str, str] | None:

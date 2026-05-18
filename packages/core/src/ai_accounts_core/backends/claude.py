@@ -13,14 +13,14 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
+from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._iso import resolved_iso
-from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
@@ -306,7 +306,7 @@ class _ClaudeApiKeySession(LoginSession):
             self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
-class ClaudeBackend:
+class ClaudeBackend(CliBackendBase):
     kind: ClassVar[str] = "claude"
     _CLI_NAME: ClassVar[str] = "claude"
     _ISOLATION_ENV_VAR: ClassVar[str] = "CLAUDE_CONFIG_DIR"
@@ -374,18 +374,7 @@ class ClaudeBackend:
             return _ClaudeApiKeySession()
         raise ValueError(f"unsupported flow_kind: {flow_kind}")
 
-    async def detect(self) -> DetectResult:
-        path = shutil.which(self._CLI_NAME)
-        if path is None:
-            return DetectResult(installed=False)
-        rc, stdout, _stderr = await self._run({"argv": [path, "--version"]})
-        if rc != 0:
-            return DetectResult(installed=True, path=path, notes="version check failed")
-        version: str | None = None
-        if stdout:
-            first_line = stdout.decode(errors="replace").strip().splitlines()[0]
-            version = first_line or None
-        return DetectResult(installed=True, version=version, path=path)
+    # detect() inherited from CliBackendBase.
 
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
         # Claude CLI v1/v2 has no `auth status` subcommand. We validate by
@@ -479,15 +468,9 @@ class ClaudeBackend:
                 )
                 for m in live
             ]
-        return [
-            Model(id="claude-opus-4-7", display_name="Claude Opus 4.7", context_window=1_000_000),
-            Model(id="claude-opus-4-6", display_name="Claude Opus 4.6", context_window=1_000_000),
-            Model(id="claude-opus-4-5-20251101", display_name="Claude Opus 4.5", context_window=200_000),
-            Model(id="claude-sonnet-4-7", display_name="Claude Sonnet 4.7", context_window=1_000_000),
-            Model(id="claude-sonnet-4-6", display_name="Claude Sonnet 4.6", context_window=1_000_000),
-            Model(id="claude-sonnet-4-5-20250929", display_name="Claude Sonnet 4.5", context_window=1_000_000),
-            Model(id="claude-haiku-4-5-20251001", display_name="Claude Haiku 4.5", context_window=200_000),
-        ]
+        from ai_accounts_core.backends._models_fallback import fallback
+
+        return fallback("claude")
 
     async def _try_macos_keychain_oauth_token(self) -> str | None:
         """Walk the macOS keychain for any ``Claude Code-credentials-*``
@@ -827,14 +810,4 @@ class ClaudeBackend:
             self._ISOLATION_ENV_VAR: str(isolation_dir),
         }
 
-    async def _run(self, spec: dict[str, Any]) -> tuple[int, bytes, bytes]:
-        argv: list[str] = spec["argv"]
-        env: dict[str, str] | None = spec.get("env")
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-        stdout, stderr = await proc.communicate()
-        return proc.returncode or 0, stdout, stderr
+    # _run() inherited from CliBackendBase.

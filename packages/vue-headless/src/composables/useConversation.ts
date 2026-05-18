@@ -56,11 +56,11 @@ export function useConversation(client: AiAccountsClient): UseConversationReturn
     try {
       let accumulated = '';
       for await (const delta of (client as any).streamChat(sessionId.value, content)) {
-        if (delta.kind === 'token' && delta.text) {
-          accumulated += delta.text;
+        if (delta.kind === 'token' && delta.payload) {
+          accumulated += delta.payload;
           streamingText.value = accumulated;
         } else if (delta.kind === 'error') {
-          error.value = delta.text ?? 'Unknown error';
+          error.value = delta.payload ?? 'Unknown error';
         }
       }
       if (accumulated) {

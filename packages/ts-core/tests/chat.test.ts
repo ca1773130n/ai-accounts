@@ -3,12 +3,12 @@ import type { ChatDelta, ChatSessionDTO } from '../src/types/chat';
 
 describe('ChatDelta types', () => {
   it('token delta has expected shape', () => {
-    const delta: ChatDelta = { kind: 'token', text: 'Hello', finish_reason: null, model: null, tokens_in: null, tokens_out: null };
+    const delta: ChatDelta = { kind: 'token', payload: 'Hello', finish_reason: null, model: null, tokens_in: null, tokens_out: null };
     expect(delta.kind).toBe('token');
-    expect(delta.text).toBe('Hello');
+    expect(delta.payload).toBe('Hello');
   });
   it('done delta has usage info', () => {
-    const delta: ChatDelta = { kind: 'done', text: null, finish_reason: 'stop', model: 'claude-sonnet-4-20250514', tokens_in: 50, tokens_out: 10 };
+    const delta: ChatDelta = { kind: 'done', payload: null, finish_reason: 'stop', model: 'claude-sonnet-4-20250514', tokens_in: 50, tokens_out: 10 };
     expect(delta.finish_reason).toBe('stop');
   });
 });

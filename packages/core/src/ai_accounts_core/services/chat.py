@@ -97,14 +97,14 @@ class ChatService:
                 continue
             delta = ChatDelta(
                 kind=event.kind,
-                text=event.payload if isinstance(event.payload, str) else None,
+                payload=event.payload if isinstance(event.payload, str) else None,
                 tokens_in=event.payload.get("tokens_in") if isinstance(event.payload, dict) else None,
                 tokens_out=event.payload.get("tokens_out") if isinstance(event.payload, dict) else None,
                 model=event.payload.get("model") if isinstance(event.payload, dict) else None,
                 finish_reason=event.payload.get("finish_reason") if isinstance(event.payload, dict) else None,
             )
-            if delta.kind == "token" and delta.text:
-                accumulated_text += delta.text
+            if delta.kind == "token" and delta.payload:
+                accumulated_text += delta.payload
             if delta.tokens_in is not None:
                 tokens_in = delta.tokens_in
             if delta.tokens_out is not None:

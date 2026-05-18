@@ -10,14 +10,13 @@ import shutil
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 import httpx
 
+from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
 from ai_accounts_core.backends._iso import resolved_iso
-from ai_accounts_core.domain.backend import DetectResult
-from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -348,7 +347,7 @@ class _CodexApiKeySession(LoginSession):
             self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
-class CodexBackend:
+class CodexBackend(CliBackendBase):
     kind: ClassVar[str] = "codex"
     _CLI_NAME: ClassVar[str] = "codex"
     _ISOLATION_ENV_VAR: ClassVar[str] = "CODEX_HOME"
@@ -413,18 +412,7 @@ class CodexBackend:
             return _CodexApiKeySession()
         raise ValueError(f"unsupported flow_kind: {flow_kind}")
 
-    async def detect(self) -> DetectResult:
-        path = shutil.which(self._CLI_NAME)
-        if path is None:
-            return DetectResult(installed=False)
-        rc, stdout, _stderr = await self._run({"argv": [path, "--version"]})
-        if rc != 0:
-            return DetectResult(installed=True, path=path, notes="version check failed")
-        version = None
-        if stdout:
-            first_line = stdout.decode(errors="replace").strip().splitlines()[0]
-            version = first_line or None
-        return DetectResult(installed=True, version=version, path=path)
+    # detect() inherited from CliBackendBase.
 
     async def validate(
         self, credential: bytes, *, isolation_dir: Path
@@ -485,18 +473,9 @@ class CodexBackend:
                 )
                 for m in live
             ]
-        return [
-            Model(id="gpt-5.5", display_name="GPT-5.5", context_window=400_000),
-            Model(id="gpt-5.3-codex", display_name="GPT-5.3 Codex", context_window=400_000),
-            Model(id="gpt-5.3-codex-spark", display_name="GPT-5.3 Codex Spark", context_window=400_000),
-            Model(id="gpt-5.2-codex", display_name="GPT-5.2 Codex", context_window=400_000),
-            Model(id="gpt-5.1-codex-max", display_name="GPT-5.1 Codex Max", context_window=400_000),
-            Model(id="gpt-5.1-codex-mini", display_name="GPT-5.1 Codex Mini", context_window=400_000),
-            Model(id="gpt-5-codex", display_name="GPT-5 Codex", context_window=400_000),
-            Model(id="gpt-5-codex-mini", display_name="GPT-5 Codex Mini", context_window=400_000),
-            Model(id="gpt-5.2", display_name="GPT-5.2", context_window=400_000),
-            Model(id="gpt-5", display_name="GPT-5", context_window=400_000),
-        ]
+        from ai_accounts_core.backends._models_fallback import fallback
+
+        return fallback("codex")
 
     def _list_models_from_codex_cache(
         self, isolation_dir: Path
@@ -727,14 +706,4 @@ class CodexBackend:
             env[self._API_KEY_ENV_VAR] = credential.decode()
         return env
 
-    async def _run(self, spec: dict[str, Any]) -> tuple[int, bytes, bytes]:
-        argv = spec["argv"]
-        env = spec.get("env")
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-        stdout, stderr = await proc.communicate()
-        return proc.returncode or 0, stdout, stderr
+    # _run() inherited from CliBackendBase.

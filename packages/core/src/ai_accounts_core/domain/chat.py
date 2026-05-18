@@ -34,9 +34,12 @@ class ChatSession(msgspec.Struct, frozen=True, kw_only=True):
 class ChatDelta(msgspec.Struct, frozen=True, kw_only=True):
     """Single streaming event from a chat response.
     kind: "token" | "tool_call" | "done" | "error"
+
+    For kind="token" and kind="error", `payload` carries the text. Matches the
+    SmartChatEvent shape consumed by `@ai-accounts/vue-headless useSmartChat`.
     """
     kind: str
-    text: str | None = None
+    payload: str | None = None
     finish_reason: str | None = None
     model: str | None = None
     tokens_in: int | None = None

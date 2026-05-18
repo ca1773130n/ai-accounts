@@ -114,6 +114,9 @@ async def test_list_models_returns_static_set_no_subprocess(tmp_path: Path):
     with patch.object(backend, "_run", side_effect=explode), patch(
         "ai_accounts_core.cliproxy.cliproxy_list_models",
         new=_AsyncMock(return_value=None),
+    ), patch(
+        "ai_accounts_core.backends._models_fallback.cached_live",
+        return_value=None,
     ):
         models = await backend.list_models(b"sk-ant-test", isolation_dir=tmp_path / "claude")
     ids = {m.id for m in models}

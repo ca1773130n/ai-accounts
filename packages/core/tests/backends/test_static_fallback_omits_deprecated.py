@@ -26,7 +26,9 @@ _DEPRECATED_OR_REMOVED_IDS = {
 def _stub_oauth_fallbacks(monkeypatch):
     """Stub the v0.7.11 keychain/.credentials.json fallbacks so empty-
     credential tests don't accidentally reach the developer's real
-    Claude OAuth token via the keychain."""
+    Claude OAuth token via the keychain. Also stub the cached-live
+    snapshot path so a developer's previously-populated
+    ``~/.ai-accounts/models_cache.json`` can't shadow the static set."""
 
     async def _no_keychain(self):
         return None
@@ -39,6 +41,10 @@ def _stub_oauth_fallbacks(monkeypatch):
     )
     monkeypatch.setattr(
         ClaudeBackend, "_try_credentials_file_oauth_token", _no_creds_file
+    )
+    monkeypatch.setattr(
+        "ai_accounts_core.backends._models_fallback.cached_live",
+        lambda _provider: None,
     )
 
 

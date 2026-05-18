@@ -11,8 +11,8 @@ function mockClient() {
       messages: [{ id: 'msg-1', role: 'user', content: 'Hi', created_at: '2026-04-12T00:00:00Z', model: null, tokens_in: null, tokens_out: null }],
     }),
     streamChat: vi.fn().mockImplementation(async function*() {
-      yield { kind: 'token', text: 'Hello', finish_reason: null, model: null, tokens_in: null, tokens_out: null };
-      yield { kind: 'done', text: null, finish_reason: 'stop', model: 'fake-1', tokens_in: 5, tokens_out: 1 };
+      yield { kind: 'token', payload: 'Hello', finish_reason: null, model: null, tokens_in: null, tokens_out: null };
+      yield { kind: 'done', payload: null, finish_reason: 'stop', model: 'fake-1', tokens_in: 5, tokens_out: 1 };
     }),
   } as any;
 }

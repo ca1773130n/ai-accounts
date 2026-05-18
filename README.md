@@ -40,12 +40,16 @@ dirs, and routing chat/PTY traffic through a unified API gets fiddly fast.
 
 | Package                              | Kind | npm / PyPI                                                              |
 | ------------------------------------ | ---- | ----------------------------------------------------------------------- |
-| `ai-accounts-core`                   | Py   | workspace (depends from `ai-accounts-litestar`)                         |
+| `ai-accounts-core`                   | Py   | workspace (depends from `ai-accounts-litestar`); ships `ClaudeBackend`, `CodexBackend`, `GeminiBackend`, `OpenCodeBackend` |
 | `ai-accounts-litestar`               | Py   | workspace                                                               |
 | `@ai-accounts/ts-core`               | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/ts-core)               |
 | `@ai-accounts/vue-headless`          | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/vue-headless)          |
 | `@ai-accounts/vue-styled`            | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/vue-styled)            |
 | `apps/playground`                    | App  | private — local-dev showcase                                            |
+
+### Known limitations
+
+- **macOS Claude isolation (multi-account).** The Claude CLI on darwin stores OAuth credentials in the system Keychain (`service="Claude Safe Storage"`, `account="Claude Key"`). Keychain entries are **not** scoped by `CLAUDE_CONFIG_DIR`, so adding a second Claude account via the OAuth `/login` flow on macOS will replace the first account's credential. Workarounds: use one Claude account per macOS user, or route Claude through CLIProxyAPI (which stores credentials under its own `auth-dir`, properly scoped). Tracked for a future release — proper fix likely requires per-account containers or upstream support. The wizard surfaces an informed-consent banner before the 2nd Claude add on darwin.
 
 ---
 

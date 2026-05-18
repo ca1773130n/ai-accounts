@@ -13,9 +13,9 @@ from typing import Any, ClassVar
 
 import httpx
 
+from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
 from ai_accounts_core.backends._iso import resolved_iso
-from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
@@ -201,7 +201,7 @@ class _OpenCodeApiKeySession(LoginSession):
             self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
-class OpenCodeBackend:
+class OpenCodeBackend(CliBackendBase):
     kind: ClassVar[str] = "opencode"
     _CLI_NAME: ClassVar[str] = "opencode"
     _ISOLATION_ENV_VAR: ClassVar[str] = "OPENCODE_HOME"
@@ -251,18 +251,7 @@ class OpenCodeBackend:
             return _OpenCodeApiKeySession()
         raise ValueError(f"unsupported flow_kind: {flow_kind}")
 
-    async def detect(self) -> DetectResult:
-        path = shutil.which(self._CLI_NAME)
-        if path is None:
-            return DetectResult(installed=False)
-        rc, stdout, _stderr = await self._run({"argv": [path, "--version"]})
-        if rc != 0:
-            return DetectResult(installed=True, path=path, notes="version check failed")
-        version: str | None = None
-        if stdout:
-            first_line = stdout.decode(errors="replace").strip().splitlines()[0]
-            version = first_line or None
-        return DetectResult(installed=True, version=version, path=path)
+    # detect() inherited from CliBackendBase.
 
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
         # opencode 0.x has no `auth check` subcommand. The real surface is
@@ -335,11 +324,15 @@ class OpenCodeBackend:
             {"argv": [path, "models", "--json"], "env": env}
         )
         if rc != 0:
-            return []
+            from ai_accounts_core.backends._models_fallback import fallback
+
+            return fallback("opencode")
         try:
             raw_cli: list[dict[str, Any]] = json.loads(stdout)
         except json.JSONDecodeError:
-            return []
+            from ai_accounts_core.backends._models_fallback import fallback
+
+            return fallback("opencode")
         return [
             Model(
                 id=item["id"],
@@ -438,14 +431,4 @@ class OpenCodeBackend:
             self._ISOLATION_ENV_VAR: str(isolation_dir),
         }
 
-    async def _run(self, spec: dict[str, Any]) -> tuple[int, bytes, bytes]:
-        argv: list[str] = spec["argv"]
-        env: dict[str, str] | None = spec.get("env")
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-        stdout, stderr = await proc.communicate()
-        return proc.returncode or 0, stdout, stderr
+    # _run() inherited from CliBackendBase.

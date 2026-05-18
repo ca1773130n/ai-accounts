@@ -170,7 +170,7 @@ async def test_partial_backfill_tolerated(tmp_path):
         # Read schema.sql the same way storage.py does.
         from pathlib import Path
         schema_path = (
-            Path(__file__).resolve().parent.parent
+            Path(__file__).resolve().parent.parent.parent
             / "src" / "ai_accounts_core" / "adapters" / "storage_sqlite" / "schema.sql"
         )
         baseline = schema_path.read_text()

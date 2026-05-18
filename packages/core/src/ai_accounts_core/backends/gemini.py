@@ -13,8 +13,8 @@ from typing import Any, ClassVar
 
 import httpx
 
+from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
-from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
@@ -273,7 +273,7 @@ class _GeminiApiKeySession(LoginSession):
             self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
-class GeminiBackend:
+class GeminiBackend(CliBackendBase):
     kind: ClassVar[str] = "gemini"
     _CLI_NAME: ClassVar[str] = "gemini"
     _ISOLATION_ENV_VAR: ClassVar[str] = "GEMINI_CLI_HOME"
@@ -354,18 +354,7 @@ class GeminiBackend:
             return _GeminiCliProxySession()
         raise ValueError(f"unsupported flow_kind: {flow_kind}")
 
-    async def detect(self) -> DetectResult:
-        path = shutil.which(self._CLI_NAME)
-        if path is None:
-            return DetectResult(installed=False)
-        rc, stdout, _stderr = await self._run({"argv": [path, "--version"]})
-        if rc != 0:
-            return DetectResult(installed=True, path=path, notes="version check failed")
-        version = None
-        if stdout:
-            first_line = stdout.decode(errors="replace").strip().splitlines()[0]
-            version = first_line or None
-        return DetectResult(installed=True, version=version, path=path)
+    # detect() inherited from CliBackendBase.
 
     async def validate(
         self, credential: bytes, *, isolation_dir: Path
@@ -446,7 +435,9 @@ class GeminiBackend:
                 )
                 for m in live
             ]
-        return []
+        from ai_accounts_core.backends._models_fallback import fallback
+
+        return fallback("gemini")
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
         from ai_accounts_core.domain.usage import UsageWindow
@@ -571,14 +562,4 @@ class GeminiBackend:
             env[self._API_KEY_ENV_VAR] = credential.decode()
         return env
 
-    async def _run(self, spec: dict[str, Any]) -> tuple[int, bytes, bytes]:
-        argv = spec["argv"]
-        env = spec.get("env")
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-        stdout, stderr = await proc.communicate()
-        return proc.returncode or 0, stdout, stderr
+    # _run() inherited from CliBackendBase.
