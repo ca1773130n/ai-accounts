@@ -110,6 +110,12 @@ bump VERSION:
     sed -i.bak "s/version = '[0-9.]*'/version = '{{VERSION}}'/" packages/vue-styled/src/index.ts packages/vue-headless/src/index.ts
     rm -f packages/*/pyproject.toml.bak packages/*/package.json.bak packages/*/src/index.ts.bak
     uv sync
+    @# `uv sync` resolves the lock but does NOT re-link the editable workspace
+    @# packages to the bumped pyproject.toml. Without this step the next
+    @# `uv run pytest` (and `just release`) sees stale dist-info and fails
+    @# collection with ModuleNotFoundError: ai_accounts_core. Force the
+    @# re-link explicitly so the release pipeline is reproducible.
+    uv pip install -e packages/core -e packages/litestar
     @echo "Bumped. Verify with: git diff -- packages apps"
 
 # `just release VERSION` runs the full ship sequence:
