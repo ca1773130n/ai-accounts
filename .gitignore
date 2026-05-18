@@ -41,3 +41,17 @@ apps/playground/backend_dirs/
 
 # Playwright MCP debug snapshots — local-only diagnostics
 .playwright-mcp/
+
+# Auto-generated context-mode plugin routing rules (per-checkout, not source of truth)
+CLAUDE.md
+apps/playground/CLAUDE.md
+
+# Transient build/runtime caches
+*.dylib
+node-compile-cache/
+pytest-of-*/
+tsx-*/
+uv-*.lock
+
+# cliproxyapi fake-open shim temp dirs (leaks if the login flow aborts before reap)
+aia-cliproxy-*/
