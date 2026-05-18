@@ -120,8 +120,8 @@ release VERSION:
     @# Bail if the working tree is dirty — releases must be from a clean main.
     @test -z "$(git status --porcelain)" || (echo "ERROR: working tree dirty. Commit or stash first." && exit 1)
     @test "$(git rev-parse --abbrev-ref HEAD)" = "main" || (echo "ERROR: not on main." && exit 1)
+    just build   # build first so JS tests can resolve workspace package entries (ts-core/dist/index.js etc.)
     just test
-    just build
     git tag -a v{{VERSION}} -m "v{{VERSION}}"
     git push origin main
     git push origin v{{VERSION}}
