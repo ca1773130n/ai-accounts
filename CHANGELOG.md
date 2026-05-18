@@ -2,6 +2,96 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.12 — 2026-05-17
+
+Auto-discovery of existing CLI logins, chat-bubble safety + rendering fixes, OAuth probe fallbacks, and release-pipeline reliability.
+
+### Added
+
+- **Auto-detect existing CLI logins** (`ai-accounts-core`, `ai-accounts-litestar`, `@ai-accounts/ts-core`, `apps/playground`). Globs `~/.claude*`, `~/.codex*`, `~/.gemini*`, `~/.opencode*` and runs a real-prompt liveness probe (`claude -p hello`, `codex exec --skip-git-repo-check hello`, `gemini -p hello`, `opencode run hello`) against each in parallel. One-click import via `POST /api/v1/discovery/import` reuses the existing `config_path` so no re-auth is needed. Already-imported accounts are also re-probed — their backend status syncs `READY ↔ ERROR` to the probe result, so a stale "ready" row (token expired, manual logout) surfaces immediately on the next Auto-detect. (303e559, da80415)
+- **`AiChatPanelManaged` CLI runner toggle** (`@ai-accounts/vue-styled`) — host components can expose a managed CLI-runner pane. (4ee9ce5, #27)
+
+### Fixed
+
+- **Security: DOMPurify-sanitize `marked.parse` output in `ChatBubble`** (`@ai-accounts/vue-styled`). Untrusted markdown from chat completions can contain HTML that marked happily passes through; DOMPurify scrubs script/event-handler payloads before insertion. (43bf725)
+- **Codex local cache + claude keychain OAuth probe + direct `/v1/models`** — three fixes for the model-list surface that unblock the codex CLI's account-aware live list (v0.7.12), the claude OAuth token stored in keychain / `.credentials.json` (v0.7.11), and the direct `/v1/models` HTTP call with refreshed static fallback (v0.7.10). (b8b1c4a, 62515d9, d364295)
+- **Chat: decode gzipped proxy error bodies** + soften "model not supported" rendering so error messages aren't binary blobs. (baa2acd)
+- **Chat: `AiChatPanel` fills parent width** instead of shrinking to content. (1db698b)
+- **Chat: restore list indent on rendered markdown** (regression from the marked upgrade). (2b705b0)
+- **`ChatBubble`: render markdown headings/blockquotes/tables/links visibly** — vue-styled was filtering them out. (#29, b585dc3)
+- **`ChatBubble`: Invalid Date guard** so a malformed timestamp doesn't leak the string into the UI. (#28, 11a3a41)
+- **Wizard method-picker default-flow click no longer no-ops** when the user clicks the already-active flow. (bf515d1)
+- **Release pipeline determinism**: `just release` now builds before testing (JS workspace tests need `ts-core/dist` to exist) and tests mock all four codex `list_models` sources so a real `~/.codex/models_cache.json` on the dev machine can't shadow the static-set assertion. (4221b59, f58c668)
+
+### Documentation
+
+- This entry. Per-package CHANGELOGs (`ts-core`, `vue-headless`, `vue-styled`) get matching summaries.
+
+### Chore
+
+- `.gitignore` covers context-mode plugin artefacts, root-level `*.dylib`, runtime caches (`tsx-*/`, `pytest-of-*/`, `uv-*.lock`), and leaked `aia-cliproxy-*/` temp dirs.
+- `pnpm-lock.yaml` records the `dompurify@3.4.2` entry from 43bf725.
+
+---
+
+## 0.3.11 — 2026-05-05
+
+Gemini subscription login, wizard method picker, and login-flow correctness.
+
+### Added
+
+- **Gemini subscription login via `cliproxyapi --login`** (`ai-accounts-core`, `@ai-accounts/vue-styled`). New `cli_browser` flow for `GeminiBackend` — delegates to cliproxyapi's Google OAuth handshake (Gemini Code Assist / Pro / Ultra subscriptions). `cliproxy/manager.py` flag map corrected: `gemini → --login` (the bare flag — cliproxy has no `--gemini-login` subcommand). (08e18a8)
+- **Wizard method picker** for backends advertising >1 login flow (`@ai-accounts/vue-styled`, `AccountWizard.vue`). Shows a card listing each available flow with description so the user picks explicitly. A compact mid-flow switcher lets them bail to a different flow without leaving the wizard. (e3a00b6, 79f00a4)
+- **`useLoginSession.write_eager(text)`** (`@ai-accounts/vue-headless`, `@ai-accounts/ts-core`) — direct PTY write fallback when the CLI never emits its prompt. (carried in from work prior to v0.3.10 documented in earlier entries)
+- **`useLoginSession.reset()`** for re-opening the wizard against the same backend.
+- **`just playground` / `playground-api` / `playground-build`** recipes (`justfile`). Pre-flight kill of any stale listeners on the API port and Vite's 6173 so the next launch always succeeds. Clear error if you accidentally pass 6173 as the API port. (e50e3b7, 26a490e, 950c5a3)
+
+### Fixed
+
+- **Wizard advanced past login on bogus credentials** (`ai-accounts-litestar`, `routes/login.py`). `LoginComplete` was emitted to the SSE before `validate()` ran, so the wizard auto-advanced before the backend was actually verified. The route now holds `LoginComplete` until `store_credential` + `validate` succeed; emits a failed event otherwise. (50dbfdf)
+- **Gemini default to api_key** (`ai-accounts-core`, `backends/gemini.py`). cliproxyapi's hardcoded Google OAuth client hits Google's "first-party native app" consent gate that frequently hangs — defaulting to api_key gives users a working path; cli_browser stays available via the picker for those whose OAuth client isn't blocked. (18346b0)
+- **Gemini cli_browser prompt explains the localhost-redirect hang** — sign-in completes but the browser tries to load `localhost:8085/oauth2callback` (unreachable when the playground is on a remote host); the user copies the URL from the address bar. (91decf8)
+- **Login-flow polish** (`@ai-accounts/vue-styled`, `LoginStream.vue`): hide eager paste form for device-code flows (codex), drop the over-eager prompt watcher that broke gemini's textPrompt-only flow, stop the spinner showing after intermediate menu/prompt picks, make the verifying state escapable, show CLI stdout for debugging, surface respond errors. (03380ac, b4b1d56, 9432614, 1863335)
+- **Wizard: surface login-start failures instead of `console.warn`** — was leaving the wizard on a spinner forever when `/begin` failed. (d6a6d79)
+- **`justfile`: shell-quoting glitch in release verify line** — was printing the just process-id instead of `npm view` output. (aa43e05)
+
+---
+
+## 0.3.10 — 2026-05-03
+
+Back-migrated Agented chat components, live model discovery via cliproxyapi, and orchestrator error handling.
+
+### Added
+
+- **Back-migrated chat components from Agented** (`@ai-accounts/vue-styled`):
+  - `AiChatPanelManaged` — caller-managed sibling of `AiChatPanel` (host owns the session ref). (e83b170)
+  - `AiChatSelector` standalone component for cross-backend account/model selection. (cb3d6c9)
+  - `ChatModeSelector` standalone component (`single`/`all`/`compound`). (36075f6)
+  - Upgraded `AllModeResponses`, `CompoundSynthesis`, `ProcessGroup`, `MessageActions`, and `ChatBubble` with Agented features (back-migrated from MessageBubble). (7e40958, 0c5fc63, 29a4c30, a126858, dedcc9f)
+- **Live model discovery from CLIProxyAPI when registered** (`ai-accounts-core`, claude/codex/gemini backends). When cliproxy is running and an account is registered through it, `list_models()` queries cliproxyapi's live `/v1/models` instead of returning the static fallback — eliminates the drift class where a curated list contains a model name cliproxy doesn't recognize (502 "unknown provider"). (f2a543f)
+
+### Fixed
+
+- **Chat: surface cliproxy error body to UI** (`ai-accounts-core`, `backends/_cliproxy_chat.py`). Was emitting generic `"Proxy error 502"`; now parses the OpenAI-style `{"error":{"message":...}}` body and includes the detail in `ChatStreamEvent.payload`. (b4d2c78)
+- **Chat orchestrator: drop `model="auto"` fallback** — when `list_models()` returned empty or threw, the orchestrator was posting `model="auto"` which 502'd with "unknown provider for model auto". Now emits an explicit `backend_error` / `synthesis_error` and skips the backend. (b4d2c78)
+- **`LoginStream` `showStdout=true` test prop** (`@ai-accounts/vue-styled`) — pre-existing scrollback test was never passing the prop, so `aia-terminal__output` never rendered and the assertion failed silently. (6b7b624)
+- **`AiChatSelector` defaults — drop `chatMode: undefined` under exactOptionalPropertyTypes** (`@ai-accounts/vue-styled`). (e58ffa9)
+
+### Added (justfile + tooling)
+
+- **`just release VERSION`** — codifies the bump → test → build → tag → push → npm publish flow. Refuses dirty trees and non-main branches. (b4d2c78)
+- **`just bump VERSION`** — lockstep version bump across all five packages (3 JS package.json + 2 Python pyproject.toml + 2 source `version` constants). (b4d2c78)
+- **`AccountWizard` macOS Keychain warning** before the second Claude add (`@ai-accounts/vue-styled`). Claude CLI's keychain entry is global per user — adding a second account replaces the first. Warns before the user commits. (569eb15)
+- **Playground env overrides** (`apps/playground/server.py`): `AIA_HOST` + `AIA_PORT`. (569eb15)
+- **Tests**: 9-case suite for `cliproxy_list_models` covering filter, unreachable, malformed body, defensive defaults; orchestrator no-models paths; `/login/status` endpoint; `_chat_via_cliproxy` error parsing. (569eb15, 6f4438a)
+- **README rewrite** + per-package CHANGELOG backfill for versions 0.2.2 → 0.3.9. (569eb15)
+
+### Documentation
+
+- `MAINTENANCE.md` and `ARCHITECTURE.md` version anchors refreshed.
+
+---
+
 ## 0.3.9 — 2026-05-03
 
 End-to-end fixes for the playground webui — codex device-code login, claude credential validation on macOS, multi-backend chat routing, and a polished playground app. Entries for 0.3.3 through 0.3.8 (which shipped on npm but were not entered here in real time) were backfilled from `git log` in this same release pass — see entries below.

@@ -1,5 +1,36 @@
 # @ai-accounts/vue-styled
 
+## 0.3.12
+
+### Patch Changes
+
+- **Security**: DOMPurify sanitizes marked.parse output in `ChatBubble` — untrusted markdown can no longer slip script/event-handler payloads through the rendered HTML.
+- `ChatBubble`: render markdown headings, blockquotes, tables, links; guard against Invalid Date in the timestamp line.
+- `AiChatPanel` fills parent width; markdown list-item indentation restored.
+- `AiChatPanelManaged` exposes a CLI runner toggle so host apps can show a managed CLI pane.
+- Chat error rendering: decode gzipped proxy error bodies; soften "model not supported" copy.
+- Wizard method-picker default-flow click no longer no-ops.
+- Updated dependencies: `@ai-accounts/ts-core@0.3.12`, `@ai-accounts/vue-headless@0.3.12`.
+
+## 0.3.11
+
+### Patch Changes
+
+- **`AccountWizard`**: method picker for backends advertising >1 login flow; compact mid-flow switcher to bail to a different flow without leaving the wizard.
+- **Gemini OAuth flow** (`cli_browser`): delegates to `cliproxyapi --login` for Google subscription auth (Gemini Code Assist / Pro / Ultra). Default flow is `api_key` because Google's consent gate is unreliable for the cliproxy client; subscription stays one click away via the picker.
+- `LoginStream` polish: hide eager paste form for device-code flows, drop over-eager prompt watcher that broke gemini's textPrompt-only flow, stop the spinner showing after intermediate menu/prompt picks, make the verifying state escapable, show CLI stdout for debugging, surface respond errors.
+- Wizard surfaces login-start failures instead of `console.warn` so the wizard isn't stuck on a spinner forever when `/begin` fails.
+- Updated dependencies: `@ai-accounts/ts-core@0.3.11`, `@ai-accounts/vue-headless@0.3.11`.
+
+## 0.3.10
+
+### Patch Changes
+
+- **Back-migrated chat components from Agented**: new `AiChatPanelManaged`, `AiChatSelector`, `ChatModeSelector` standalone components. Upgraded `ChatBubble`, `AllModeResponses`, `CompoundSynthesis`, `ProcessGroup`, `MessageActions` with parity features.
+- `AccountWizard`: macOS Keychain warning before the second Claude add — Claude CLI's keychain entry is per-user, so the second account replaces the first.
+- `AiChatSelector`: drop `chatMode: undefined` defaults under `exactOptionalPropertyTypes`.
+- Updated dependencies: `@ai-accounts/ts-core@0.3.10`, `@ai-accounts/vue-headless@0.3.10`.
+
 ## 0.3.9
 
 ### Patch Changes

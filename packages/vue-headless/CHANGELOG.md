@@ -1,5 +1,25 @@
 # @ai-accounts/vue-headless
 
+## 0.3.12
+
+### Patch Changes
+
+- Updated dependencies: `@ai-accounts/ts-core@0.3.12` (auto-discovery client methods).
+
+## 0.3.11
+
+### Patch Changes
+
+- `useLoginSession.write_eager(text)` for direct PTY writes when the CLI never emits a textPrompt — gemini api_key flow needs this.
+- `useLoginSession.reset()` for re-opening the wizard against the same backend.
+- Updated dependencies: `@ai-accounts/ts-core@0.3.11`.
+
+## 0.3.10
+
+### Patch Changes
+
+- Updated dependencies: `@ai-accounts/ts-core@0.3.10` (live model discovery surface).
+
 ## 0.3.9
 
 ### Patch Changes

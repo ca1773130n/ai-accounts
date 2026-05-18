@@ -1,5 +1,24 @@
 # @ai-accounts/ts-core
 
+## 0.3.12
+
+### Patch Changes
+
+- `client.discoverConfigs()` and `client.importDiscovered({kind, path, display_name})` wrap the new `GET /api/v1/discovery/` and `POST /api/v1/discovery/import` routes. `discoverConfigs` returns globbed CLI candidates with `is_logged_in`, `suggested_name`, and `backend_id` (set when the path is already imported — server has synced its status to the probe result).
+- Chat-stream error frame decoding now handles gzipped proxy error bodies — was leaking compressed bytes into the UI.
+
+## 0.3.11
+
+### Patch Changes
+
+- No public API additions; published alongside the gemini subscription flow + wizard method picker in `vue-styled`.
+
+## 0.3.10
+
+### Patch Changes
+
+- New `LoginEvent` types are surfaced via the SSE login stream — `write_eager`, intermediate prompt acks, and verifying-state markers consumed by `vue-headless`/`vue-styled`.
+
 ## 0.3.9
 
 ### Patch Changes
