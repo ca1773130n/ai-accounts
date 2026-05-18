@@ -1,8 +1,7 @@
 from unittest.mock import MagicMock
 
-from litestar import Request
-
 from ai_accounts_litestar.errors import service_error_handler
+from litestar import Request
 
 
 def test_non_service_error_returns_generic_message():

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import aiosqlite
 import pytest
-
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.adapters.storage_sqlite.migrations import (
     CURRENT_VERSION,
@@ -32,9 +31,7 @@ async def test_fresh_db_ends_at_current_version(tmp_path):
     storage = SqliteStorage(str(tmp_path / "fresh.db"))
     await storage.migrate()
     conn = await storage._ensure_conn()  # type: ignore[attr-defined]
-    async with conn.execute(
-        "SELECT MAX(version) FROM schema_version"
-    ) as cur:
+    async with conn.execute("SELECT MAX(version) FROM schema_version") as cur:
         (version,) = await cur.fetchone()
     assert version == CURRENT_VERSION
     await storage.close()
@@ -65,9 +62,7 @@ async def test_pre_v2_db_is_upgraded_to_current(tmp_path):
     # Hand-build a v1-shaped DB: backends table without the 4 late columns.
     conn = await aiosqlite.connect(str(db_path))
     try:
-        await conn.execute(
-            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY)"
-        )
+        await conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY)")
         await conn.execute("INSERT INTO schema_version (version) VALUES (1)")
         await conn.execute(
             """
@@ -111,9 +106,7 @@ async def test_pre_v2_db_is_upgraded_to_current(tmp_path):
     assert row == ("bkd-1", "claude", None)
 
     # Version bumped.
-    async with conn.execute(
-        "SELECT MAX(version) FROM schema_version"
-    ) as cur:
+    async with conn.execute("SELECT MAX(version) FROM schema_version") as cur:
         (version,) = await cur.fetchone()
     assert version == CURRENT_VERSION
     await storage.close()
@@ -139,9 +132,7 @@ async def test_partial_backfill_tolerated(tmp_path):
 
     conn = await aiosqlite.connect(str(db_path))
     try:
-        await conn.execute(
-            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY)"
-        )
+        await conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY)")
         await conn.execute("INSERT INTO schema_version (version) VALUES (1)")
         await conn.execute(
             """
@@ -169,9 +160,14 @@ async def test_partial_backfill_tolerated(tmp_path):
     try:
         # Read schema.sql the same way storage.py does.
         from pathlib import Path
+
         schema_path = (
             Path(__file__).resolve().parent.parent.parent
-            / "src" / "ai_accounts_core" / "adapters" / "storage_sqlite" / "schema.sql"
+            / "src"
+            / "ai_accounts_core"
+            / "adapters"
+            / "storage_sqlite"
+            / "schema.sql"
         )
         baseline = schema_path.read_text()
         await apply_migrations(conn, baseline_schema=baseline)

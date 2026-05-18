@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import os
-import pty
 import signal
 import struct
 import termios

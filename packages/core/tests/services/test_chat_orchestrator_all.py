@@ -1,10 +1,9 @@
 import pytest
-
-from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
-from ai_accounts_core.services.chat import ChatService
-from ai_accounts_core.services.scheduler import AccountScheduler
 from ai_accounts_core.services.accounts import AccountService
-from ai_accounts_core.testing.fakes import FakeStorage, FakeVault, FakeBackend
+from ai_accounts_core.services.chat import ChatService
+from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
+from ai_accounts_core.services.scheduler import AccountScheduler
+from ai_accounts_core.testing.fakes import FakeBackend, FakeStorage, FakeVault
 
 
 @pytest.fixture
@@ -13,7 +12,10 @@ async def multi_orchestrator(tmp_path):
     vault = FakeVault()
     fake = FakeBackend()
     accounts = AccountService(
-        storage=storage, vault=vault, backends={"fake": fake}, isolation_base_dir=tmp_path,
+        storage=storage,
+        vault=vault,
+        backends={"fake": fake},
+        isolation_base_dir=tmp_path,
     )
     b1 = await accounts.create(kind="fake", display_name="A1")
     await accounts.store_credential(b1.id, b"sk-fake-1")
@@ -47,7 +49,10 @@ async def test_send_all_no_backends(tmp_path):
     vault = FakeVault()
     fake = FakeBackend()
     accounts = AccountService(
-        storage=storage, vault=vault, backends={"fake": fake}, isolation_base_dir=tmp_path,
+        storage=storage,
+        vault=vault,
+        backends={"fake": fake},
+        isolation_base_dir=tmp_path,
     )
     chat = ChatService(account_service=accounts, storage=storage)
     scheduler = AccountScheduler(account_service=accounts, storage=storage)

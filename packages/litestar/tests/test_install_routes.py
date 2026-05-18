@@ -1,14 +1,13 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from litestar.testing import TestClient
-
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.install import InstallResult
 from ai_accounts_core.testing import FakeBackend, FakeVault
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
+from litestar.testing import TestClient
 
 
 @pytest.fixture

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import pytest
-
 from ai_accounts_core.backends.codex import CodexBackend
-from ai_accounts_core.domain.usage import UsageWindow
 
 
 @pytest.mark.asyncio
@@ -37,9 +35,7 @@ async def test_codex_usage_with_token(tmp_path, httpx_mock):
 
 @pytest.mark.asyncio
 async def test_codex_usage_api_error_returns_empty(tmp_path, httpx_mock):
-    httpx_mock.add_response(
-        url="https://chatgpt.com/backend-api/wham/usage", status_code=500
-    )
+    httpx_mock.add_response(url="https://chatgpt.com/backend-api/wham/usage", status_code=500)
     backend = CodexBackend()
     windows = await backend.get_usage(b"some-token", isolation_dir=tmp_path)
     assert windows == []

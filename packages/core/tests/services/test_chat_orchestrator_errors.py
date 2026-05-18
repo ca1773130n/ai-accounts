@@ -9,7 +9,6 @@ skips the backend.
 from __future__ import annotations
 
 import pytest
-
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.chat import ChatService
 from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
@@ -23,7 +22,9 @@ async def orchestrator_with_one_backend(tmp_path):
     vault = FakeVault()
     fake = FakeBackend()
     accounts = AccountService(
-        storage=storage, vault=vault, backends={"fake": fake},
+        storage=storage,
+        vault=vault,
+        backends={"fake": fake},
         isolation_base_dir=tmp_path,
     )
     b = await accounts.create(kind="fake", display_name="A1")
@@ -91,7 +92,6 @@ async def test_send_compound_emits_synthesis_error_when_synth_models_throw(
     # First call (in send_all) returns models so the fan-out succeeds and
     # produces a response. Second call (in send_compound's synth phase)
     # throws so we exercise the synthesis error path specifically.
-    from ai_accounts_core.protocols.backend import Model
 
     real_list = fake.list_models
     call_count = {"n": 0}

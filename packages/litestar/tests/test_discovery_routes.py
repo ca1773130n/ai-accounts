@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from litestar.testing import TestClient
-
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.services.discovery import DiscoveredConfig
 from ai_accounts_core.testing import FakeBackend, FakeVault
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
+from litestar.testing import TestClient
 
 
 @pytest.fixture
@@ -94,8 +94,9 @@ def test_discovery_import_creates_backend(client):
     base dir — tmp_path satisfies neither in test_session scope). The
     contract under test is the route's wiring, not the service.
     """
+    from datetime import datetime
+
     from ai_accounts_core.domain.backend import Backend, BackendStatus
-    from datetime import datetime, timezone
 
     stub_backend = Backend(
         id="bkd-newimport",
@@ -103,7 +104,7 @@ def test_discovery_import_creates_backend(client):
         display_name="personal",
         config={"config_path": "/home/u/.fake-personal"},
         status=BackendStatus.READY,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     with patch(
         "ai_accounts_core.services.accounts.AccountService.import_discovered",
@@ -118,6 +119,4 @@ def test_discovery_import_creates_backend(client):
     assert body["id"] == "bkd-newimport"
     assert body["kind"] == "fake"
     assert body["display_name"] == "personal"
-    mock_import.assert_awaited_once_with(
-        "fake", "/home/u/.fake-personal", display_name="personal"
-    )
+    mock_import.assert_awaited_once_with("fake", "/home/u/.fake-personal", display_name="personal")

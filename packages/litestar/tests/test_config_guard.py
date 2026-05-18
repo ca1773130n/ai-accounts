@@ -1,14 +1,12 @@
 import base64
 
 import pytest
-
 from ai_accounts_core.adapters.auth_apikey import ApiKeyAuth
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.adapters.vault_envkey import EnvKeyVault
 from ai_accounts_core.backends import ClaudeBackend
 from ai_accounts_core.testing import FakeVault
-
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
 

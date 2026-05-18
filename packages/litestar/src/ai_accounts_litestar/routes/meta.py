@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import msgspec
-from litestar import Controller, get
-
 from ai_accounts_core.metadata import BackendMetadata, BackendRegistry
+from litestar import Controller, get
 
 
 class _MetaResponse(msgspec.Struct, kw_only=True):

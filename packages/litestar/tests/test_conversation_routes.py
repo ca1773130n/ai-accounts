@@ -3,14 +3,13 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from litestar.testing import AsyncTestClient
-
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.testing import FakeBackend, FakeVault
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
+from litestar.testing import AsyncTestClient
 
 
 @pytest_asyncio.fixture
@@ -36,9 +35,7 @@ def _get_account_service(client: AsyncTestClient) -> AccountService:
 
 
 async def _create_backend(client: AsyncTestClient) -> str:
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "T"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "T"})
     assert r.status_code == 201
     return r.json()["id"]
 
@@ -66,9 +63,7 @@ async def test_create_and_list_sessions(client: AsyncTestClient) -> None:
     assert body["model"] == "fake-1"
     assert body["id"].startswith("cht-")
 
-    r = await client.get(
-        f"/api/v1/conversations/?backend_id={backend_id}"
-    )
+    r = await client.get(f"/api/v1/conversations/?backend_id={backend_id}")
     assert r.status_code == 200
     assert len(r.json()["items"]) == 1
 

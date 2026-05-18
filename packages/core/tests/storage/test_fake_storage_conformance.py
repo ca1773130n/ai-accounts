@@ -1,5 +1,4 @@
 import pytest
-
 from ai_accounts_core.testing import FakeStorage, run_storage_conformance
 
 

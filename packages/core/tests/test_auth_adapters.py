@@ -1,7 +1,5 @@
-import hmac
 
 import pytest
-
 from ai_accounts_core.adapters.auth_apikey import ApiKeyAuth
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.protocols.auth import RequestContext
@@ -59,8 +57,10 @@ async def test_apikey_is_case_insensitive_on_bearer_scheme(monkeypatch):
 
 def test_apikey_constant_time_comparison_source():
     """The implementation must use hmac.compare_digest, not ==."""
-    import ai_accounts_core.adapters.auth_apikey as mod
     from pathlib import Path
+
+    import ai_accounts_core.adapters.auth_apikey as mod
+
     source = Path(mod.__file__).read_text()
     assert "compare_digest" in source
 

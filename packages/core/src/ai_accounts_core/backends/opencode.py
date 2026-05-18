@@ -16,7 +16,6 @@ import httpx
 from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
 from ai_accounts_core.backends._iso import resolved_iso
-from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -79,10 +78,8 @@ class _OpenCodeCliBrowserSession(LoginSession):
                 except Exception:  # pragma: no cover - best-effort
                     pass
                 try:
-                    exit_code = await asyncio.wait_for(
-                        self._orchestrator.wait(), timeout=10
-                    )
-                except asyncio.TimeoutError:
+                    exit_code = await asyncio.wait_for(self._orchestrator.wait(), timeout=10)
+                except TimeoutError:
                     await self._orchestrator.kill()
                     await self._orchestrator.wait()
                 except Exception:  # pragma: no cover - best-effort
@@ -119,8 +116,10 @@ class _OpenCodeCliBrowserSession(LoginSession):
                     success = True
                     break
                 lower = chunk.lower()
-                if "error" in lower or "failed" in lower or any(
-                    mk in chunk for mk in _OPENCODE_FAILURE_MARKERS
+                if (
+                    "error" in lower
+                    or "failed" in lower
+                    or any(mk in chunk for mk in _OPENCODE_FAILURE_MARKERS)
                 ):
                     break
         finally:
@@ -174,9 +173,11 @@ class _OpenCodeApiKeySession(LoginSession):
         yield TextPrompt(prompt_id="api_key", prompt="OpenCode API key", hidden=True)
         try:
             ans = await asyncio.wait_for(self._answers.get(), timeout=300)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._done = True
-            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            yield LoginFailed(
+                code="response_timeout", message="No response received within 5 minutes"
+            )
             return
         if ans.prompt_id == "__cancel__":
             self._done = True
@@ -267,9 +268,7 @@ class OpenCodeBackend(CliBackendBase):
             return False
         iso = resolved_iso(isolation_dir)
         env = self._env(credential, iso)
-        rc, stdout, _stderr = await self._run(
-            {"argv": [path, "providers", "list"], "env": env}
-        )
+        rc, stdout, _stderr = await self._run({"argv": [path, "providers", "list"], "env": env})
         if rc != 0:
             return False
         # Strip ANSI escape sequences before matching.
@@ -320,9 +319,7 @@ class OpenCodeBackend(CliBackendBase):
         if path is None:
             return []
         env = self._env(credential, isolation_dir)
-        rc, stdout, _stderr = await self._run(
-            {"argv": [path, "models", "--json"], "env": env}
-        )
+        rc, stdout, _stderr = await self._run({"argv": [path, "models", "--json"], "env": env})
         if rc != 0:
             from ai_accounts_core.backends._models_fallback import fallback
 
@@ -358,10 +355,7 @@ class OpenCodeBackend(CliBackendBase):
             async for event in _chat_via_cliproxy(request):
                 yield event
             return
-        messages_payload = [
-            {"role": m.role.value, "content": m.content}
-            for m in request.messages
-        ]
+        messages_payload = [{"role": m.role.value, "content": m.content} for m in request.messages]
         body: dict[str, object] = {
             "model": request.model,
             "messages": messages_payload,
@@ -369,44 +363,43 @@ class OpenCodeBackend(CliBackendBase):
         }
         if "max_tokens" in request.params:
             body["max_tokens"] = request.params["max_tokens"]
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                "https://openrouter.ai/api/v1/chat/completions",
-                json=body,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                timeout=120.0,
-            ) as resp:
-                if resp.status_code != 200:
+        async with httpx.AsyncClient() as client, client.stream(
+            "POST",
+            "https://openrouter.ai/api/v1/chat/completions",
+            json=body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=120.0,
+        ) as resp:
+            if resp.status_code != 200:
+                yield ChatStreamEvent(
+                    kind="error",
+                    payload=f"API error {resp.status_code}",
+                )
+                return
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:].strip()
+                if payload == "[DONE]":
+                    break
+                data = json.loads(payload)
+                choice = data.get("choices", [{}])[0]
+                delta = choice.get("delta", {})
+                text = delta.get("content")
+                if text:
+                    yield ChatStreamEvent(kind="token", payload=text)
+                finish_reason = choice.get("finish_reason")
+                if finish_reason:
                     yield ChatStreamEvent(
-                        kind="error",
-                        payload=f"API error {resp.status_code}",
+                        kind="done",
+                        payload={
+                            "finish_reason": finish_reason,
+                            "model": data.get("model", request.model),
+                        },
                     )
-                    return
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    payload = line[6:].strip()
-                    if payload == "[DONE]":
-                        break
-                    data = json.loads(payload)
-                    choice = data.get("choices", [{}])[0]
-                    delta = choice.get("delta", {})
-                    text = delta.get("content")
-                    if text:
-                        yield ChatStreamEvent(kind="token", payload=text)
-                    finish_reason = choice.get("finish_reason")
-                    if finish_reason:
-                        yield ChatStreamEvent(
-                            kind="done",
-                            payload={
-                                "finish_reason": finish_reason,
-                                "model": data.get("model", request.model),
-                            },
-                        )
 
     async def pty(
         self,
@@ -420,7 +413,10 @@ class OpenCodeBackend(CliBackendBase):
         env = dict(request.env)
         env.update(self._env(credential, isolation_dir))
         return await AsyncPtyHandle.spawn(
-            command=request.command, cols=request.cols, rows=request.rows, env=env,
+            command=request.command,
+            cols=request.cols,
+            rows=request.rows,
+            env=env,
         )
 
     def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:

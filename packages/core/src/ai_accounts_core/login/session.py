@@ -117,7 +117,7 @@ class LoginSession(ABC):
         its own textPrompt. Default implementation is a no-op; backends
         that run a PTY override this to call ``orchestrator.write``.
         """
-        return None
+        return
 
     @abstractmethod
     async def cancel(self) -> None: ...

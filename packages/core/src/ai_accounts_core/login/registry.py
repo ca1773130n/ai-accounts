@@ -54,9 +54,7 @@ class LoginSessionRegistry:
                 session.flow_kind,
             )
 
-    async def get(
-        self, session_id: str, *, backend_id: str | None = None
-    ) -> LoginSession | None:
+    async def get(self, session_id: str, *, backend_id: str | None = None) -> LoginSession | None:
         """Return the session iff it exists and, when ``backend_id`` is given,
         it matches the backend the session was registered against.
 
@@ -107,10 +105,7 @@ class LoginSessionRegistry:
         now = time.monotonic()
         purged = 0
         async with self._lock:
-            stale = [
-                sid for sid, e in self._entries.items()
-                if now - e.registered_at >= self._ttl
-            ]
+            stale = [sid for sid, e in self._entries.items() if now - e.registered_at >= self._ttl]
             for sid in stale:
                 entry = self._entries.pop(sid)
                 purged += 1

@@ -2,7 +2,6 @@ import base64
 import logging
 
 import pytest
-
 from ai_accounts_core.adapters.vault_envkey import EnvKeyVault
 from ai_accounts_core.protocols.vault import VaultError
 from ai_accounts_core.testing import run_vault_conformance
@@ -57,6 +56,7 @@ async def test_unknown_envelope_version_rejected(monkeypatch):
 
 def test_rotate_not_implemented(monkeypatch):
     import asyncio
+
     monkeypatch.setenv("AI_ACCOUNTS_VAULT_KEY", base64.b64encode(b"\x00" * 32).decode())
     vault = EnvKeyVault.from_env()
     with pytest.raises(NotImplementedError):

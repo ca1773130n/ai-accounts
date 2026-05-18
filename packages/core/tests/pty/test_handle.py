@@ -1,7 +1,6 @@
 import asyncio
 
 import pytest
-
 from ai_accounts_core.pty.handle import AsyncPtyHandle
 
 

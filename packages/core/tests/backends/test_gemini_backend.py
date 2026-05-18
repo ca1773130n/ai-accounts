@@ -2,15 +2,16 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from ai_accounts_core.backends.gemini import GeminiBackend
 
 
 @pytest.mark.asyncio
 async def test_detect_finds_cli():
     backend = GeminiBackend()
-    with patch("shutil.which", return_value="/usr/local/bin/gemini"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"gemini-cli 1.0.0\n", b""))):
+    with (
+        patch("shutil.which", return_value="/usr/local/bin/gemini"),
+        patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"gemini-cli 1.0.0\n", b""))),
+    ):
         result = await backend.detect()
     assert result.installed is True
     assert "gemini" in (result.version or "").lower()
@@ -28,9 +29,7 @@ def test_supported_login_flows():
     # cli_browser delegates to cliproxyapi --login (Google account /
     # Gemini Code Assist subscription). api_key remains for users who
     # want direct AI Studio access without a subscription.
-    assert GeminiBackend.supported_login_flows == frozenset(
-        {"cli_browser", "api_key"}
-    )
+    assert GeminiBackend.supported_login_flows == frozenset({"cli_browser", "api_key"})
 
 
 def test_kind_is_gemini():

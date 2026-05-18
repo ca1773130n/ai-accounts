@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import pytest
-
 from ai_accounts_core.backends.codex import CodexBackend
-
 
 _API_MODELS_RESPONSE = {
     "data": [
@@ -70,9 +68,7 @@ async def test_non_200_response_falls_through_to_static(tmp_path, httpx_mock, mo
     async def _no_cliproxy(_kind: str):
         return None
 
-    monkeypatch.setattr(
-        "ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy
-    )
+    monkeypatch.setattr("ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy)
     backend = CodexBackend()
     models = await backend.list_models(b"sk-proj-bad", isolation_dir=tmp_path)
     ids = [m.id for m in models]
@@ -87,9 +83,7 @@ async def test_empty_credential_falls_through(tmp_path, monkeypatch):
     async def _no_cliproxy(_kind: str):
         return None
 
-    monkeypatch.setattr(
-        "ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy
-    )
+    monkeypatch.setattr("ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy)
     backend = CodexBackend()
     models = await backend.list_models(b"", isolation_dir=tmp_path)
     assert models  # static list non-empty

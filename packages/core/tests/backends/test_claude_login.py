@@ -3,7 +3,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from ai_accounts_core.backends.claude import ClaudeBackend
 from ai_accounts_core.login.events import (
     LoginComplete,
@@ -74,24 +73,31 @@ async def test_claude_cli_browser_interactive_loop_drives_url_and_completion(tmp
         current_time[0] += elapsed if chunk is not None else timeout
         return res
 
-    with patch(
-        "ai_accounts_core.backends.claude.CliOrchestrator.start",
-        new=AsyncMock(return_value=None),
-    ), patch(
-        "ai_accounts_core.login.cli_orchestrator.CliOrchestrator.poll_output",
-        poll_advancing,
-    ), patch(
-        "ai_accounts_core.login.cli_orchestrator.CliOrchestrator.write",
-        fake_write,
-    ), patch(
-        "ai_accounts_core.login.cli_orchestrator.CliOrchestrator.terminate",
-        new=AsyncMock(return_value=None),
-    ), patch(
-        "ai_accounts_core.login.cli_orchestrator.CliOrchestrator.wait",
-        new=AsyncMock(return_value=0),
-    ), patch(
-        "ai_accounts_core.login.interactive.time.monotonic",
-        fake_monotonic,
+    with (
+        patch(
+            "ai_accounts_core.backends.claude.CliOrchestrator.start",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "ai_accounts_core.login.cli_orchestrator.CliOrchestrator.poll_output",
+            poll_advancing,
+        ),
+        patch(
+            "ai_accounts_core.login.cli_orchestrator.CliOrchestrator.write",
+            fake_write,
+        ),
+        patch(
+            "ai_accounts_core.login.cli_orchestrator.CliOrchestrator.terminate",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "ai_accounts_core.login.cli_orchestrator.CliOrchestrator.wait",
+            new=AsyncMock(return_value=0),
+        ),
+        patch(
+            "ai_accounts_core.login.interactive.time.monotonic",
+            fake_monotonic,
+        ),
     ):
         events = [evt async for evt in session.events()]
 

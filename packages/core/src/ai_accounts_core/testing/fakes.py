@@ -4,10 +4,9 @@ import asyncio
 import hashlib
 from collections import defaultdict
 from collections.abc import AsyncIterator
+from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
-
-from datetime import datetime
 
 from ai_accounts_core.domain.backend import Backend, BackendCredential, DetectResult
 from ai_accounts_core.domain.chat import ChatMessage, ChatSession
@@ -35,7 +34,6 @@ from ai_accounts_core.protocols.storage import (
     HistoryRepository,
     OnboardingRepository,
     SessionRepository,
-    StorageProtocol,
     UsageRepository,
 )
 from ai_accounts_core.protocols.vault import VaultError, canonicalize_vault_context
@@ -348,18 +346,29 @@ class FakeBackend:
         return [UsageWindow(window_type="five_hour", usage_percent=25.0, resets_at=None)]
 
     async def chat(  # type: ignore[override]
-        self, request: Any, credential: bytes, *, isolation_dir: Path,
+        self,
+        request: Any,
+        credential: bytes,
+        *,
+        isolation_dir: Path,
     ) -> AsyncIterator[Any]:
         from ai_accounts_core.protocols.backend import ChatStreamEvent
+
         self.calls.append(("chat", request))
         if self._tool_call is not None:
             yield ChatStreamEvent(kind="tool_call", payload=self._tool_call)
         yield ChatStreamEvent(kind="token", payload="Hello ")
         yield ChatStreamEvent(kind="token", payload="world!")
-        yield ChatStreamEvent(kind="done", payload={"tokens_in": 10, "tokens_out": 2, "model": "fake-1"})
+        yield ChatStreamEvent(
+            kind="done", payload={"tokens_in": 10, "tokens_out": 2, "model": "fake-1"}
+        )
 
     async def pty(  # type: ignore[override]
-        self, request: Any, credential: bytes, *, isolation_dir: Path,
+        self,
+        request: Any,
+        credential: bytes,
+        *,
+        isolation_dir: Path,
     ) -> Any:
         from ai_accounts_core.pty.handle import AsyncPtyHandle
 

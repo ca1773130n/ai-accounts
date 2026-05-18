@@ -1,14 +1,13 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from litestar.testing import TestClient
-
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.cliproxy import CliproxyInstallResult, CliproxyLoginInfo
 from ai_accounts_core.testing import FakeBackend, FakeVault
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
+from litestar.testing import TestClient
 
 
 @pytest.fixture
@@ -99,6 +98,7 @@ def test_cliproxy_callback_forward_rejects_missing_code(client):
 
 # ── /login/status — completion polling for the device-code flow ──
 
+
 def test_login_status_unknown_session(client):
     r = client.get("/api/v1/cliproxy/login/status?session_id=does-not-exist")
     assert r.status_code == 200
@@ -109,7 +109,7 @@ def test_login_status_unknown_session(client):
 
 def test_login_status_running_then_completed(client):
     """Drive the in-process registry directly and verify the route surfaces it."""
-    from ai_accounts_litestar.routes.cliproxy import _record_login_state, _LOGIN_STATE
+    from ai_accounts_litestar.routes.cliproxy import _LOGIN_STATE, _record_login_state
 
     sid = "test-session-running"
     try:
@@ -134,14 +134,12 @@ def test_login_status_running_then_completed(client):
 
 
 def test_login_status_failed_carries_returncode(client):
-    from ai_accounts_litestar.routes.cliproxy import _record_login_state, _LOGIN_STATE
+    from ai_accounts_litestar.routes.cliproxy import _LOGIN_STATE, _record_login_state
 
     sid = "test-session-failed"
     try:
         _record_login_state(sid, "failed", "cliproxyapi exited with code 1", 1)
-        body = client.get(
-            f"/api/v1/cliproxy/login/status?session_id={sid}"
-        ).json()
+        body = client.get(f"/api/v1/cliproxy/login/status?session_id={sid}").json()
         assert body == {
             "state": "failed",
             "message": "cliproxyapi exited with code 1",
@@ -152,14 +150,12 @@ def test_login_status_failed_carries_returncode(client):
 
 
 def test_login_status_timeout(client):
-    from ai_accounts_litestar.routes.cliproxy import _record_login_state, _LOGIN_STATE
+    from ai_accounts_litestar.routes.cliproxy import _LOGIN_STATE, _record_login_state
 
     sid = "test-session-timeout"
     try:
         _record_login_state(sid, "timeout", "Login timed out after 5 minutes", None)
-        body = client.get(
-            f"/api/v1/cliproxy/login/status?session_id={sid}"
-        ).json()
+        body = client.get(f"/api/v1/cliproxy/login/status?session_id={sid}").json()
         assert body["state"] == "timeout"
         assert "5 minutes" in body["message"]
     finally:
@@ -191,12 +187,12 @@ def test_login_state_lru_evicts_oldest():
 
 def test_login_begin_started_returns_session_id(client):
     """The new session_id field is populated when a real subprocess is spawned."""
-    import asyncio
 
     fake_info = CliproxyLoginInfo(
         oauth_url="https://oauth.example.test/device",
         device_code="WXYZ-7890",
     )
+
     # proc must be non-None for session_id to be issued; use a stub with the
     # bare interface the _reap closure needs (wait, kill, returncode, stdout).
     class _FakeProc:

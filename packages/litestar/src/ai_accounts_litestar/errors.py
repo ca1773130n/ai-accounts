@@ -1,9 +1,8 @@
 import logging
 from typing import Any
 
-from litestar import Request, Response
-
 from ai_accounts_core.services.errors import ServiceError
+from litestar import Request, Response
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +18,7 @@ _STATUS_BY_CODE: dict[str, int] = {
 }
 
 
-def service_error_handler(
-    request: Request[Any, Any, Any], exc: Exception
-) -> Response[Any]:
+def service_error_handler(request: Request[Any, Any, Any], exc: Exception) -> Response[Any]:
     if isinstance(exc, ServiceError):
         status = _STATUS_BY_CODE.get(exc.code, 500)
         return Response(

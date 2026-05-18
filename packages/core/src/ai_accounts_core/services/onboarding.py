@@ -62,9 +62,7 @@ class OnboardingService:
         await repo.put(updated)
         return results
 
-    async def pick_kind(
-        self, onboarding_id: str, kind: str, *, display_name: str
-    ) -> Backend:
+    async def pick_kind(self, onboarding_id: str, kind: str, *, display_name: str) -> Backend:
         state = await self.get(onboarding_id)
         if kind not in self._backend_kinds:
             raise BackendKindUnknown(f"unknown backend kind: {kind}")

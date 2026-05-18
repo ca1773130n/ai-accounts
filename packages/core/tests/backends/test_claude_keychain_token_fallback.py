@@ -16,9 +16,7 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-
 from ai_accounts_core.backends.claude import ClaudeBackend
-
 
 _FAKE_DUMP_KEYCHAIN_OUTPUT = """\
 keychain: "/Users/u/Library/Keychains/login.keychain-db"
@@ -82,8 +80,7 @@ async def test_keychain_extracts_oauth_token_from_credentials_entry(monkeypatch)
     assert token == "sk-ant-oat-FAKE-TOKEN-VALUE"
     # Sanity-check the call shape — we asked for the right service with -w.
     assert any(
-        "find-generic-password" in c and "Claude Code-credentials-abc123def456" in c
-        for c in calls
+        "find-generic-password" in c and "Claude Code-credentials-abc123def456" in c for c in calls
     )
 
 
@@ -195,9 +192,7 @@ async def test_credentials_file_missing_oauth_key_returns_none(tmp_path):
 @pytest.mark.asyncio
 async def test_credentials_file_empty_token_returns_none(tmp_path):
     """The wrapper exists but accessToken is the empty string → None."""
-    (tmp_path / ".credentials.json").write_text(
-        json.dumps({"claudeAiOauth": {"accessToken": ""}})
-    )
+    (tmp_path / ".credentials.json").write_text(json.dumps({"claudeAiOauth": {"accessToken": ""}}))
     backend = ClaudeBackend()
     assert await backend._try_credentials_file_oauth_token(tmp_path) is None
 
@@ -217,9 +212,7 @@ async def test_list_models_via_provider_api_uses_credentials_file_when_credentia
     async def _no_keychain(self):
         return None
 
-    monkeypatch.setattr(
-        ClaudeBackend, "_try_macos_keychain_oauth_token", _no_keychain
-    )
+    monkeypatch.setattr(ClaudeBackend, "_try_macos_keychain_oauth_token", _no_keychain)
     (tmp_path / ".credentials.json").write_text(_FAKE_OAUTH_BLOB)
     httpx_mock.add_response(
         url="https://api.anthropic.com/v1/models",

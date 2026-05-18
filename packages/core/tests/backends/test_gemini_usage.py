@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import pytest
-
 from ai_accounts_core.backends.gemini import GeminiBackend
-from ai_accounts_core.domain.usage import UsageWindow
 
 
 @pytest.mark.asyncio

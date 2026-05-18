@@ -2,15 +2,16 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from ai_accounts_core.backends.codex import CodexBackend
 
 
 @pytest.mark.asyncio
 async def test_detect_finds_cli():
     backend = CodexBackend()
-    with patch("shutil.which", return_value="/usr/local/bin/codex"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"codex 1.0.0\n", b""))):
+    with (
+        patch("shutil.which", return_value="/usr/local/bin/codex"),
+        patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"codex 1.0.0\n", b""))),
+    ):
         result = await backend.detect()
     assert result.installed is True
     assert "codex" in (result.version or "").lower()
@@ -39,10 +40,16 @@ async def test_validate_succeeds_when_logged_in_marker_in_stdout(tmp_path: Path)
     even when not logged in — must inspect stdout."""
     backend = CodexBackend()
     isolation_dir = tmp_path / "codex"
-    with patch("shutil.which", return_value="/usr/local/bin/codex"), \
-         patch.object(backend, "_run", new=AsyncMock(
-             return_value=(0, b"Logged in using ChatGPT\n", b""),
-         )) as mock_run:
+    with (
+        patch("shutil.which", return_value="/usr/local/bin/codex"),
+        patch.object(
+            backend,
+            "_run",
+            new=AsyncMock(
+                return_value=(0, b"Logged in using ChatGPT\n", b""),
+            ),
+        ) as mock_run,
+    ):
         result = await backend.validate(b"sk-test-key", isolation_dir=isolation_dir)
     assert result is True
     spec = mock_run.await_args.args[0]
@@ -54,10 +61,16 @@ async def test_validate_succeeds_when_logged_in_marker_in_stdout(tmp_path: Path)
 async def test_validate_returns_false_when_not_logged_in(tmp_path: Path):
     backend = CodexBackend()
     isolation_dir = tmp_path / "codex"
-    with patch("shutil.which", return_value="/usr/local/bin/codex"), \
-         patch.object(backend, "_run", new=AsyncMock(
-             return_value=(0, b"Not logged in\n", b""),
-         )):
+    with (
+        patch("shutil.which", return_value="/usr/local/bin/codex"),
+        patch.object(
+            backend,
+            "_run",
+            new=AsyncMock(
+                return_value=(0, b"Not logged in\n", b""),
+            ),
+        ),
+    ):
         result = await backend.validate(b"", isolation_dir=isolation_dir)
     assert result is False
 
@@ -76,20 +89,26 @@ async def test_list_models_returns_static_set(tmp_path: Path):
     cache or network on the dev machine.
     """
     from unittest.mock import AsyncMock as _AsyncMock
+
     backend = CodexBackend()
-    with patch(
-        "ai_accounts_core.backends.codex.CodexBackend._list_models_from_codex_cache",
-        return_value=None,
-    ), patch.object(
-        backend,
-        "_list_models_via_provider_api",
-        new=_AsyncMock(return_value=[]),
-    ), patch(
-        "ai_accounts_core.cliproxy.cliproxy_list_models",
-        new=_AsyncMock(return_value=None),
-    ), patch(
-        "ai_accounts_core.backends._models_fallback.cached_live",
-        return_value=None,
+    with (
+        patch(
+            "ai_accounts_core.backends.codex.CodexBackend._list_models_from_codex_cache",
+            return_value=None,
+        ),
+        patch.object(
+            backend,
+            "_list_models_via_provider_api",
+            new=_AsyncMock(return_value=[]),
+        ),
+        patch(
+            "ai_accounts_core.cliproxy.cliproxy_list_models",
+            new=_AsyncMock(return_value=None),
+        ),
+        patch(
+            "ai_accounts_core.backends._models_fallback.cached_live",
+            return_value=None,
+        ),
     ):
         models = await backend.list_models(b"", isolation_dir=tmp_path / "codex")
     ids = {m.id for m in models}

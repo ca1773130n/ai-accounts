@@ -3,7 +3,6 @@ import subprocess
 from unittest.mock import patch
 
 import pytest
-
 from ai_accounts_core.backends.claude import ClaudeBackend
 
 
@@ -52,8 +51,9 @@ async def test_validate_returns_true_when_macos_keychain_has_entry(tmp_path):
     """On macOS, a populated keychain entry alone is enough (CLI default storage)."""
     fake_ok = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
     backend = ClaudeBackend()
-    with patch("ai_accounts_core.backends.claude.sys.platform", "darwin"), patch(
-        "ai_accounts_core.backends.claude.subprocess.run", return_value=fake_ok
+    with (
+        patch("ai_accounts_core.backends.claude.sys.platform", "darwin"),
+        patch("ai_accounts_core.backends.claude.subprocess.run", return_value=fake_ok),
     ):
         ok = await backend.validate(b"", isolation_dir=tmp_path)
     assert ok is True
@@ -70,18 +70,23 @@ async def test_list_models_returns_known_set(tmp_path):
     runs against the developer's real keychain on macOS and reaches the
     live Anthropic /v1/models response (which has no context_window)."""
     from unittest.mock import AsyncMock as _AsyncMock
+
     backend = ClaudeBackend()
-    with patch(
-        "ai_accounts_core.cliproxy.cliproxy_list_models",
-        new=_AsyncMock(return_value=None),
-    ), patch.object(
-        ClaudeBackend,
-        "_try_macos_keychain_oauth_token",
-        new=_AsyncMock(return_value=None),
-    ), patch.object(
-        ClaudeBackend,
-        "_try_credentials_file_oauth_token",
-        new=_AsyncMock(return_value=None),
+    with (
+        patch(
+            "ai_accounts_core.cliproxy.cliproxy_list_models",
+            new=_AsyncMock(return_value=None),
+        ),
+        patch.object(
+            ClaudeBackend,
+            "_try_macos_keychain_oauth_token",
+            new=_AsyncMock(return_value=None),
+        ),
+        patch.object(
+            ClaudeBackend,
+            "_try_credentials_file_oauth_token",
+            new=_AsyncMock(return_value=None),
+        ),
     ):
         models = await backend.list_models(b"", isolation_dir=tmp_path)
     ids = {m.id for m in models}

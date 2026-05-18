@@ -2,7 +2,6 @@ import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
-
 from ai_accounts_core.login.events import LoginComplete, LoginEvent, PromptAnswer
 from ai_accounts_core.login.registry import LoginSessionRegistry
 from ai_accounts_core.login.session import LoginSession
@@ -14,20 +13,28 @@ class _Stub(LoginSession):
         self._done = False
 
     @property
-    def session_id(self) -> str: return self._sid
+    def session_id(self) -> str:
+        return self._sid
+
     @property
-    def backend_kind(self) -> str: return "fake"
+    def backend_kind(self) -> str:
+        return "fake"
+
     @property
-    def flow_kind(self) -> str: return "api_key"
+    def flow_kind(self) -> str:
+        return "api_key"
+
     @property
-    def done(self) -> bool: return self._done
+    def done(self) -> bool:
+        return self._done
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         yield LoginComplete(account_id="bkd-x", backend_status="validating")
         self._done = True
 
     async def respond(self, answer: PromptAnswer) -> None: ...
-    async def cancel(self) -> None: self._done = True
+    async def cancel(self) -> None:
+        self._done = True
 
 
 @pytest.mark.asyncio

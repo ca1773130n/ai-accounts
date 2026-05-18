@@ -22,11 +22,9 @@ from ai_accounts_core.login import (
     LoginFailed,
     LoginSession,
     PromptAnswer,
-    StdoutChunk,
     TextPrompt,
     UrlPrompt,
 )
-from ai_accounts_core.login.cli_orchestrator import CliOrchestrator
 from ai_accounts_core.metadata import (
     BackendMetadata,
     InputSpec,
@@ -40,6 +38,7 @@ from ai_accounts_core.protocols.backend import (
     PtyHandle,
     PtyRequest,
 )
+
 
 def _validate_config_path(config_path: str | None, isolation_dir: Path) -> Path:
     """Validate config_path is safe. Returns the resolved gemini config dir."""
@@ -152,11 +151,9 @@ class _GeminiCliProxySession(LoginSession):
         )
         try:
             ans = await asyncio.wait_for(self._answers.get(), timeout=300)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._done = True
-            yield LoginFailed(
-                code="response_timeout", message="No response within 5 minutes"
-            )
+            yield LoginFailed(code="response_timeout", message="No response within 5 minutes")
             return
         if ans.prompt_id == "__cancel__":
             self._done = True
@@ -176,9 +173,7 @@ class _GeminiCliProxySession(LoginSession):
         else:
             yield LoginFailed(
                 code="callback_forward_failed",
-                message=str(
-                    result.get("message") or "Callback forwarding failed"
-                ),
+                message=str(result.get("message") or "Callback forwarding failed"),
             )
 
     async def respond(self, answer: PromptAnswer) -> None:
@@ -189,9 +184,7 @@ class _GeminiCliProxySession(LoginSession):
     async def cancel(self) -> None:
         self._done = True
         with contextlib.suppress(asyncio.QueueFull):
-            self._answers.put_nowait(
-                PromptAnswer(prompt_id="__cancel__", answer="")
-            )
+            self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
         # Best-effort proc kill + fake_dir cleanup — start_cliproxy_login
         # spawns a subprocess and a temp PATH-shim dir; both must be
         # reaped if the user aborts mid-flow.
@@ -239,16 +232,17 @@ class _GeminiApiKeySession(LoginSession):
         yield TextPrompt(
             prompt_id="api_key",
             prompt=(
-                "Paste a Google AI Studio API key "
-                "(get one at https://aistudio.google.com/apikey)"
+                "Paste a Google AI Studio API key (get one at https://aistudio.google.com/apikey)"
             ),
             hidden=True,
         )
         try:
             ans = await asyncio.wait_for(self._answers.get(), timeout=300)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._done = True
-            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            yield LoginFailed(
+                code="response_timeout", message="No response received within 5 minutes"
+            )
             return
         if ans.prompt_id == "__cancel__":
             self._done = True
@@ -287,9 +281,7 @@ class GeminiBackend(CliBackendBase):
     #     routes through cliproxyapi's OpenAI-compatible endpoint.
     #   * api_key: paste a Google AI Studio key — direct API access, no
     #     subscription needed. Stored in our vault.
-    supported_login_flows: ClassVar[frozenset[str]] = frozenset(
-        {"cli_browser", "api_key"}
-    )
+    supported_login_flows: ClassVar[frozenset[str]] = frozenset({"cli_browser", "api_key"})
 
     metadata: ClassVar[BackendMetadata] = BackendMetadata(
         kind="gemini",
@@ -356,9 +348,7 @@ class GeminiBackend(CliBackendBase):
 
     # detect() inherited from CliBackendBase.
 
-    async def validate(
-        self, credential: bytes, *, isolation_dir: Path
-    ) -> bool:
+    async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
         # Gemini CLI 0.35+ has no `auth status` subcommand. Two paths:
         #
         #   * api_key flow — credential bytes hold the key. Validate by
@@ -367,11 +357,7 @@ class GeminiBackend(CliBackendBase):
         #     the auth file at ~/.cli-proxy-api/gemini-<email>.json).
         #     Validate by asking cliproxy if it lists any google-owned
         #     models; non-empty list = ready.
-        api_key = (
-            credential.decode("utf-8", errors="replace").strip()
-            if credential
-            else ""
-        )
+        api_key = credential.decode("utf-8", errors="replace").strip() if credential else ""
         if api_key:
             try:
                 async with httpx.AsyncClient(timeout=10.0) as http:
@@ -390,9 +376,7 @@ class GeminiBackend(CliBackendBase):
         live = await cliproxy_list_models("gemini")
         return bool(live)
 
-    async def list_models(
-        self, credential: bytes, *, isolation_dir: Path
-    ) -> list[Model]:
+    async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
         # Gemini CLI 0.35+ has no `models list` subcommand. Two live sources:
         #   1. Google AI Studio's models endpoint with the API key — primary
         #      for api_key flows.
@@ -492,53 +476,48 @@ class GeminiBackend(CliBackendBase):
             role = "model" if m.role == ChatRole.ASSISTANT else "user"
             contents.append({"role": role, "parts": [{"text": m.content}]})
         body: dict[str, object] = {"contents": contents}
-        system_msgs = [
-            m.content for m in request.messages if m.role == ChatRole.SYSTEM
-        ]
+        system_msgs = [m.content for m in request.messages if m.role == ChatRole.SYSTEM]
         if system_msgs:
             body["system_instruction"] = {"parts": [{"text": system_msgs[0]}]}
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{request.model}:streamGenerateContent?alt=sse&key={api_key}"
         )
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                url,
-                json=body,
-                headers={"Content-Type": "application/json"},
-                timeout=120.0,
-            ) as resp:
-                if resp.status_code != 200:
+        async with httpx.AsyncClient() as client, client.stream(
+            "POST",
+            url,
+            json=body,
+            headers={"Content-Type": "application/json"},
+            timeout=120.0,
+        ) as resp:
+            if resp.status_code != 200:
+                yield ChatStreamEvent(
+                    kind="error",
+                    payload=f"API error {resp.status_code}",
+                )
+                return
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = json.loads(line[6:])
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    continue
+                candidate = candidates[0]
+                parts = candidate.get("content", {}).get("parts", [])
+                if parts:
+                    text = parts[0].get("text", "")
+                    if text:
+                        yield ChatStreamEvent(kind="token", payload=text)
+                finish_reason = candidate.get("finishReason")
+                if finish_reason:
                     yield ChatStreamEvent(
-                        kind="error",
-                        payload=f"API error {resp.status_code}",
+                        kind="done",
+                        payload={
+                            "finish_reason": finish_reason,
+                            "model": request.model,
+                        },
                     )
-                    return
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    data = json.loads(line[6:])
-                    candidates = data.get("candidates", [])
-                    if not candidates:
-                        continue
-                    candidate = candidates[0]
-                    parts = candidate.get("content", {}).get("parts", [])
-                    if parts:
-                        text = parts[0].get("text", "")
-                        if text:
-                            yield ChatStreamEvent(
-                                kind="token", payload=text
-                            )
-                    finish_reason = candidate.get("finishReason")
-                    if finish_reason:
-                        yield ChatStreamEvent(
-                            kind="done",
-                            payload={
-                                "finish_reason": finish_reason,
-                                "model": request.model,
-                            },
-                        )
 
     async def pty(
         self,
@@ -552,7 +531,10 @@ class GeminiBackend(CliBackendBase):
         env = dict(request.env)
         env.update(self._env(credential, isolation_dir))
         return await AsyncPtyHandle.spawn(
-            command=request.command, cols=request.cols, rows=request.rows, env=env,
+            command=request.command,
+            cols=request.cols,
+            rows=request.rows,
+            env=env,
         )
 
     def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:

@@ -47,9 +47,7 @@ class CliBackendBase:
             return DetectResult(installed=False)
         rc, stdout, _stderr = await self._run({"argv": [path, "--version"]})
         if rc != 0:
-            return DetectResult(
-                installed=True, path=path, notes="version check failed"
-            )
+            return DetectResult(installed=True, path=path, notes="version check failed")
         version: str | None = None
         if stdout:
             first_line = stdout.decode(errors="replace").strip().splitlines()[0]

@@ -13,8 +13,8 @@ from pathlib import Path
 from ai_accounts_core.protocol.wire import (
     WIRE_PROTOCOL_VERSION,
     ChatDoneEvent,
-    ChatToolCallEvent,
     ChatTokenEvent,
+    ChatToolCallEvent,
     ErrorEvent,
     PtyExitEvent,
     PtyOutputEvent,
@@ -77,9 +77,11 @@ def main() -> None:
         f"export const WIRE_PROTOCOL_VERSION = {WIRE_PROTOCOL_VERSION};\n\n"
     )
     body = "\n\n".join(render_struct(cls) for cls in EVENT_TYPES)
-    union = "\n\nexport type WireEvent =\n" + "\n".join(
-        f"  | {cls.__name__}" for cls in EVENT_TYPES
-    ) + ";\n"
+    union = (
+        "\n\nexport type WireEvent =\n"
+        + "\n".join(f"  | {cls.__name__}" for cls in EVENT_TYPES)
+        + ";\n"
+    )
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(header + body + union)
     print(f"wrote {OUT}")

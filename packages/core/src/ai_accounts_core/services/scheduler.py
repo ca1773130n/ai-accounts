@@ -8,7 +8,6 @@ from ai_accounts_core.domain.usage import (
     AccountHealth,
     FallbackChainEntry,
     PickResult,
-    UsageWindow,
 )
 from ai_accounts_core.protocols.storage import StorageProtocol
 from ai_accounts_core.services.accounts import AccountService
@@ -59,8 +58,7 @@ class AccountScheduler:
             chain = [
                 FallbackChainEntry(backend_id=b.id, priority=i)
                 for i, b in enumerate(backends)
-                if b.status == BackendStatus.READY
-                and (kind is None or b.kind == kind)
+                if b.status == BackendStatus.READY and (kind is None or b.kind == kind)
             ]
 
         now = datetime.now(UTC)
@@ -73,18 +71,13 @@ class AccountScheduler:
 
             # Skip rate-limited accounts
             if health.rate_limited_until and health.rate_limited_until > now:
-                if (
-                    earliest_reset is None
-                    or health.rate_limited_until < earliest_reset
-                ):
+                if earliest_reset is None or health.rate_limited_until < earliest_reset:
                     earliest_reset = health.rate_limited_until
                 logger.debug("pick: skipping %s (rate-limited)", entry.backend_id)
                 continue
 
             # Skip accounts with any window above threshold
-            max_usage = max(
-                (w.usage_percent for w in health.windows), default=0.0
-            )
+            max_usage = max((w.usage_percent for w in health.windows), default=0.0)
             if max_usage >= RATE_LIMIT_THRESHOLD:
                 for w in health.windows:
                     if w.usage_percent >= RATE_LIMIT_THRESHOLD and w.resets_at:
@@ -150,9 +143,7 @@ class AccountScheduler:
         backend = await self._accounts.get(backend_id)
         usage_repo = await self._storage.usage()
         windows = await usage_repo.get_latest_snapshots(backend_id)
-        rate_limited_until, rate_limit_reason = (
-            await usage_repo.get_rate_limit_state(backend_id)
-        )
+        rate_limited_until, rate_limit_reason = await usage_repo.get_rate_limit_state(backend_id)
         return AccountHealth(
             backend_id=backend_id,
             kind=backend.kind,
@@ -169,9 +160,7 @@ class AccountScheduler:
                 result.append(await self.get_health(b.id))
         return result
 
-    async def mark_rate_limited(
-        self, backend_id: str, cooldown_seconds: int, reason: str
-    ) -> None:
+    async def mark_rate_limited(self, backend_id: str, cooldown_seconds: int, reason: str) -> None:
         until = datetime.now(UTC) + timedelta(seconds=cooldown_seconds)
         usage_repo = await self._storage.usage()
         await usage_repo.set_rate_limited(backend_id, until, reason)
@@ -217,9 +206,7 @@ class AccountScheduler:
 
             # External API call (network errors are expected/transient)
             try:
-                windows = await impl.get_usage(
-                    plaintext, isolation_dir=isolation_dir
-                )
+                windows = await impl.get_usage(plaintext, isolation_dir=isolation_dir)
                 if windows:
                     await usage_repo.put_snapshot(b.id, windows)
                 await usage_repo.set_last_polled(b.id, datetime.now(UTC))

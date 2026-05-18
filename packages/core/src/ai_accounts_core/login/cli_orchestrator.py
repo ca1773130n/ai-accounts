@@ -144,8 +144,8 @@ def strip_ansi_buffered(text: str) -> tuple[str, str]:
     leftover = ""
     m = _TRAILING_ESC_RE.search(text)
     if m:
-        leftover = text[m.start():]
-        text = text[:m.start()]
+        leftover = text[m.start() :]
+        text = text[: m.start()]
     return strip_ansi(text), leftover
 
 
@@ -188,9 +188,9 @@ class CliOrchestrator:
         # Fake script: capture the last URL-like argument to file
         script = (
             "#!/bin/sh\n"
-            "for arg in \"$@\"; do\n"
-            "  case \"$arg\" in\n"
-            f"    http://*|https://*) echo \"$arg\" > {url_file} ;;\n"
+            'for arg in "$@"; do\n'
+            '  case "$arg" in\n'
+            f'    http://*|https://*) echo "$arg" > {url_file} ;;\n'
             "  esac\n"
             "done\n"
         )
@@ -246,6 +246,7 @@ class CliOrchestrator:
         import fcntl
         import struct
         import termios
+
         winsize = struct.pack("HHHH", 50, 500, 0, 0)
         with contextlib.suppress(OSError):
             fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
@@ -283,7 +284,7 @@ class CliOrchestrator:
         start = time.monotonic()
         try:
             item = await asyncio.wait_for(self._reader_queue.get(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return (time.monotonic() - start, None)
         if item is None:
             raise StopAsyncIteration
@@ -372,6 +373,7 @@ class CliOrchestrator:
         # Clean up fake browser temp files
         if self._fake_bin_dir and self._fake_bin_dir.exists():
             import shutil
+
             shutil.rmtree(self._fake_bin_dir, ignore_errors=True)
         if self._oauth_url_file:
             self._oauth_url_file.unlink(missing_ok=True)

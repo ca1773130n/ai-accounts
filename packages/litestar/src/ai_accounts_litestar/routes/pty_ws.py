@@ -3,10 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from ai_accounts_core.services.pty import PtyService
 from litestar import Controller, post, websocket
 from litestar.connection import WebSocket
-
-from ai_accounts_core.services.pty import PtyService
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +38,7 @@ class PtyController(Controller):
 
 
 @websocket("/ws/pty/{session_id:str}")
-async def pty_websocket(
-    socket: WebSocket, pty_service: PtyService, session_id: str
-) -> None:
+async def pty_websocket(socket: WebSocket, pty_service: PtyService, session_id: str) -> None:
     await socket.accept()
     handle = pty_service.attach(session_id)
     if handle is None:

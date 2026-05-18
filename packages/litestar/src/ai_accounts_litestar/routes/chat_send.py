@@ -6,11 +6,10 @@ import time
 from typing import Any
 
 import msgspec
-from litestar import Controller, Request, post
-from litestar.response import Stream
-
 from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
 from ai_accounts_core.services.chat_state import ChatStateService
+from litestar import Controller, Request, post
+from litestar.response import Stream
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,9 @@ def _parse_last_event_id(raw: str | None) -> int:
     stripped = raw.strip()
     if stripped.isdigit():
         return int(stripped)
-    logger.warning("chat_send: malformed Last-Event-ID header %r — treating as fresh connection", raw)
+    logger.warning(
+        "chat_send: malformed Last-Event-ID header %r — treating as fresh connection", raw
+    )
     return 0
 
 
@@ -58,9 +59,7 @@ class ChatSendController(Controller):
         last_event_id = _parse_last_event_id(request.headers.get("last-event-id"))
 
         if data.mode == "all":
-            gen = orchestrator.send_all(
-                session_id=data.session_id, content=data.content
-            )
+            gen = orchestrator.send_all(session_id=data.session_id, content=data.content)
         elif data.mode == "compound":
             gen = orchestrator.send_compound(
                 session_id=data.session_id,
@@ -127,7 +126,7 @@ class ChatSendController(Controller):
                         kind, payload = await asyncio.wait_for(
                             queue.get(), timeout=HEARTBEAT_INTERVAL_SECONDS
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         # heartbeat comment — best effort
                         yield f": heartbeat {int(time.time())}\n\n"
                         continue
@@ -142,11 +141,7 @@ class ChatSendController(Controller):
                             data.mode,
                             exc_info=exc,
                         )
-                        msg = (
-                            f"{type(exc).__name__}: {exc}"
-                            if str(exc)
-                            else "Stream error"
-                        )
+                        msg = f"{type(exc).__name__}: {exc}" if str(exc) else "Stream error"
                         error_event = {"kind": "error", "payload": msg}
                         seq = chat_state.push_event(session_id, error_event)
                         tagged = {**error_event, "_seq": seq} if seq > 0 else error_event
@@ -155,15 +150,9 @@ class ChatSendController(Controller):
 
                     # kind == "event"
                     event = payload
-                    event_dict = (
-                        event
-                        if isinstance(event, dict)
-                        else msgspec.to_builtins(event)
-                    )
+                    event_dict = event if isinstance(event, dict) else msgspec.to_builtins(event)
                     seq = chat_state.push_event(session_id, event_dict)
-                    tagged = (
-                        {**event_dict, "_seq": seq} if seq > 0 else event_dict
-                    )
+                    tagged = {**event_dict, "_seq": seq} if seq > 0 else event_dict
                     yield _format_sse(tagged, seq if seq > 0 else None)
             finally:
                 producer_task.cancel()

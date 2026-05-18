@@ -1,16 +1,13 @@
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from ai_accounts_core.backends.gemini import GeminiBackend
 from ai_accounts_core.login.events import (
     LoginComplete,
     LoginFailed,
     PromptAnswer,
     TextPrompt,
-    UrlPrompt,
 )
 
 

@@ -1,5 +1,4 @@
 import pytest
-
 from ai_accounts_core.metadata.registry import BackendRegistry
 from ai_accounts_core.metadata.types import (
     BackendMetadata,

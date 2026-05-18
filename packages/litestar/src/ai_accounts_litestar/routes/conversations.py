@@ -6,13 +6,12 @@ import logging
 from typing import Annotated
 
 import msgspec
+from ai_accounts_core.services.chat import ChatService
+from ai_accounts_core.services.errors import CredentialMissing, ServiceError
 from litestar import Controller, get, post
 from litestar.exceptions import HTTPException, NotFoundException
 from litestar.response import Stream
 from litestar.status_codes import HTTP_201_CREATED
-
-from ai_accounts_core.services.chat import ChatService
-from ai_accounts_core.services.errors import CredentialMissing, ServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +42,7 @@ class ConversationsController(Controller):
     tags = ["conversations"]
 
     @post("/", status_code=HTTP_201_CREATED)
-    async def create_session(
-        self, chat_service: ChatService, data: _CreateSessionRequest
-    ) -> dict:
+    async def create_session(self, chat_service: ChatService, data: _CreateSessionRequest) -> dict:
         session = await chat_service.create_session(
             backend_id=data.backend_id,
             model=data.model,
@@ -60,9 +57,7 @@ class ConversationsController(Controller):
         }
 
     @get("/")
-    async def list_sessions(
-        self, chat_service: ChatService, backend_id: str | None = None
-    ) -> dict:
+    async def list_sessions(self, chat_service: ChatService, backend_id: str | None = None) -> dict:
         sessions = await chat_service.list_sessions(backend_id=backend_id)
         return {
             "items": [
@@ -78,9 +73,7 @@ class ConversationsController(Controller):
         }
 
     @get("/{session_id:str}")
-    async def get_session(
-        self, chat_service: ChatService, session_id: str
-    ) -> dict:
+    async def get_session(self, chat_service: ChatService, session_id: str) -> dict:
         try:
             session = await chat_service.get_session(session_id)
         except KeyError:
@@ -131,9 +124,7 @@ class ConversationsController(Controller):
                     payload = msgspec.json.encode(delta).decode()
                     yield f"event: chat\ndata: {payload}\n\n"
             except (KeyError, CredentialMissing, ServiceError) as exc:
-                logger.exception(
-                    "conversations.send_message stream error: session=%s", session_id
-                )
+                logger.exception("conversations.send_message stream error: session=%s", session_id)
                 err = {"kind": "error", "payload": f"{type(exc).__name__}: {exc}"}
                 yield f"event: chat\ndata: {msgspec.json.encode(err).decode()}\n\n"
             except Exception as exc:

@@ -8,20 +8,22 @@ instead of the bare "Proxy error 502" we used to emit.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
-
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
 from ai_accounts_core.domain.chat import ChatMessage, ChatRole
 from ai_accounts_core.protocols.backend import ChatRequest
-from datetime import datetime
 
 
 def _msg(role: str, content: str) -> ChatMessage:
     return ChatMessage(
-        id="msg-1", session_id="sess-1",
-        role=ChatRole(role), content=content, created_at=datetime.now(),
+        id="msg-1",
+        session_id="sess-1",
+        role=ChatRole(role),
+        content=content,
+        created_at=datetime.now(),
     )
 
 
@@ -183,6 +185,7 @@ async def test_gzipped_error_body_is_decompressed():
     mode returns raw compressed bytes — and we used to render them as
     garbage in the UI. Verify decompression."""
     import gzip
+
     plaintext = b'{"error":{"message":"upstream rate limit exceeded"}}'
     body = gzip.compress(plaintext)
     patches = _patch_cliproxy_returning(429, body, {"content-encoding": "gzip"})
@@ -204,6 +207,7 @@ async def test_gzipped_body_without_header_decoded_via_magic_bytes():
     """Server forgot the Content-Encoding header but body is still gzip.
     Heuristic falls back to gzip-magic-byte detection."""
     import gzip
+
     plaintext = b'{"error":{"message":"oops"}}'
     body = gzip.compress(plaintext)
     patches = _patch_cliproxy_returning(500, body, {})  # no header

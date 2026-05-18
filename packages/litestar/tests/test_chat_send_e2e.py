@@ -19,8 +19,6 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from litestar.testing import AsyncTestClient
-
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.services.accounts import AccountService
@@ -28,6 +26,7 @@ from ai_accounts_core.services.chat import ChatService
 from ai_accounts_core.testing import FakeBackend, FakeVault
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
+from litestar.testing import AsyncTestClient
 
 
 @pytest_asyncio.fixture
@@ -76,16 +75,12 @@ async def _setup(client: AsyncTestClient) -> str:
     session anchored to one of them — send_all/send_compound iterate
     over scheduler health and pick credentials per kind.
     """
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "A"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "A"})
     assert r.status_code == 201, r.text
     backend_id = r.json()["id"]
 
     # A second account of the same kind so send_all has > 1 stream to merge.
-    r2 = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "B"}
-    )
+    r2 = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "B"})
     assert r2.status_code == 201, r2.text
     backend_id_b = r2.json()["id"]
 
@@ -124,9 +119,7 @@ async def test_single_mode_uses_payload_field(client: AsyncTestClient) -> None:
         # The pre-0.3.13 ChatDelta serialized to {kind, text, ...}; if `text`
         # is still present this is a regression to the dual-field shape that
         # confused useSmartChat.dispatch.
-        assert "text" not in tok, (
-            f"ChatDelta should use only `payload`, found stray `text`: {tok}"
-        )
+        assert "text" not in tok, f"ChatDelta should use only `payload`, found stray `text`: {tok}"
 
 
 @pytest.mark.asyncio

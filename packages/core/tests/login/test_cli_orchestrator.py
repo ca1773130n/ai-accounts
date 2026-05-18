@@ -1,5 +1,4 @@
 import pytest
-
 from ai_accounts_core.login.cli_orchestrator import (
     CliOrchestrator,
     parse_menu_options,
@@ -59,7 +58,7 @@ def test_parse_menu_options_does_not_match_diff_hunks():
     options.  Regression guard for the original ``2 - console.log``
     false-positive."""
     lines = [
-        "  2 - console.log(\"Hello\")",
+        '  2 - console.log("Hello")',
         " 1  function foo()",
         "    3 something else without a separator",
     ]

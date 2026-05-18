@@ -28,14 +28,13 @@ because the OAuth URL never arrives until the TUI is dismissed.
 from __future__ import annotations
 
 import asyncio
-import time
+import logging
 import re
+import time
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from typing import Pattern
-
-import logging
+from dataclasses import dataclass
+from re import Pattern
 
 logger = logging.getLogger(__name__)
 
@@ -100,12 +99,14 @@ class EagerCodeState:
     # grace periods from outside the loop).
     at_monotonic: float = 0.0
 
+
 from ai_accounts_core.login.cli_orchestrator import (
-    CliOrchestrator,
     _LOGIN_SUCCESS_RE,
     _URL_IN_OUTPUT_RE,
+    CliOrchestrator,
     parse_menu_options,
 )
+
 # Text input prompts — lines ending with ">" or ":" that ask for user input.
 # Matches: "Paste code here if prompted >", "Enter the code:", "? Question:"
 _TEXT_PROMPT_RE = re.compile(
@@ -249,9 +250,7 @@ async def run_interactive_cli_login(
 
     while True:
         try:
-            idle_elapsed, chunk = await orchestrator.poll_output(
-                timeout=idle_slice_seconds
-            )
+            idle_elapsed, chunk = await orchestrator.poll_output(timeout=idle_slice_seconds)
         except StopAsyncIteration:
             break
 
@@ -282,7 +281,8 @@ async def run_interactive_cli_login(
                 if options:
                     logger.info(
                         "menu detected (%d options) after %.1fs idle",
-                        len(options), idle_since_last_output,
+                        len(options),
+                        idle_since_last_output,
                     )
                     pending_menu = True
                     pending_menu_options_count = len(options)
@@ -307,7 +307,7 @@ async def run_interactive_cli_login(
                         answer = await asyncio.wait_for(
                             answers.get(), timeout=menu_response_timeout
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         yield LoginFailed(
                             code="menu_timeout",
                             message="Menu response timed out",
@@ -317,9 +317,7 @@ async def run_interactive_cli_login(
                         chosen = int(answer.answer.strip())
                     except ValueError:
                         chosen = 1
-                    chosen_idx = max(
-                        0, min(pending_menu_options_count - 1, chosen - 1)
-                    )
+                    chosen_idx = max(0, min(pending_menu_options_count - 1, chosen - 1))
                     await orchestrator.send_menu_selection(chosen_idx)
                     pending_menu = False
                     recent_lines = []
@@ -343,10 +341,7 @@ async def run_interactive_cli_login(
                     continue
 
             # Force-complete after seeing a success marker + grace period.
-            if (
-                login_success_seen
-                and (now - login_success_time) >= login_success_grace_seconds
-            ):
+            if login_success_seen and (now - login_success_time) >= login_success_grace_seconds:
                 break
             continue
 
@@ -444,15 +439,13 @@ async def run_interactive_cli_login(
                         answer = await asyncio.wait_for(
                             answers.get(), timeout=menu_response_timeout
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         yield LoginFailed(
                             code="prompt_timeout",
                             message="Text input timed out",
                         )
                         return
-                    await orchestrator.write(
-                        (answer.answer.strip() + "\r").encode()
-                    )
+                    await orchestrator.write((answer.answer.strip() + "\r").encode())
                     # Note: deliberately do NOT flip eager_state.sent here.
                     # eager_state is the contract between ``write_eager``
                     # (eager paste) and the text-prompt handler — the

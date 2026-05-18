@@ -3,19 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import shutil
 import uuid
 from pathlib import Path
 
 import msgspec
-from litestar import Controller, get, post
-from litestar.response import Response
-
 from ai_accounts_core.cliproxy import (
     CliproxyInstallResult,
-    CliproxyLoginInfo,
     cliproxy_server_status,
     forward_cliproxy_callback,
     get_cliproxy_version,
@@ -25,6 +20,7 @@ from ai_accounts_core.cliproxy import (
     start_cliproxy_server,
     stop_cliproxy_server,
 )
+from litestar import Controller, get, post
 
 
 class _StatusResponse(msgspec.Struct):
@@ -148,7 +144,7 @@ class CliproxyController(Controller):
                 timed_out = False
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=300)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     timed_out = True
                     proc.kill()
                     await proc.wait()
@@ -216,12 +212,24 @@ class CliproxyController(Controller):
         import re
 
         if not (1024 <= data.port <= 65535):
-            return {"status": "error", "port": data.port, "pid": None, "message": "port must be 1024-65535"}
+            return {
+                "status": "error",
+                "port": data.port,
+                "pid": None,
+                "message": "port must be 1024-65535",
+            }
         if not re.match(r"^[a-zA-Z0-9_-]+$", data.api_key):
-            return {"status": "error", "port": data.port, "pid": None, "message": "api_key contains invalid characters"}
+            return {
+                "status": "error",
+                "port": data.port,
+                "pid": None,
+                "message": "api_key contains invalid characters",
+            }
         # Run in thread to avoid blocking the event loop (sync polling loop inside)
         result = await asyncio.to_thread(
-            start_cliproxy_server, port=data.port, api_key=data.api_key,
+            start_cliproxy_server,
+            port=data.port,
+            api_key=data.api_key,
         )
         return result
 

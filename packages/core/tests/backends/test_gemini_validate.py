@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from ai_accounts_core.backends.gemini import GeminiBackend
 
 
@@ -43,7 +42,6 @@ async def test_list_models_uses_http_not_cli(tmp_path, monkeypatch):
 async def test_list_models_parses_google_response(tmp_path, monkeypatch):
     """Mock httpx.AsyncClient.get to return a fake Google models response."""
 
-    import httpx
     from ai_accounts_core.backends import gemini as gemini_mod
 
     fake_payload = {

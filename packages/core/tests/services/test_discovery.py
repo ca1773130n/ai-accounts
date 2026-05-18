@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from ai_accounts_core.services.discovery import (
     _glob_candidates,
     _probe_for,
@@ -17,8 +16,8 @@ from ai_accounts_core.services.discovery import (
     discover_for_kind,
 )
 
-
 # ── _suggested_name ─────────────────────────────────────────────────────
+
 
 def test_suggested_name_bare_default():
     assert _suggested_name("claude", Path("/home/u/.claude")) == "claude (default)"
@@ -44,6 +43,7 @@ def test_suggested_name_unrelated_dir():
 
 
 # ── _probe_for ──────────────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize(
     "kind,expected_cli,expected_env_key",
@@ -76,6 +76,7 @@ def test_probe_for_resolves_relative_path(tmp_path, monkeypatch):
 
 # ── _glob_candidates ────────────────────────────────────────────────────
 
+
 def test_glob_finds_only_directories(tmp_path, monkeypatch):
     # Build a fake $HOME with mix of dirs and files matching the pattern.
     fake_home = tmp_path
@@ -97,6 +98,7 @@ def test_glob_unknown_kind_returns_empty():
 
 
 # ── discover_for_kind ───────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_discover_for_kind_no_candidates_returns_empty(tmp_path, monkeypatch):
@@ -132,4 +134,3 @@ async def test_discover_for_kind_probes_each_candidate(tmp_path, monkeypatch):
     assert len(fail_items) == 1
     assert fail_items[0].path.endswith(".claude-work")
     assert fail_items[0].error == "stub fail"
-

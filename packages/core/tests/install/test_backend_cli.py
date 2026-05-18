@@ -1,5 +1,4 @@
 import pytest
-
 from ai_accounts_core.install import get_install_strategies, install_backend_cli
 
 

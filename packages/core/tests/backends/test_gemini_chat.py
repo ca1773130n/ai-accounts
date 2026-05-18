@@ -5,7 +5,6 @@ import re
 from datetime import UTC, datetime
 
 import pytest
-
 from ai_accounts_core.backends.gemini import GeminiBackend
 from ai_accounts_core.domain.chat import ChatMessage, ChatRole
 from ai_accounts_core.protocols.backend import ChatRequest, ChatStreamEvent

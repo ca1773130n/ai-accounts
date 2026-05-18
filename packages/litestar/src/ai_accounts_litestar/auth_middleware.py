@@ -25,10 +25,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ai_accounts_core.protocols.auth import AuthProtocol, RequestContext
 from litestar.middleware import ASGIMiddleware
 from litestar.types import ASGIApp, Receive, Scope, Send
-
-from ai_accounts_core.protocols.auth import AuthProtocol, RequestContext
 
 
 def _headers_from_scope(scope: Scope) -> dict[str, str]:
@@ -62,9 +61,7 @@ def _query_from_scope(scope: Scope) -> dict[str, str]:
     return out
 
 
-async def _send_json_response(
-    send: Send, *, status: int, body: dict[str, Any]
-) -> None:
+async def _send_json_response(send: Send, *, status: int, body: dict[str, Any]) -> None:
     payload = json.dumps(body).encode("utf-8")
     await send(
         {

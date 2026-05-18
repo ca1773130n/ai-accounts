@@ -53,13 +53,7 @@ class LoginFailed(msgspec.Struct, tag="failed", tag_field="type"):
 
 
 LoginEvent = (
-    UrlPrompt
-    | TextPrompt
-    | MenuPrompt
-    | StdoutChunk
-    | ProgressUpdate
-    | LoginComplete
-    | LoginFailed
+    UrlPrompt | TextPrompt | MenuPrompt | StdoutChunk | ProgressUpdate | LoginComplete | LoginFailed
 )
 
 

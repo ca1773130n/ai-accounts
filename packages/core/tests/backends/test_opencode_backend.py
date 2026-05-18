@@ -3,15 +3,16 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from ai_accounts_core.backends.opencode import OpenCodeBackend
 
 
 @pytest.mark.asyncio
 async def test_detect_finds_cli():
     backend = OpenCodeBackend()
-    with patch("shutil.which", return_value="/opt/bin/opencode"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"opencode 0.4.2\n", b""))):
+    with (
+        patch("shutil.which", return_value="/opt/bin/opencode"),
+        patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"opencode 0.4.2\n", b""))),
+    ):
         result = await backend.detect()
     assert result.installed is True
     assert result.version is not None
@@ -29,10 +30,16 @@ async def test_validate_uses_providers_list_subcommand(tmp_path: Path):
     `providers list`. Validate must pick that path."""
     backend = OpenCodeBackend()
     isolation_dir = tmp_path / "opencode"
-    with patch("shutil.which", return_value="/opt/bin/opencode"), \
-         patch.object(backend, "_run", new=AsyncMock(
-             return_value=(0, b"Credentials\n  3 credentials\n", b""),
-         )) as mock_run:
+    with (
+        patch("shutil.which", return_value="/opt/bin/opencode"),
+        patch.object(
+            backend,
+            "_run",
+            new=AsyncMock(
+                return_value=(0, b"Credentials\n  3 credentials\n", b""),
+            ),
+        ) as mock_run,
+    ):
         result = await backend.validate(b"oc-abc", isolation_dir=isolation_dir)
     assert result is True
     spec = mock_run.await_args.args[0]
@@ -43,10 +50,16 @@ async def test_validate_uses_providers_list_subcommand(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_validate_returns_false_for_zero_credentials(tmp_path: Path):
     backend = OpenCodeBackend()
-    with patch("shutil.which", return_value="/opt/bin/opencode"), \
-         patch.object(backend, "_run", new=AsyncMock(
-             return_value=(0, b"Credentials\n  0 credentials\n", b""),
-         )):
+    with (
+        patch("shutil.which", return_value="/opt/bin/opencode"),
+        patch.object(
+            backend,
+            "_run",
+            new=AsyncMock(
+                return_value=(0, b"Credentials\n  0 credentials\n", b""),
+            ),
+        ),
+    ):
         result = await backend.validate(b"", isolation_dir=tmp_path / "opencode")
     assert result is False
 
@@ -54,8 +67,10 @@ async def test_validate_returns_false_for_zero_credentials(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_validate_fails_on_nonzero_rc(tmp_path: Path):
     backend = OpenCodeBackend()
-    with patch("shutil.which", return_value="/opt/bin/opencode"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(1, b"", b"err"))):
+    with (
+        patch("shutil.which", return_value="/opt/bin/opencode"),
+        patch.object(backend, "_run", new=AsyncMock(return_value=(1, b"", b"err"))),
+    ):
         result = await backend.validate(b"bad", isolation_dir=tmp_path / "opencode")
     assert result is False
 
@@ -72,6 +87,7 @@ def _openrouter_unavailable():
     """Force the OpenRouter live-discovery probe to fail so the CLI fallback
     path runs deterministically (the test machine may have working internet
     that would otherwise return a real model list)."""
+
     class _FakeClient:
         def __init__(self, *a, **kw):
             pass
@@ -84,22 +100,25 @@ def _openrouter_unavailable():
 
         async def get(self, *a, **kw):
             import httpx as _httpx
+
             raise _httpx.ConnectError("no network in test")
 
-    return patch(
-        "ai_accounts_core.backends.opencode.httpx.AsyncClient", _FakeClient
-    )
+    return patch("ai_accounts_core.backends.opencode.httpx.AsyncClient", _FakeClient)
 
 
 @pytest.mark.asyncio
 async def test_list_models_parses(tmp_path: Path):
     backend = OpenCodeBackend()
-    payload = json.dumps([
-        {"id": "opencode-default", "display_name": "OpenCode Default"},
-    ]).encode()
-    with _openrouter_unavailable(), \
-         patch("shutil.which", return_value="/opt/bin/opencode"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(0, payload, b""))):
+    payload = json.dumps(
+        [
+            {"id": "opencode-default", "display_name": "OpenCode Default"},
+        ]
+    ).encode()
+    with (
+        _openrouter_unavailable(),
+        patch("shutil.which", return_value="/opt/bin/opencode"),
+        patch.object(backend, "_run", new=AsyncMock(return_value=(0, payload, b""))),
+    ):
         models = await backend.list_models(b"oc-abc", isolation_dir=tmp_path / "opencode")
     assert len(models) == 1
     assert models[0].id == "opencode-default"
@@ -108,9 +127,11 @@ async def test_list_models_parses(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_list_models_returns_empty_on_error(tmp_path: Path):
     backend = OpenCodeBackend()
-    with _openrouter_unavailable(), \
-         patch("shutil.which", return_value="/opt/bin/opencode"), \
-         patch.object(backend, "_run", new=AsyncMock(return_value=(1, b"", b"err"))):
+    with (
+        _openrouter_unavailable(),
+        patch("shutil.which", return_value="/opt/bin/opencode"),
+        patch.object(backend, "_run", new=AsyncMock(return_value=(1, b"", b"err"))),
+    ):
         models = await backend.list_models(b"oc-abc", isolation_dir=tmp_path / "opencode")
     assert models == []
 
@@ -126,7 +147,11 @@ async def test_list_models_uses_openrouter_when_api_key_present(tmp_path: Path):
         def json(self):
             return {
                 "data": [
-                    {"id": "anthropic/claude-3.5-sonnet", "name": "Claude 3.5 Sonnet", "context_length": 200000},
+                    {
+                        "id": "anthropic/claude-3.5-sonnet",
+                        "name": "Claude 3.5 Sonnet",
+                        "context_length": 200000,
+                    },
                     {"id": "openai/gpt-4o", "name": "GPT-4o", "context_length": 128000},
                 ]
             }
@@ -147,8 +172,10 @@ async def test_list_models_uses_openrouter_when_api_key_present(tmp_path: Path):
     async def explode(*a, **kw):
         raise AssertionError("CLI _run should NOT be called when openrouter answers")
 
-    with patch("ai_accounts_core.backends.opencode.httpx.AsyncClient", _FakeClient), \
-         patch.object(backend, "_run", side_effect=explode):
+    with (
+        patch("ai_accounts_core.backends.opencode.httpx.AsyncClient", _FakeClient),
+        patch.object(backend, "_run", side_effect=explode),
+    ):
         models = await backend.list_models(b"oc-abc", isolation_dir=tmp_path / "opencode")
     ids = [m.id for m in models]
     assert ids == ["anthropic/claude-3.5-sonnet", "openai/gpt-4o"]

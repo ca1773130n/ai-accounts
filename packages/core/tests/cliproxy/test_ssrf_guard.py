@@ -7,7 +7,6 @@ exploit pattern we've considered.
 """
 
 import pytest
-
 from ai_accounts_core.cliproxy.manager import forward_cliproxy_callback
 
 

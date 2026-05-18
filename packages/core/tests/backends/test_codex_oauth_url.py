@@ -5,13 +5,13 @@ emit OAuth URLs on either ``chatgpt.com/auth/...`` (older builds) or
 ``auth.openai.com/...`` (newer device-code flow). Both must be captured
 as ``UrlPrompt`` events so the frontend can auto-open them.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from ai_accounts_core.backends.codex import _CODEX_URL_RE, CodexBackend
 from ai_accounts_core.login.events import LoginComplete, UrlPrompt
 
@@ -66,15 +66,19 @@ async def test_codex_oauth_device_captures_auth_openai_url(tmp_path: Path):
         for chunk in scripted:
             yield chunk
 
-    with patch(
-        "ai_accounts_core.backends.codex.CliOrchestrator.start",
-        new=AsyncMock(return_value=None),
-    ), patch(
-        "ai_accounts_core.backends.codex.CliOrchestrator.read_output",
-        fake_read_output,
-    ), patch(
-        "ai_accounts_core.backends.codex.CliOrchestrator.wait",
-        new=AsyncMock(return_value=0),
+    with (
+        patch(
+            "ai_accounts_core.backends.codex.CliOrchestrator.start",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "ai_accounts_core.backends.codex.CliOrchestrator.read_output",
+            fake_read_output,
+        ),
+        patch(
+            "ai_accounts_core.backends.codex.CliOrchestrator.wait",
+            new=AsyncMock(return_value=0),
+        ),
     ):
         events = await _drain(session)
 
@@ -106,15 +110,19 @@ async def test_codex_cli_browser_captures_auth_openai_url(tmp_path: Path):
         for chunk in scripted:
             yield chunk
 
-    with patch(
-        "ai_accounts_core.backends.codex.CliOrchestrator.start",
-        new=AsyncMock(return_value=None),
-    ), patch(
-        "ai_accounts_core.backends.codex.CliOrchestrator.read_output",
-        fake_read_output,
-    ), patch(
-        "ai_accounts_core.backends.codex.CliOrchestrator.wait",
-        new=AsyncMock(return_value=0),
+    with (
+        patch(
+            "ai_accounts_core.backends.codex.CliOrchestrator.start",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "ai_accounts_core.backends.codex.CliOrchestrator.read_output",
+            fake_read_output,
+        ),
+        patch(
+            "ai_accounts_core.backends.codex.CliOrchestrator.wait",
+            new=AsyncMock(return_value=0),
+        ),
     ):
         events = await _drain(session)
 

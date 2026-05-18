@@ -1,5 +1,4 @@
 import pytest
-
 from ai_accounts_core.backends.opencode import OpenCodeBackend
 
 

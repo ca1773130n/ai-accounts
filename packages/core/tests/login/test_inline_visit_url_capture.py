@@ -59,20 +59,21 @@ async def test_inline_visit_url_extracted_once():
     """The URL on a 'visit:' line is emitted exactly once even if the CLI
     re-prints it (idle frame repaints / reminder prompts)."""
     url = "https://platform.claude.com/oauth/authorize?state=abc"
-    orch = _ReplayOrch([
-        (0.01, f"If the browser didn't open, visit: {url}\n"),
-        # CLI re-prints a reminder shortly after — must NOT produce a second
-        # UrlPrompt.
-        (0.01, f"Still waiting… visit: {url}\n"),
-        (0.01, "Authentication successful\n"),
-        (0.15, None),
-        (0.15, None),
-    ])
+    orch = _ReplayOrch(
+        [
+            (0.01, f"If the browser didn't open, visit: {url}\n"),
+            # CLI re-prints a reminder shortly after — must NOT produce a second
+            # UrlPrompt.
+            (0.01, f"Still waiting… visit: {url}\n"),
+            (0.01, "Authentication successful\n"),
+            (0.15, None),
+            (0.15, None),
+        ]
+    )
     events = await _drain(orch)
     url_prompts = [e for e in events if isinstance(e, UrlPrompt)]
     assert len(url_prompts) == 1, (
-        f"expected exactly one UrlPrompt, got {len(url_prompts)}: "
-        f"{[p.url for p in url_prompts]}"
+        f"expected exactly one UrlPrompt, got {len(url_prompts)}: {[p.url for p in url_prompts]}"
     )
     assert url_prompts[0].url.startswith(url)
 
@@ -84,12 +85,14 @@ async def test_long_url_not_wrapped_at_80_cols():
     whole.
     """
     long_url = "https://platform.claude.com/oauth/authorize?state=" + ("x" * 400)
-    orch = _ReplayOrch([
-        (0.01, f"visit: {long_url}\n"),
-        (0.01, "Authentication successful\n"),
-        (0.15, None),
-        (0.15, None),
-    ])
+    orch = _ReplayOrch(
+        [
+            (0.01, f"visit: {long_url}\n"),
+            (0.01, "Authentication successful\n"),
+            (0.15, None),
+            (0.15, None),
+        ]
+    )
     events = await _drain(orch)
     url_prompts = [e for e in events if isinstance(e, UrlPrompt)]
     assert len(url_prompts) == 1

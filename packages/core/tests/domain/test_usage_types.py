@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import msgspec
-
 from ai_accounts_core.domain.usage import (
     AccountHealth,
     FallbackChainEntry,

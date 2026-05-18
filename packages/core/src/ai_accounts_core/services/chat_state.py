@@ -22,6 +22,7 @@ class ReplayResult:
     treat this as a recovery signal (re-sync full state) rather than assume
     contiguous history.
     """
+
     events: list[dict[str, Any]]
     gap: bool
 

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from ai_accounts_core.domain.backend import Backend, BackendCredential, BackendKind, BackendStatus
-from ai_accounts_core.domain.chat import ChatMessage, ChatRole, ChatSession
+from ai_accounts_core.domain.chat import ChatMessage, ChatRole
 from ai_accounts_core.domain.principal import Principal
 
 

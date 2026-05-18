@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from ai_accounts_core.domain.backend import BackendCredential, BackendStatus
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.errors import (
@@ -109,9 +108,7 @@ async def test_validate_failure_sets_error_status(tmp_path):
     created = await service.create("fake", display_name="A")
 
     repo = await storage.backends()
-    wrong_ct = await vault.encrypt(
-        b"wrong-credential", context={"backend_id": created.id}
-    )
+    wrong_ct = await vault.encrypt(b"wrong-credential", context={"backend_id": created.id})
     await repo.put_credential(
         BackendCredential(
             id="crd-x",

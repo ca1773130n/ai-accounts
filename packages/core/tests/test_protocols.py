@@ -1,6 +1,6 @@
 """Smoke tests that protocol modules import and expose expected symbols."""
 
-from ai_accounts_core.protocols import storage, vault, auth, backend
+from ai_accounts_core.protocols import auth, backend, storage, vault
 
 
 def test_storage_protocol_exports():
@@ -30,6 +30,7 @@ def test_backend_protocol_exports():
 
 def test_fake_backend_supported_login_flows():
     from ai_accounts_core.testing import FakeBackend
+
     fb = FakeBackend()
     assert hasattr(fb, "supported_login_flows")
     assert "api_key" in fb.supported_login_flows
@@ -38,4 +39,5 @@ def test_fake_backend_supported_login_flows():
 
 def test_transport_protocol_exports():
     from ai_accounts_core.protocols import transport
+
     assert hasattr(transport, "TransportProtocol")

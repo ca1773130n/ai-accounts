@@ -10,9 +10,9 @@ fail fast in CI.
 from __future__ import annotations
 
 from ai_accounts_core.login.cli_orchestrator import (
-    MenuOption,
     _LOGIN_SUCCESS_RE,
     _URL_IN_OUTPUT_RE,
+    MenuOption,
     parse_menu_options,
 )
 
@@ -77,8 +77,8 @@ def test_menu_ignores_diff_lines_without_bullet_or_dot():
     # interactive loop emits a spurious TextPrompt mid-flow.
     lines = [
         "  1  function greet() {",
-        "  2 -  console.log(\"Hello, World!\");",
-        "  2 +  console.log(\"Hello, Claude!\");",
+        '  2 -  console.log("Hello, World!");',
+        '  2 +  console.log("Hello, Claude!");',
         "  3  }",
     ]
     assert parse_menu_options(lines) == []

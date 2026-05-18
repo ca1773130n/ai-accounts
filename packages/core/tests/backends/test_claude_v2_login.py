@@ -15,7 +15,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from ai_accounts_core.backends.claude import ClaudeBackend
 
 
@@ -31,7 +30,7 @@ class _ArgvOrch:
     interactive login loop.
     """
 
-    last: "_ArgvOrch | None" = None
+    last: _ArgvOrch | None = None
 
     def __init__(self, argv: list[str], env: dict[str, str], cwd: Path) -> None:
         _ArgvOrch.last = self
@@ -85,9 +84,7 @@ def test_argv_is_always_v1_repl_regardless_of_email(tmp_path: Path):
         vault_ctx={},
         isolation_dir=tmp_path,
     )
-    with patch(
-        "ai_accounts_core.backends.claude.CliOrchestrator", new=_ArgvOrch
-    ):
+    with patch("ai_accounts_core.backends.claude.CliOrchestrator", new=_ArgvOrch):
         _consume_until_start(session)
     assert _ArgvOrch.last is not None
     assert _ArgvOrch.last.argv == ["claude"], _ArgvOrch.last.argv
@@ -98,18 +95,14 @@ def test_argv_is_v1_without_email(tmp_path: Path):
     session = backend.begin_login(
         flow_kind="cli_browser", config={}, vault_ctx={}, isolation_dir=tmp_path
     )
-    with patch(
-        "ai_accounts_core.backends.claude.CliOrchestrator", new=_ArgvOrch
-    ):
+    with patch("ai_accounts_core.backends.claude.CliOrchestrator", new=_ArgvOrch):
         _consume_until_start(session)
     assert _ArgvOrch.last is not None
     assert _ArgvOrch.last.argv == ["claude"]
 
 
 @pytest.mark.asyncio
-async def test_write_eager_redacts_code_from_logs(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-):
+async def test_write_eager_redacts_code_from_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture):
     """``write_eager`` must log only the payload *length*, never the code."""
     caplog.set_level(logging.DEBUG, logger="ai_accounts_core.backends.claude")
     secret = "ExtremelySecretOAuthCodeMaterial-AAAAA"
@@ -133,9 +126,7 @@ async def test_write_eager_redacts_code_from_logs(
     await session.write_eager(secret)
 
     joined = "\n".join(r.getMessage() for r in caplog.records)
-    assert secret not in joined, (
-        "OAuth code leaked to logs — write_eager must log only the length"
-    )
+    assert secret not in joined, "OAuth code leaked to logs — write_eager must log only the length"
     # Length is still visible for operator debugging.
     assert str(len(secret) + 1) in joined  # +1 for the \r
     # And it actually reached the PTY.

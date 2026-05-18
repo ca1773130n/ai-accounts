@@ -5,11 +5,6 @@ from __future__ import annotations
 import logging
 
 import msgspec
-from litestar import Controller, get, post
-from litestar.exceptions import HTTPException, NotFoundException
-from litestar.response import ServerSentEvent
-from litestar.status_codes import HTTP_201_CREATED, HTTP_204_NO_CONTENT
-
 from ai_accounts_core.login import LoginComplete, PromptAnswer
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.errors import (
@@ -17,6 +12,10 @@ from ai_accounts_core.services.errors import (
     BackendNotFound,
     LoginFlowUnsupported,
 )
+from litestar import Controller, get, post
+from litestar.exceptions import HTTPException, NotFoundException
+from litestar.response import ServerSentEvent
+from litestar.status_codes import HTTP_201_CREATED, HTTP_204_NO_CONTENT
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +83,7 @@ class LoginController(Controller):
         # Enforce that the session was registered for *this* backend_id.
         # Without this, any leaked session_id could be used to attach to
         # another backend's login stream or misroute the resulting credential.
-        session = await account_service.login_registry.get(
-            session_id, backend_id=backend_id
-        )
+        session = await account_service.login_registry.get(session_id, backend_id=backend_id)
         if session is None:
             raise _not_found(session_id)
 
@@ -109,10 +106,7 @@ class LoginController(Controller):
                     # Avoid emitting the same UrlPrompt back-to-back when
                     # the live iterator's first event turns out to be the
                     # one we just replayed.
-                    if (
-                        cached_url is not None
-                        and event is cached_url
-                    ):
+                    if cached_url is not None and event is cached_url:
                         continue
                     # LoginComplete is the session's "I'm done collecting
                     # credentials" event — the wizard auto-advances past the
@@ -131,9 +125,7 @@ class LoginController(Controller):
                             # flows store empty bytes (the CLI wrote its
                             # OAuth token to the config dir).
                             cred = session.credential or b""
-                            await account_service.store_credential(
-                                backend_id, cred
-                            )
+                            await account_service.store_credential(backend_id, cred)
                             await account_service.validate(backend_id)
                         except Exception as exc:
                             logger.warning(
@@ -183,9 +175,7 @@ class LoginController(Controller):
         data: _RespondRequest,
         account_service: AccountService,
     ) -> None:
-        session = await account_service.login_registry.get(
-            data.session_id, backend_id=backend_id
-        )
+        session = await account_service.login_registry.get(data.session_id, backend_id=backend_id)
         if session is None:
             raise _not_found(data.session_id)
         await session.respond(PromptAnswer(prompt_id=data.prompt_id, answer=data.answer))
@@ -202,9 +192,7 @@ class LoginController(Controller):
         Used for the AccountWizard's eager paste-code form, which submits
         the OAuth code before the CLI has emitted its own textPrompt.
         """
-        session = await account_service.login_registry.get(
-            data.session_id, backend_id=backend_id
-        )
+        session = await account_service.login_registry.get(data.session_id, backend_id=backend_id)
         if session is None:
             raise _not_found(data.session_id)
         await session.write_eager(data.text)
@@ -216,9 +204,7 @@ class LoginController(Controller):
         data: _CancelRequest,
         account_service: AccountService,
     ) -> None:
-        session = await account_service.login_registry.get(
-            data.session_id, backend_id=backend_id
-        )
+        session = await account_service.login_registry.get(data.session_id, backend_id=backend_id)
         if session is None:
             # Cancel is idempotent; an already-gone session is not an error
             # for a correctly-scoped client. A backend mismatch is silently

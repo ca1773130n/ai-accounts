@@ -19,8 +19,6 @@ from typing import Any, ClassVar
 
 import pytest
 import pytest_asyncio
-from litestar.testing import AsyncTestClient
-
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.domain.backend import DetectResult
@@ -39,6 +37,7 @@ from ai_accounts_core.metadata import (
 from ai_accounts_core.testing import FakeVault
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
+from litestar.testing import AsyncTestClient
 
 
 class _OAuthSession(LoginSession):
@@ -144,13 +143,21 @@ class _OAuthBackend:
         return []
 
     async def chat(  # type: ignore[override]
-        self, request: Any, credential: bytes, *, isolation_dir: Path,
+        self,
+        request: Any,
+        credential: bytes,
+        *,
+        isolation_dir: Path,
     ) -> AsyncIterator[Any]:
         if False:
             yield None  # pragma: no cover
 
     async def pty(  # type: ignore[override]
-        self, request: Any, credential: bytes, *, isolation_dir: Path,
+        self,
+        request: Any,
+        credential: bytes,
+        *,
+        isolation_dir: Path,
     ) -> Any:  # pragma: no cover
         raise NotImplementedError
 
@@ -203,9 +210,7 @@ async def test_stream_replays_cached_url_prompt_on_reconnect(
     """
     client, backend = client_and_backend
 
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "oauth-fake", "display_name": "t"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "oauth-fake", "display_name": "t"})
     assert r.status_code == 201
     backend_id = r.json()["id"]
 
@@ -249,9 +254,7 @@ async def test_stream_without_cached_url_does_not_replay(
     """If no UrlPrompt has been cached, the stream starts with live events only."""
     client, backend = client_and_backend
 
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "oauth-fake", "display_name": "t"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "oauth-fake", "display_name": "t"})
     backend_id = r.json()["id"]
 
     begin = await client.post(
@@ -289,9 +292,7 @@ async def test_stream_dedups_cached_prompt_against_live_first_event(
     same object, the route must not emit it twice back-to-back."""
     client, backend = client_and_backend
 
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "oauth-fake", "display_name": "t"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "oauth-fake", "display_name": "t"})
     backend_id = r.json()["id"]
 
     begin = await client.post(

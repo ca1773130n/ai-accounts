@@ -68,7 +68,10 @@ class BackendProtocol(Protocol):
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]: ...
     async def get_usage(
-        self, credential: bytes, *, isolation_dir: Path,
+        self,
+        credential: bytes,
+        *,
+        isolation_dir: Path,
     ) -> list[UsageWindow]: ...
     async def pty(
         self,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import msgspec
-
 from ai_accounts_core.domain.backend import Backend, DetectResult
 
 
@@ -15,9 +14,7 @@ class BackendDTO(msgspec.Struct, kw_only=True):
     last_error: str | None = None
 
     @classmethod
-    def from_domain(
-        cls, backend: Backend, config_dir: str | None = None
-    ) -> "BackendDTO":
+    def from_domain(cls, backend: Backend, config_dir: str | None = None) -> BackendDTO:
         return cls(
             id=backend.id,
             kind=backend.kind,
@@ -51,7 +48,7 @@ class DetectResultDTO(msgspec.Struct, kw_only=True):
     notes: str | None = None
 
     @classmethod
-    def from_domain(cls, r: DetectResult) -> "DetectResultDTO":
+    def from_domain(cls, r: DetectResult) -> DetectResultDTO:
         return cls(installed=r.installed, version=r.version, path=r.path, notes=r.notes)
 
 
@@ -63,7 +60,7 @@ class OnboardingStateDTO(msgspec.Struct, kw_only=True):
     error: str | None = None
 
     @classmethod
-    def from_domain(cls, state: object) -> "OnboardingStateDTO":
+    def from_domain(cls, state: object) -> OnboardingStateDTO:
         from ai_accounts_core.domain.onboarding import OnboardingState
 
         assert isinstance(state, OnboardingState)

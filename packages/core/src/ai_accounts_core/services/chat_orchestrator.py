@@ -93,8 +93,11 @@ class ChatOrchestrator:
                 if not result:
                     await queue.put(
                         AllModeEvent(
-                            kind="backend_error", backend=bid, backend_kind=kind,
-                            account_label=label, error="no account available",
+                            kind="backend_error",
+                            backend=bid,
+                            backend_kind=kind,
+                            account_label=label,
+                            error="no account available",
                         ),
                     )
                     return
@@ -111,53 +114,86 @@ class ChatOrchestrator:
                         result.credential, isolation_dir=Path(result.isolation_dir)
                     )
                 except Exception as exc:
-                    await queue.put(AllModeEvent(
-                        kind="backend_error", backend=bid, backend_kind=kind,
-                        account_label=label,
-                        error=f"could not enumerate models: {type(exc).__name__}: {exc}",
-                    ))
+                    await queue.put(
+                        AllModeEvent(
+                            kind="backend_error",
+                            backend=bid,
+                            backend_kind=kind,
+                            account_label=label,
+                            error=f"could not enumerate models: {type(exc).__name__}: {exc}",
+                        )
+                    )
                     return
                 if not models:
-                    await queue.put(AllModeEvent(
-                        kind="backend_error", backend=bid, backend_kind=kind,
-                        account_label=label,
-                        error=f"no models available for {kind}",
-                    ))
+                    await queue.put(
+                        AllModeEvent(
+                            kind="backend_error",
+                            backend=bid,
+                            backend_kind=kind,
+                            account_label=label,
+                            error=f"no models available for {kind}",
+                        )
+                    )
                     return
                 model_id = models[0].id
                 request = ChatRequest(messages=tuple(history), model=model_id)
                 async for event in impl.chat(
-                    request, result.credential, isolation_dir=Path(result.isolation_dir),
+                    request,
+                    result.credential,
+                    isolation_dir=Path(result.isolation_dir),
                 ):
                     if event.kind == "token" and isinstance(event.payload, str):
-                        await queue.put(AllModeEvent(
-                            kind="backend_delta", backend=bid, backend_kind=kind,
-                            account_label=label, text=event.payload,
-                        ))
+                        await queue.put(
+                            AllModeEvent(
+                                kind="backend_delta",
+                                backend=bid,
+                                backend_kind=kind,
+                                account_label=label,
+                                text=event.payload,
+                            )
+                        )
                     elif event.kind == "error":
-                        await queue.put(AllModeEvent(
-                            kind="backend_error", backend=bid, backend_kind=kind,
-                            account_label=label, error=str(event.payload),
-                        ))
-                await queue.put(AllModeEvent(
-                    kind="backend_complete", backend=bid, backend_kind=kind, account_label=label,
-                ))
+                        await queue.put(
+                            AllModeEvent(
+                                kind="backend_error",
+                                backend=bid,
+                                backend_kind=kind,
+                                account_label=label,
+                                error=str(event.payload),
+                            )
+                        )
+                await queue.put(
+                    AllModeEvent(
+                        kind="backend_complete",
+                        backend=bid,
+                        backend_kind=kind,
+                        account_label=label,
+                    )
+                )
             except Exception as exc:
                 logger.error("send_all backend %s failed: %s", bid, exc, exc_info=True)
-                await queue.put(AllModeEvent(
-                    kind="backend_error", backend=bid, backend_kind=kind,
-                    account_label=label, error=f"{type(exc).__name__}: {exc}",
-                ))
+                await queue.put(
+                    AllModeEvent(
+                        kind="backend_error",
+                        backend=bid,
+                        backend_kind=kind,
+                        account_label=label,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                )
 
         async def _call_one_with_timeout(health) -> None:  # noqa: ANN001
             """Wrap _call_one with timeout — catch TimeoutError at the outer level."""
             try:
                 await asyncio.wait_for(_call_one(health), timeout=30.0)
-            except asyncio.TimeoutError:
-                await queue.put(AllModeEvent(
-                    kind="backend_timeout", backend=health.backend_id,
-                    backend_kind=health.kind,
-                ))
+            except TimeoutError:
+                await queue.put(
+                    AllModeEvent(
+                        kind="backend_timeout",
+                        backend=health.backend_id,
+                        backend_kind=health.kind,
+                    )
+                )
 
         for h in ready:
             task = asyncio.create_task(_call_one_with_timeout(h))
@@ -195,9 +231,12 @@ class ChatOrchestrator:
         responses: dict[str, str] = {}
         async for event in self.send_all(session_id=session_id, content=content):
             yield CompoundEvent(
-                kind=event.kind, backend=event.backend,
-                backend_kind=event.backend_kind, account_label=event.account_label,
-                text=event.text, error=event.error,
+                kind=event.kind,
+                backend=event.backend,
+                backend_kind=event.backend_kind,
+                account_label=event.account_label,
+                text=event.text,
+                error=event.error,
             )
             if event.kind == "backend_delta" and event.text:
                 responses.setdefault(event.backend, "")
@@ -235,9 +274,7 @@ class ChatOrchestrator:
         synthesis_prompt = "Given these responses from multiple AI backends:\n\n"
         for backend, text in responses.items():
             synthesis_prompt += f"**{backend}:**\n{text}\n\n"
-        synthesis_prompt += (
-            "Please synthesize a unified, comprehensive response combining the best insights from all."
-        )
+        synthesis_prompt += "Please synthesize a unified, comprehensive response combining the best insights from all."
 
         result = await self._scheduler.pick(kind=primary)
         if not result:
@@ -273,11 +310,17 @@ class ChatOrchestrator:
         synth_request = ChatRequest(messages=(synth_msg,), model=synth_models[0].id)
         try:
             async for event in impl.chat(
-                synth_request, result.credential, isolation_dir=Path(result.isolation_dir),
+                synth_request,
+                result.credential,
+                isolation_dir=Path(result.isolation_dir),
             ):
                 if event.kind == "token" and isinstance(event.payload, str):
                     yield CompoundEvent(kind="synthesis_delta", text=event.payload)
             yield CompoundEvent(kind="synthesis_complete")
         except Exception as exc:
-            logger.error("compound synthesis failed for primary=%s: %s", primary, exc, exc_info=True)
-            yield CompoundEvent(kind="synthesis_error", error=f"Synthesis failed: {type(exc).__name__}: {exc}")
+            logger.error(
+                "compound synthesis failed for primary=%s: %s", primary, exc, exc_info=True
+            )
+            yield CompoundEvent(
+                kind="synthesis_error", error=f"Synthesis failed: {type(exc).__name__}: {exc}"
+            )

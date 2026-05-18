@@ -10,9 +10,8 @@ so it costs upstream tokens — keep it user-triggered, not auto-on-load.
 from __future__ import annotations
 
 import msgspec
-from litestar import Controller, get, post, status_codes
-
 from ai_accounts_core.services.accounts import AccountService
+from litestar import Controller, get, post, status_codes
 
 from ..dto import BackendDTO
 
@@ -44,9 +43,7 @@ class DiscoveryController(Controller):
     tags = ["discovery"]
 
     @get("/")
-    async def list_discovered(
-        self, account_service: AccountService
-    ) -> _DiscoverResponse:
+    async def list_discovered(self, account_service: AccountService) -> _DiscoverResponse:
         items = await account_service.discover_existing()
         return _DiscoverResponse(
             items=[
@@ -63,9 +60,7 @@ class DiscoveryController(Controller):
         )
 
     @post("/import", status_code=status_codes.HTTP_201_CREATED)
-    async def import_one(
-        self, data: _ImportRequest, account_service: AccountService
-    ) -> BackendDTO:
+    async def import_one(self, data: _ImportRequest, account_service: AccountService) -> BackendDTO:
         backend = await account_service.import_discovered(
             data.kind,
             data.path,

@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.testing import run_storage_conformance
 

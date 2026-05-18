@@ -30,7 +30,7 @@ class EnvKeyVault:
         *,
         env: Literal["development", "production"] = "development",
         env_var: str = "AI_ACCOUNTS_VAULT_KEY",
-    ) -> "EnvKeyVault":
+    ) -> EnvKeyVault:
         raw = os.environ.get(env_var)
         if raw:
             try:
@@ -38,9 +38,7 @@ class EnvKeyVault:
             except Exception as exc:
                 raise RuntimeError(f"{env_var} is not valid base64") from exc
             if len(key) != 32:
-                raise RuntimeError(
-                    f"{env_var} must decode to 32 bytes (AES-256), got {len(key)}"
-                )
+                raise RuntimeError(f"{env_var} must decode to 32 bytes (AES-256), got {len(key)}")
             return cls(key)
 
         if env == "production":

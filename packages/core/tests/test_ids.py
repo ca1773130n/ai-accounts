@@ -20,7 +20,8 @@ def test_new_id_custom_length():
 
 def test_new_id_alphabet():
     import string
+
     alphabet = set(string.ascii_lowercase + string.digits)
     id = new_id("xyz", length=100)
-    suffix = id[len("xyz-"):]
+    suffix = id[len("xyz-") :]
     assert all(c in alphabet for c in suffix)

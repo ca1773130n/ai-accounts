@@ -45,17 +45,13 @@ from ai_accounts_core.protocols.backend import (
 # Codex CLI may print auth URLs on either chatgpt.com/auth/... (older) or
 # auth.openai.com/... (newer device-code flow). Ported from Agented 78d270c:
 # the PTY output detector must catch both hosts so the frontend can auto-open.
-_CODEX_URL_RE = re.compile(
-    r"https://(?:chatgpt\.com/auth/|auth\.openai\.com/)\S+"
-)
+_CODEX_URL_RE = re.compile(r"https://(?:chatgpt\.com/auth/|auth\.openai\.com/)\S+")
 # Codex 0.121.0 device-auth prints the code on its own line BELOW the
 # "Enter this one-time code" label (e.g. "   3IKX-6ZZWB"). Length is 4-5
 # alphanum either side of the dash, so allow {4,8}. The earlier labelled
 # regex `code[:\s]+(...)` was matching "code authoriz" from the ALSO-printed
 # phrase "device code authorization:" and capturing garbage.
-_CODEX_USER_CODE_RE = re.compile(
-    r"(?:^|\n)\s*([A-Z0-9]{4,8}-[A-Z0-9]{4,8})\s*$", re.MULTILINE
-)
+_CODEX_USER_CODE_RE = re.compile(r"(?:^|\n)\s*([A-Z0-9]{4,8}-[A-Z0-9]{4,8})\s*$", re.MULTILINE)
 _CODEX_SUCCESS_MARKERS = ("Successfully logged in", "Authentication complete")
 _CODEX_FAILURE_MARKERS = ("error:", "failed", "Error")
 
@@ -92,10 +88,8 @@ class _CodexOAuthDeviceSession(LoginSession):
                 except Exception:  # pragma: no cover - best-effort
                     pass
                 try:
-                    exit_code = await asyncio.wait_for(
-                        self._orchestrator.wait(), timeout=10
-                    )
-                except asyncio.TimeoutError:
+                    exit_code = await asyncio.wait_for(self._orchestrator.wait(), timeout=10)
+                except TimeoutError:
                     await self._orchestrator.kill()
                     await self._orchestrator.wait()
                 except Exception:  # pragma: no cover - best-effort
@@ -152,8 +146,10 @@ class _CodexOAuthDeviceSession(LoginSession):
                     success = True
                     break
                 lower = chunk.lower()
-                if "error" in lower or "failed" in lower or any(
-                    mk in chunk for mk in _CODEX_FAILURE_MARKERS
+                if (
+                    "error" in lower
+                    or "failed" in lower
+                    or any(mk in chunk for mk in _CODEX_FAILURE_MARKERS)
                 ):
                     break
         finally:
@@ -208,10 +204,8 @@ class _CodexCliBrowserSession(LoginSession):
                 except Exception:  # pragma: no cover - best-effort
                     pass
                 try:
-                    exit_code = await asyncio.wait_for(
-                        self._orchestrator.wait(), timeout=10
-                    )
-                except asyncio.TimeoutError:
+                    exit_code = await asyncio.wait_for(self._orchestrator.wait(), timeout=10)
+                except TimeoutError:
                     await self._orchestrator.kill()
                     await self._orchestrator.wait()
                 except Exception:  # pragma: no cover - best-effort
@@ -256,8 +250,10 @@ class _CodexCliBrowserSession(LoginSession):
                     exit_reason = "success_marker"
                     break
                 lower = chunk.lower()
-                if "error" in lower or "failed" in lower or any(
-                    mk in chunk for mk in _CODEX_FAILURE_MARKERS
+                if (
+                    "error" in lower
+                    or "failed" in lower
+                    or any(mk in chunk for mk in _CODEX_FAILURE_MARKERS)
                 ):
                     exit_reason = f"failure_marker_in_chunk: {chunk[:120]!r}"
                     break
@@ -320,9 +316,11 @@ class _CodexApiKeySession(LoginSession):
         yield TextPrompt(prompt_id="api_key", prompt="OpenAI API key", hidden=True)
         try:
             ans = await asyncio.wait_for(self._answers.get(), timeout=300)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._done = True
-            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            yield LoginFailed(
+                code="response_timeout", message="No response received within 5 minutes"
+            )
             return
         if ans.prompt_id == "__cancel__":
             self._done = True
@@ -359,9 +357,7 @@ class CodexBackend(CliBackendBase):
     # subprocess alive that long. In practice the callback often fails. The
     # device-auth flow is much more reliable: codex prints a URL + code, the
     # user signs in and enters the code, no localhost server required.
-    supported_login_flows: ClassVar[frozenset[str]] = frozenset(
-        {"api_key", "oauth_device"}
-    )
+    supported_login_flows: ClassVar[frozenset[str]] = frozenset({"api_key", "oauth_device"})
 
     metadata: ClassVar[BackendMetadata] = BackendMetadata(
         kind="codex",
@@ -414,9 +410,7 @@ class CodexBackend(CliBackendBase):
 
     # detect() inherited from CliBackendBase.
 
-    async def validate(
-        self, credential: bytes, *, isolation_dir: Path
-    ) -> bool:
+    async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
         path = shutil.which(self._CLI_NAME)
         if path is None:
             return False
@@ -430,9 +424,7 @@ class CodexBackend(CliBackendBase):
         # (stdout) and 0.128.0+ (stderr).
         iso = isolation_dir.resolve()
         env = self._env(credential, iso)
-        rc, stdout, stderr = await self._run(
-            {"argv": [path, "login", "status"], "env": env}
-        )
+        rc, stdout, stderr = await self._run({"argv": [path, "login", "status"], "env": env})
         if rc != 0:
             return False
         out_text = stdout.decode("utf-8", errors="replace").lower()
@@ -440,9 +432,7 @@ class CodexBackend(CliBackendBase):
         text = f"{out_text}\n{err_text}"
         return "logged in" in text and "not logged in" not in text
 
-    async def list_models(
-        self, credential: bytes, *, isolation_dir: Path
-    ) -> list[Model]:
+    async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
         # Resolution order (v0.7.12):
         # 1. Codex CLI's local models_cache.json — the codex binary maintains
         #    this against OpenAI's account-aware Codex backend, so it's both
@@ -477,9 +467,7 @@ class CodexBackend(CliBackendBase):
 
         return fallback("codex")
 
-    def _list_models_from_codex_cache(
-        self, isolation_dir: Path
-    ) -> list[Model] | None:
+    def _list_models_from_codex_cache(self, isolation_dir: Path) -> list[Model] | None:
         """Read the codex CLI's own ``models_cache.json``. The codex binary
         refreshes this against OpenAI's account-aware backend on use, so it
         captures the user's actual subscription tier — including newer
@@ -541,9 +529,7 @@ class CodexBackend(CliBackendBase):
                 return out
         return None
 
-    async def _list_models_via_provider_api(
-        self, credential: bytes
-    ) -> list[Model] | None:
+    async def _list_models_via_provider_api(self, credential: bytes) -> list[Model] | None:
         """Call OpenAI ``GET /v1/models`` directly with the stored credential.
 
         Both API keys (``sk-...``) and ChatGPT-OAuth bearer tokens are sent as
@@ -567,9 +553,7 @@ class CodexBackend(CliBackendBase):
                     return None
                 data = resp.json()
         except (httpx.HTTPError, ValueError, OSError) as exc:
-            logging.getLogger(__name__).debug(
-                "codex /v1/models direct call failed: %r", exc
-            )
+            logging.getLogger(__name__).debug("codex /v1/models direct call failed: %r", exc)
             return None
         items = data.get("data") if isinstance(data, dict) else None
         if not isinstance(items, list) or not items:
@@ -607,9 +591,7 @@ class CodexBackend(CliBackendBase):
                             if w.get("reset_at"):
                                 from datetime import UTC, datetime
 
-                                resets_at = datetime.fromtimestamp(
-                                    w["reset_at"], tz=UTC
-                                )
+                                resets_at = datetime.fromtimestamp(w["reset_at"], tz=UTC)
                             windows.append(
                                 UsageWindow(
                                     window_type=key,
@@ -634,10 +616,7 @@ class CodexBackend(CliBackendBase):
             async for event in _chat_via_cliproxy(request):
                 yield event
             return
-        messages_payload = [
-            {"role": m.role.value, "content": m.content}
-            for m in request.messages
-        ]
+        messages_payload = [{"role": m.role.value, "content": m.content} for m in request.messages]
         body: dict[str, object] = {
             "model": request.model,
             "messages": messages_payload,
@@ -645,44 +624,43 @@ class CodexBackend(CliBackendBase):
         }
         if "max_tokens" in request.params:
             body["max_tokens"] = request.params["max_tokens"]
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                "https://api.openai.com/v1/chat/completions",
-                json=body,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                timeout=120.0,
-            ) as resp:
-                if resp.status_code != 200:
+        async with httpx.AsyncClient() as client, client.stream(
+            "POST",
+            "https://api.openai.com/v1/chat/completions",
+            json=body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=120.0,
+        ) as resp:
+            if resp.status_code != 200:
+                yield ChatStreamEvent(
+                    kind="error",
+                    payload=f"API error {resp.status_code}",
+                )
+                return
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:].strip()
+                if payload == "[DONE]":
+                    break
+                data = json.loads(payload)
+                choice = data.get("choices", [{}])[0]
+                delta = choice.get("delta", {})
+                text = delta.get("content")
+                if text:
+                    yield ChatStreamEvent(kind="token", payload=text)
+                finish_reason = choice.get("finish_reason")
+                if finish_reason:
                     yield ChatStreamEvent(
-                        kind="error",
-                        payload=f"API error {resp.status_code}",
+                        kind="done",
+                        payload={
+                            "finish_reason": finish_reason,
+                            "model": data.get("model", request.model),
+                        },
                     )
-                    return
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    payload = line[6:].strip()
-                    if payload == "[DONE]":
-                        break
-                    data = json.loads(payload)
-                    choice = data.get("choices", [{}])[0]
-                    delta = choice.get("delta", {})
-                    text = delta.get("content")
-                    if text:
-                        yield ChatStreamEvent(kind="token", payload=text)
-                    finish_reason = choice.get("finish_reason")
-                    if finish_reason:
-                        yield ChatStreamEvent(
-                            kind="done",
-                            payload={
-                                "finish_reason": finish_reason,
-                                "model": data.get("model", request.model),
-                            },
-                        )
 
     async def pty(
         self,
@@ -696,7 +674,10 @@ class CodexBackend(CliBackendBase):
         env = dict(request.env)
         env.update(self._env(credential, isolation_dir))
         return await AsyncPtyHandle.spawn(
-            command=request.command, cols=request.cols, rows=request.rows, env=env,
+            command=request.command,
+            cols=request.cols,
+            rows=request.rows,
+            env=env,
         )
 
     def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:

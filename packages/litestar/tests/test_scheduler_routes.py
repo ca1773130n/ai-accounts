@@ -1,10 +1,9 @@
 import pytest
-from litestar.testing import AsyncTestClient
-
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.testing.fakes import FakeBackend, FakeStorage, FakeVault
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
+from litestar.testing import AsyncTestClient
 
 
 @pytest.fixture
@@ -26,9 +25,7 @@ def _get_account_service(client: AsyncTestClient) -> AccountService:
 
 
 async def _create_ready_backend(client: AsyncTestClient) -> str:
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "T"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "T"})
     assert r.status_code == 201
     backend_id = r.json()["id"]
     svc = _get_account_service(client)

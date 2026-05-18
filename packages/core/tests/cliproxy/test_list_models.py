@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-
 from ai_accounts_core.cliproxy.manager import cliproxy_list_models
 
 
@@ -41,9 +40,7 @@ def _fake_async_client(get_returns):
                 raise get_returns
             return get_returns
 
-    return patch(
-        "ai_accounts_core.cliproxy.manager.httpx.AsyncClient", _FakeClient
-    )
+    return patch("ai_accounts_core.cliproxy.manager.httpx.AsyncClient", _FakeClient)
 
 
 @pytest.fixture
@@ -67,9 +64,7 @@ def proxy_down():
 @pytest.mark.asyncio
 async def test_returns_none_for_unmapped_kind():
     """opencode is not in _CLIPROXY_OWNED_BY → never even probes the proxy."""
-    with patch(
-        "ai_accounts_core.cliproxy.manager.detect_cliproxy"
-    ) as detect_mock:
+    with patch("ai_accounts_core.cliproxy.manager.detect_cliproxy") as detect_mock:
         result = await cliproxy_list_models("opencode")
     assert result is None
     # Should not have probed the proxy at all (early return on unmapped kind).

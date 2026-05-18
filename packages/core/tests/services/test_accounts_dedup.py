@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.testing import FakeBackend, FakeStorage, FakeVault
 

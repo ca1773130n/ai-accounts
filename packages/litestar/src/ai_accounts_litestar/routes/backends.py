@@ -1,10 +1,9 @@
-from litestar import Controller, delete, get, patch, post, status_codes
-from litestar.exceptions import ClientException
-
 from ai_accounts_core.services.accounts import (
     AccountService,
     ConfigPathOutsideAllowedRoots,
 )
+from litestar import Controller, delete, get, patch, post, status_codes
+from litestar.exceptions import ClientException
 
 from ..dto import (
     BackendDTO,
@@ -38,13 +37,15 @@ class BackendsController(Controller):
                 data.kind, display_name=data.display_name, config=data.config
             )
         except ConfigPathOutsideAllowedRoots as exc:
-            raise ClientException(detail=str(exc), status_code=status_codes.HTTP_400_BAD_REQUEST) from exc
-        return BackendDTO.from_domain(created, config_dir=str(account_service.config_dir(created.id)))
+            raise ClientException(
+                detail=str(exc), status_code=status_codes.HTTP_400_BAD_REQUEST
+            ) from exc
+        return BackendDTO.from_domain(
+            created, config_dir=str(account_service.config_dir(created.id))
+        )
 
     @get("/{backend_id:str}")
-    async def get_backend(
-        self, backend_id: str, account_service: AccountService
-    ) -> BackendDTO:
+    async def get_backend(self, backend_id: str, account_service: AccountService) -> BackendDTO:
         b = await account_service.get(backend_id)
         return BackendDTO.from_domain(b, config_dir=str(account_service.config_dir(b.id)))
 
@@ -63,24 +64,22 @@ class BackendsController(Controller):
         try:
             updated = await account_service.update(backend_id, **kwargs)  # type: ignore[arg-type]
         except ConfigPathOutsideAllowedRoots as exc:
-            raise ClientException(detail=str(exc), status_code=status_codes.HTTP_400_BAD_REQUEST) from exc
-        return BackendDTO.from_domain(updated, config_dir=str(account_service.config_dir(updated.id)))
+            raise ClientException(
+                detail=str(exc), status_code=status_codes.HTTP_400_BAD_REQUEST
+            ) from exc
+        return BackendDTO.from_domain(
+            updated, config_dir=str(account_service.config_dir(updated.id))
+        )
 
     @delete("/{backend_id:str}")
-    async def delete_backend(
-        self, backend_id: str, account_service: AccountService
-    ) -> None:
+    async def delete_backend(self, backend_id: str, account_service: AccountService) -> None:
         await account_service.delete(backend_id)
 
     @post("/{backend_id:str}/detect")
-    async def detect(
-        self, backend_id: str, account_service: AccountService
-    ) -> DetectResultDTO:
+    async def detect(self, backend_id: str, account_service: AccountService) -> DetectResultDTO:
         return DetectResultDTO.from_domain(await account_service.detect(backend_id))
 
     @post("/{backend_id:str}/validate")
-    async def validate(
-        self, backend_id: str, account_service: AccountService
-    ) -> BackendDTO:
+    async def validate(self, backend_id: str, account_service: AccountService) -> BackendDTO:
         b = await account_service.validate(backend_id)
         return BackendDTO.from_domain(b, config_dir=str(account_service.config_dir(b.id)))

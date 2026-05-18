@@ -70,16 +70,12 @@ async def _safe_execute(conn: aiosqlite.Connection, stmt: str) -> None:
     except Exception as exc:
         msg = str(exc).lower()
         if "duplicate column name" in msg:
-            logger.info(
-                "migration statement skipped (column already exists): %s", stmt
-            )
+            logger.info("migration statement skipped (column already exists): %s", stmt)
             return
         raise
 
 
-async def apply_migrations(
-    conn: aiosqlite.Connection, *, baseline_schema: str
-) -> None:
+async def apply_migrations(conn: aiosqlite.Connection, *, baseline_schema: str) -> None:
     """Bring the connected database up to ``CURRENT_VERSION``.
 
     * If no ``schema_version`` row exists, treat the DB as fresh, run the
@@ -90,21 +86,15 @@ async def apply_migrations(
     """
     # Ensure the version table itself exists before we read from it — older
     # installs that never called migrate() will not have it.
-    await conn.execute(
-        "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)"
-    )
+    await conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)")
 
-    async with conn.execute(
-        "SELECT COALESCE(MAX(version), 0) FROM schema_version"
-    ) as cur:
+    async with conn.execute("SELECT COALESCE(MAX(version), 0) FROM schema_version") as cur:
         row = await cur.fetchone()
     current = int(row[0]) if row else 0
 
     if current == 0:
         # Fresh install — run baseline and record current version.
-        logger.info(
-            "initializing database schema at version %d", CURRENT_VERSION
-        )
+        logger.info("initializing database schema at version %d", CURRENT_VERSION)
         await conn.executescript(baseline_schema)
         await conn.execute(
             "INSERT OR IGNORE INTO schema_version (version) VALUES (?)",
@@ -116,9 +106,7 @@ async def apply_migrations(
     if current >= CURRENT_VERSION:
         return
 
-    logger.info(
-        "database schema at version %d, upgrading to %d", current, CURRENT_VERSION
-    )
+    logger.info("database schema at version %d, upgrading to %d", current, CURRENT_VERSION)
     # Walk every pending migration. The list is ordered by version so we can
     # just skip ones we've already applied.
     for migration in MIGRATIONS:
@@ -140,11 +128,7 @@ async def apply_migrations(
 
 async def current_version(conn: aiosqlite.Connection) -> int:
     """Return the current schema version (0 if not yet migrated)."""
-    await conn.execute(
-        "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)"
-    )
-    async with conn.execute(
-        "SELECT COALESCE(MAX(version), 0) FROM schema_version"
-    ) as cur:
+    await conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)")
+    async with conn.execute("SELECT COALESCE(MAX(version), 0) FROM schema_version") as cur:
         row = await cur.fetchone()
     return int(row[0]) if row else 0

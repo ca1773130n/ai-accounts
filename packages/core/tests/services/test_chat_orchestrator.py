@@ -1,11 +1,10 @@
 import pytest
-
 from ai_accounts_core.domain.chat_events import ToolCallEvent
-from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
-from ai_accounts_core.services.chat import ChatService
-from ai_accounts_core.services.scheduler import AccountScheduler
 from ai_accounts_core.services.accounts import AccountService
-from ai_accounts_core.testing.fakes import FakeStorage, FakeVault, FakeBackend
+from ai_accounts_core.services.chat import ChatService
+from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
+from ai_accounts_core.services.scheduler import AccountScheduler
+from ai_accounts_core.testing.fakes import FakeBackend, FakeStorage, FakeVault
 
 
 @pytest.fixture

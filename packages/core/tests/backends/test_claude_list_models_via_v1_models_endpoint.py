@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import pytest
-
 from ai_accounts_core.backends.claude import ClaudeBackend
-
 
 _API_MODELS_RESPONSE = {
     "data": [
@@ -72,9 +70,7 @@ async def test_non_200_response_falls_through_to_static(tmp_path, httpx_mock, mo
     async def _no_cliproxy(_kind: str):
         return None
 
-    monkeypatch.setattr(
-        "ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy
-    )
+    monkeypatch.setattr("ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy)
     backend = ClaudeBackend()
     models = await backend.list_models(b"sk-ant-abc123", isolation_dir=tmp_path)
     # Static fallback fired — should contain refreshed entries (4.7 family).
@@ -105,15 +101,9 @@ async def test_empty_credential_falls_through(tmp_path, monkeypatch):
     async def _no_creds_file(self, _iso):
         return None
 
-    monkeypatch.setattr(
-        "ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy
-    )
-    monkeypatch.setattr(
-        ClaudeBackend, "_try_macos_keychain_oauth_token", _no_keychain
-    )
-    monkeypatch.setattr(
-        ClaudeBackend, "_try_credentials_file_oauth_token", _no_creds_file
-    )
+    monkeypatch.setattr("ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy)
+    monkeypatch.setattr(ClaudeBackend, "_try_macos_keychain_oauth_token", _no_keychain)
+    monkeypatch.setattr(ClaudeBackend, "_try_credentials_file_oauth_token", _no_creds_file)
     backend = ClaudeBackend()
     models = await backend.list_models(b"", isolation_dir=tmp_path)
     assert models  # static list, non-empty

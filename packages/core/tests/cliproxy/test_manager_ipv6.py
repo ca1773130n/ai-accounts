@@ -7,11 +7,9 @@ back to IPv4 so it works regardless of which family the child CLI chose.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import httpx
-import pytest
-
 from ai_accounts_core.cliproxy.manager import forward_cliproxy_callback
 
 
@@ -64,6 +62,7 @@ async def test_forward_callback_falls_back_to_ipv4_on_ipv6_failure():
 
 async def test_forward_callback_reports_error_when_all_hosts_fail():
     """If every host raises, we return a single aggregated error."""
+
     async def fake_get(self, url: str, *, params=None):
         raise httpx.ConnectError("refused")
 
@@ -78,6 +77,7 @@ async def test_forward_callback_reports_error_when_all_hosts_fail():
 
 async def test_forward_callback_surfaces_last_http_status():
     """If every host answers with an HTTP error, the last status is reported."""
+
     async def fake_get(self, url: str, *, params=None):
         return _FakeResponse(500)
 

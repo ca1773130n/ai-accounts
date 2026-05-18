@@ -17,7 +17,6 @@ import shutil
 import subprocess
 
 import pytest
-
 from ai_accounts_core.cliproxy import manager as cliproxy_manager
 
 
@@ -69,8 +68,8 @@ def test_device_code_regex_captures_codex_45_format() -> None:
     cases = [
         ("Codex device code: FXEJ-GY37O\n", "FXEJ-GY37O"),  # codex 4-5
         ("Codex device code: FXEJ-GY37O Visit ...", "FXEJ-GY37O"),
-        ("code: ABCD-EFGH\n", "ABCD-EFGH"),                 # claude-style 4-4
-        ("code: ABCDEFGH\n", "ABCDEFGH"),                   # no dash
+        ("code: ABCD-EFGH\n", "ABCD-EFGH"),  # claude-style 4-4
+        ("code: ABCDEFGH\n", "ABCDEFGH"),  # no dash
     ]
     for text, expected in cases:
         m = _DEVICE_CODE_RE.search(text)

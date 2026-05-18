@@ -38,6 +38,7 @@ class ChatDelta(msgspec.Struct, frozen=True, kw_only=True):
     For kind="token" and kind="error", `payload` carries the text. Matches the
     SmartChatEvent shape consumed by `@ai-accounts/vue-headless useSmartChat`.
     """
+
     kind: str
     payload: str | None = None
     finish_reason: str | None = None

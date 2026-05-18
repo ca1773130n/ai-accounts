@@ -1,7 +1,6 @@
 import msgspec
-from litestar import Controller, get, post, status_codes
-
 from ai_accounts_core.services.onboarding import OnboardingService
+from litestar import Controller, get, post, status_codes
 
 from ..dto import (
     BackendDTO,
@@ -26,9 +25,7 @@ class OnboardingController(Controller):
     tags = ["onboarding"]
 
     @post("/", status_code=status_codes.HTTP_201_CREATED)
-    async def start(
-        self, onboarding_service: OnboardingService
-    ) -> OnboardingStateDTO:
+    async def start(self, onboarding_service: OnboardingService) -> OnboardingStateDTO:
         state = await onboarding_service.start()
         return OnboardingStateDTO.from_domain(state)
 

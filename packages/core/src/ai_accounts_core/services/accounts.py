@@ -54,9 +54,7 @@ class ConfigPathOutsideAllowedRoots(ValueError):
     boundary."""
 
 
-def _resolve_config_path_strict(
-    raw: object, *, allowed_roots: tuple[Path, ...]
-) -> Path | None:
+def _resolve_config_path_strict(raw: object, *, allowed_roots: tuple[Path, ...]) -> Path | None:
     """Validate a user-supplied ``config_path`` and return a resolved ``Path``.
 
     ``raw`` may be ``None`` / empty (we skip validation and return ``None``).
@@ -78,9 +76,7 @@ def _resolve_config_path_strict(
             f"config_path {s!r} could not be resolved: {exc}"
         ) from exc
     roots = tuple(r.resolve() for r in allowed_roots)
-    if not any(
-        resolved == root or resolved.is_relative_to(root) for root in roots
-    ):
+    if not any(resolved == root or resolved.is_relative_to(root) for root in roots):
         raise ConfigPathOutsideAllowedRoots(
             f"config_path {s!r} resolves to {resolved} which is outside "
             f"the allowed roots {[str(r) for r in roots]}"
@@ -114,7 +110,7 @@ class AccountService:
 
     async def discover_existing(
         self, *, probe_timeout: float = 12.0
-    ) -> builtins.list["DiscoveredConfig"]:
+    ) -> builtins.list[DiscoveredConfig]:
         """Auto-detect CLI config directories the user already authenticated.
 
         Globs ``~/.<kind>*`` for every registered backend kind and runs a
@@ -156,13 +152,13 @@ class AccountService:
             # result. The probe is a real prompt (claude -p hello, etc.),
             # so it catches expired tokens that the file-probe validate()
             # would miss on macOS.
-            new_status = (
-                BackendStatus.READY if c.is_logged_in else BackendStatus.ERROR
-            )
+            new_status = BackendStatus.READY if c.is_logged_in else BackendStatus.ERROR
             if backend.status != new_status:
                 logger.info(
                     "discovery: syncing %s status %s → %s",
-                    backend.id, backend.status, new_status,
+                    backend.id,
+                    backend.status,
+                    new_status,
                 )
                 backend = await self._update_status(backend, new_status)
             enriched.append(
@@ -248,9 +244,7 @@ class AccountService:
         """
         backend = await self.get(backend_id)
         raw = backend.config.get("config_path")
-        resolved = _resolve_config_path_strict(
-            raw, allowed_roots=self._allowed_config_roots()
-        )
+        resolved = _resolve_config_path_strict(raw, allowed_roots=self._allowed_config_roots())
         if resolved is not None:
             resolved.mkdir(parents=True, exist_ok=True)
             return resolved
@@ -306,9 +300,7 @@ class AccountService:
         self._isolation_dir(backend.id).mkdir(parents=True, exist_ok=True)
         return backend
 
-    async def _find_matching_backend(
-        self, kind: str, config: dict[str, object]
-    ) -> Backend | None:
+    async def _find_matching_backend(self, kind: str, config: dict[str, object]) -> Backend | None:
         """Return an existing backend row that represents the same underlying
         account, or None. Match key:
           - (kind, config_path) when config_path is set (CLI-managed creds)
@@ -332,8 +324,11 @@ class AccountService:
                 return b
             if api_key_env and b_env and api_key_env == b_env:
                 return b
-            if email and b_email and email == b_email and not (
-                config_path or api_key_env or b_path or b_env
+            if (
+                email
+                and b_email
+                and email == b_email
+                and not (config_path or api_key_env or b_path or b_env)
             ):
                 return b
         return None
@@ -397,9 +392,7 @@ class AccountService:
                 # `ignore_errors=True` masked permission/filesystem problems
                 # so operators never noticed stale credential directories
                 # lingering on disk.
-                logger.warning(
-                    "failed to delete isolation dir %s: %s", isolation_dir, exc
-                )
+                logger.warning("failed to delete isolation dir %s: %s", isolation_dir, exc)
 
     async def detect(self, backend_id: str) -> DetectResult:
         backend = await self.get(backend_id)
@@ -444,14 +437,10 @@ class AccountService:
         )
         return session
 
-    async def store_credential(
-        self, backend_id: str, credential: bytes
-    ) -> Backend:
+    async def store_credential(self, backend_id: str, credential: bytes) -> Backend:
         """Persist an encrypted credential for backend_id and mark it VALIDATING."""
         backend = await self.get(backend_id)
-        ciphertext = await self._vault.encrypt(
-            credential, context={"backend_id": backend.id}
-        )
+        ciphertext = await self._vault.encrypt(credential, context={"backend_id": backend.id})
         key_id = await self._vault.current_key_id()
         cred = BackendCredential(
             id=new_id("crd"),
@@ -471,15 +460,11 @@ class AccountService:
         stored = await repo.get_credential(backend_id)
         if stored is None:
             raise CredentialMissing(backend_id)
-        plaintext = await self._vault.decrypt(
-            stored.ciphertext, context={"backend_id": backend_id}
-        )
+        plaintext = await self._vault.decrypt(stored.ciphertext, context={"backend_id": backend_id})
         config_dir = await self._resolve_config_dir(backend_id)
         ok = await impl.validate(plaintext, isolation_dir=config_dir)
         if not ok:
-            await self._update_status(
-                backend, BackendStatus.ERROR, last_error="validation failed"
-            )
+            await self._update_status(backend, BackendStatus.ERROR, last_error="validation failed")
             raise BackendValidationFailed(backend_id)
         return await self._update_status(backend, BackendStatus.READY, last_error=None)
 
@@ -492,9 +477,7 @@ class AccountService:
         stored = await repo.get_credential(backend_id)
         if stored is None:
             raise CredentialMissing(backend_id)
-        plaintext = await self._vault.decrypt(
-            stored.ciphertext, context={"backend_id": backend_id}
-        )
+        plaintext = await self._vault.decrypt(stored.ciphertext, context={"backend_id": backend_id})
         isolation_dir = await self._resolve_config_dir(backend_id)
         return await impl.list_models(plaintext, isolation_dir=isolation_dir)
 

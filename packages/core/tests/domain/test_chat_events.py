@@ -1,5 +1,4 @@
 import msgspec
-
 from ai_accounts_core.domain.chat_events import AllModeEvent, CompoundEvent, ToolCallEvent
 
 

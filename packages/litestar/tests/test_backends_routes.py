@@ -1,11 +1,10 @@
 import pytest
-from litestar.testing import TestClient
-
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.testing import FakeBackend, FakeVault
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
+from litestar.testing import TestClient
 
 
 @pytest.fixture
@@ -49,26 +48,20 @@ def test_get_backend_not_found(client):
 
 
 def test_create_unknown_kind(client):
-    response = client.post(
-        "/api/v1/backends/", json={"kind": "martian", "display_name": "x"}
-    )
+    response = client.post("/api/v1/backends/", json={"kind": "martian", "display_name": "x"})
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "backend_kind_unknown"
 
 
 def test_detect_backend(client):
-    created = client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "T"}
-    ).json()
+    created = client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "T"}).json()
     response = client.post(f"/api/v1/backends/{created['id']}/detect")
     assert response.status_code == 201
     assert response.json()["installed"] is True
 
 
 def test_delete_backend(client):
-    created = client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "T"}
-    ).json()
+    created = client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "T"}).json()
     response = client.delete(f"/api/v1/backends/{created['id']}")
     assert response.status_code == 204
     get_response = client.get(f"/api/v1/backends/{created['id']}")
@@ -85,9 +78,7 @@ def test_list_after_create(client):
 
 
 def test_patch_backend_display_name(client):
-    created = client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "Old"}
-    ).json()
+    created = client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "Old"}).json()
     response = client.patch(
         f"/api/v1/backends/{created['id']}",
         json={"display_name": "New"},

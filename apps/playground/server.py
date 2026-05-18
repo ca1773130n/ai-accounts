@@ -53,9 +53,7 @@ def main() -> None:
     try:
         port = int(os.environ.get("AIA_PORT", "30000"))
     except ValueError:
-        raise SystemExit(
-            f"AIA_PORT must be an integer, got {os.environ['AIA_PORT']!r}"
-        ) from None
+        raise SystemExit(f"AIA_PORT must be an integer, got {os.environ['AIA_PORT']!r}") from None
     uvicorn.run(app, host=host, port=port)
 
 

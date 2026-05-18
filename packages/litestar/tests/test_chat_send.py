@@ -4,8 +4,6 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from litestar.testing import AsyncTestClient
-
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.services.accounts import AccountService
@@ -13,6 +11,7 @@ from ai_accounts_core.services.chat import ChatService
 from ai_accounts_core.testing import FakeBackend, FakeVault
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
+from litestar.testing import AsyncTestClient
 
 
 @pytest_asyncio.fixture
@@ -68,9 +67,7 @@ def _get_chat_service(client: AsyncTestClient) -> ChatService:
 
 async def _setup_backend_and_session(client: AsyncTestClient) -> tuple[str, str]:
     """Create backend with credential, create chat session, return (backend_id, session_id)."""
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "T"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "T"})
     assert r.status_code == 201
     backend_id = r.json()["id"]
 

@@ -1,15 +1,12 @@
-from litestar import Controller, get
-
 from ai_accounts_core.services.accounts import AccountService
+from litestar import Controller, get
 
 
 class ModelsController(Controller):
     path = "/api/v1/backends/{backend_id:str}/models"
 
     @get("/")
-    async def list_models(
-        self, account_service: AccountService, backend_id: str
-    ) -> dict:
+    async def list_models(self, account_service: AccountService, backend_id: str) -> dict:
         models = await account_service.list_models(backend_id)
         return {
             "items": [

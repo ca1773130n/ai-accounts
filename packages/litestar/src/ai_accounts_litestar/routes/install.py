@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+from ai_accounts_core.install import InstallResult, install_backend_cli
 from litestar import Controller, post
 from litestar.exceptions import HTTPException
-
-from ai_accounts_core.install import InstallResult, install_backend_cli
 
 
 class InstallController(Controller):

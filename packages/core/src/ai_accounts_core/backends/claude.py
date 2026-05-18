@@ -33,8 +33,10 @@ from ai_accounts_core.login import (
 from ai_accounts_core.login.cli_orchestrator import CliOrchestrator
 from ai_accounts_core.login.interactive import (
     EAGER_FOLLOWUP_ENTER_SECONDS,
-    EagerCodeState as _EagerCodeState,
     run_interactive_cli_login,
+)
+from ai_accounts_core.login.interactive import (
+    EagerCodeState as _EagerCodeState,
 )
 from ai_accounts_core.metadata import (
     BackendMetadata,
@@ -54,8 +56,6 @@ from ai_accounts_core.protocols.backend import (
 _CLAUDE_CONSOLE_URL_RE = re.compile(
     r"https://(?:claude\.ai|claude\.com|console\.anthropic\.com|platform\.claude\.com)/\S+"
 )
-
-
 
 
 class _ClaudeCliBrowserSession(LoginSession):
@@ -133,15 +133,14 @@ class _ClaudeCliBrowserSession(LoginSession):
         # depth in case the domain object was constructed by another
         # path.
         from ai_accounts_core.services.accounts import _resolve_config_path_strict
+
         config_path = self._config.get("config_path")
         allowed_roots = (
             Path.home().resolve(),
             self._isolation_dir.resolve(),
             self._isolation_dir.parent.resolve(),
         )
-        config_dir_from_cfg = _resolve_config_path_strict(
-            config_path, allowed_roots=allowed_roots
-        )
+        config_dir_from_cfg = _resolve_config_path_strict(config_path, allowed_roots=allowed_roots)
         if config_dir_from_cfg is not None:
             config_dir = resolved_iso(config_dir_from_cfg)
         else:
@@ -183,9 +182,7 @@ class _ClaudeCliBrowserSession(LoginSession):
                     try:
                         await self._orchestrator.write(b"\r")
                     except (OSError, asyncio.CancelledError) as exc:
-                        logger.debug(
-                            "post-login Enter write ignored: %r", exc
-                        )
+                        logger.debug("post-login Enter write ignored: %r", exc)
                 yield event
         finally:
             await self._cleanup()
@@ -213,7 +210,8 @@ class _ClaudeCliBrowserSession(LoginSession):
         if self._done or self._orchestrator is None:
             logger.warning(
                 "write_eager skipped: done=%s orchestrator_ready=%s",
-                self._done, self._orchestrator is not None,
+                self._done,
+                self._orchestrator is not None,
             )
             return
         cleaned = text.strip()
@@ -279,9 +277,11 @@ class _ClaudeApiKeySession(LoginSession):
         yield TextPrompt(prompt_id="api_key", prompt="Anthropic API key", hidden=True)
         try:
             ans = await asyncio.wait_for(self._answers.get(), timeout=300)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._done = True
-            yield LoginFailed(code="response_timeout", message="No response received within 5 minutes")
+            yield LoginFailed(
+                code="response_timeout", message="No response received within 5 minutes"
+            )
             return
         if ans.prompt_id == "__cancel__":
             self._done = True
@@ -500,9 +500,7 @@ class ClaudeBackend(CliBackendBase):
             return None
         if dump.returncode != 0:
             return None
-        services = re.findall(
-            r'"svce"<blob>="(Claude Code-credentials-[^"]+)"', dump.stdout
-        )
+        services = re.findall(r'"svce"<blob>="(Claude Code-credentials-[^"]+)"', dump.stdout)
         for service in services:
             try:
                 proc = await asyncio.to_thread(
@@ -528,9 +526,7 @@ class ClaudeBackend(CliBackendBase):
                     return token
         return None
 
-    async def _try_credentials_file_oauth_token(
-        self, isolation_dir: Path
-    ) -> str | None:
+    async def _try_credentials_file_oauth_token(self, isolation_dir: Path) -> str | None:
         """Read ``<isolation_dir>/.credentials.json`` and extract the OAuth
         access token.
 
@@ -673,6 +669,7 @@ class ClaudeBackend(CliBackendBase):
         # CLI-browser login: credential is empty, route through CLIProxyAPI
         if not api_key:
             from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
+
             async for event in _chat_via_cliproxy(request):
                 yield event
             return
@@ -683,9 +680,7 @@ class ClaudeBackend(CliBackendBase):
             for m in request.messages
             if m.role != ChatRole.SYSTEM
         ]
-        system_msgs = [
-            m.content for m in request.messages if m.role == ChatRole.SYSTEM
-        ]
+        system_msgs = [m.content for m in request.messages if m.role == ChatRole.SYSTEM]
         body: dict[str, object] = {
             "model": request.model,
             "messages": messages_payload,
@@ -694,50 +689,43 @@ class ClaudeBackend(CliBackendBase):
         }
         if system_msgs:
             body["system"] = system_msgs[0]
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                "https://api.anthropic.com/v1/messages",
-                json=body,
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                timeout=120.0,
-            ) as resp:
-                if resp.status_code != 200:
+        async with httpx.AsyncClient() as client, client.stream(
+            "POST",
+            "https://api.anthropic.com/v1/messages",
+            json=body,
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            timeout=120.0,
+        ) as resp:
+            if resp.status_code != 200:
+                yield ChatStreamEvent(
+                    kind="error",
+                    payload=f"API error {resp.status_code}",
+                )
+                return
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = json.loads(line[6:])
+                if data.get("type") == "content_block_delta":
+                    text = data.get("delta", {}).get("text", "")
+                    if text:
+                        yield ChatStreamEvent(kind="token", payload=text)
+                elif data.get("type") == "message_delta":
+                    usage = data.get("usage", {})
                     yield ChatStreamEvent(
-                        kind="error",
-                        payload=f"API error {resp.status_code}",
+                        kind="done",
+                        payload={
+                            "finish_reason": data.get("delta", {}).get("stop_reason", "stop"),
+                            "tokens_out": usage.get("output_tokens"),
+                            "model": request.model,
+                        },
                     )
-                    return
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    data = json.loads(line[6:])
-                    if data.get("type") == "content_block_delta":
-                        text = data.get("delta", {}).get("text", "")
-                        if text:
-                            yield ChatStreamEvent(
-                                kind="token", payload=text
-                            )
-                    elif data.get("type") == "message_delta":
-                        usage = data.get("usage", {})
-                        yield ChatStreamEvent(
-                            kind="done",
-                            payload={
-                                "finish_reason": data.get("delta", {}).get(
-                                    "stop_reason", "stop"
-                                ),
-                                "tokens_out": usage.get("output_tokens"),
-                                "model": request.model,
-                            },
-                        )
 
-    async def _chat_via_proxy(
-        self, request: ChatRequest
-    ) -> AsyncIterator[ChatStreamEvent]:
+    async def _chat_via_proxy(self, request: ChatRequest) -> AsyncIterator[ChatStreamEvent]:
         """Route chat through CLIProxyAPI's OpenAI-compatible endpoint."""
         from ai_accounts_core.cliproxy import detect_cliproxy
 
@@ -749,43 +737,42 @@ class ClaudeBackend(CliBackendBase):
             )
             return
         base_url, api_key = proxy
-        messages = [
-            {"role": m.role.value, "content": m.content}
-            for m in request.messages
-        ]
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                f"{base_url}/chat/completions",
-                json={"model": request.model, "messages": messages, "stream": True},
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                timeout=120.0,
-            ) as resp:
-                if resp.status_code != 200:
-                    yield ChatStreamEvent(kind="error", payload=f"Proxy error {resp.status_code}")
-                    return
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    payload = line[6:].strip()
-                    if payload == "[DONE]":
-                        break
-                    data = json.loads(payload)
-                    choice = data.get("choices", [{}])[0]
-                    delta = choice.get("delta", {})
-                    if text := delta.get("content"):
-                        yield ChatStreamEvent(kind="token", payload=text)
-                    if choice.get("finish_reason"):
-                        usage = data.get("usage", {})
-                        yield ChatStreamEvent(kind="done", payload={
+        messages = [{"role": m.role.value, "content": m.content} for m in request.messages]
+        async with httpx.AsyncClient() as client, client.stream(
+            "POST",
+            f"{base_url}/chat/completions",
+            json={"model": request.model, "messages": messages, "stream": True},
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=120.0,
+        ) as resp:
+            if resp.status_code != 200:
+                yield ChatStreamEvent(kind="error", payload=f"Proxy error {resp.status_code}")
+                return
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:].strip()
+                if payload == "[DONE]":
+                    break
+                data = json.loads(payload)
+                choice = data.get("choices", [{}])[0]
+                delta = choice.get("delta", {})
+                if text := delta.get("content"):
+                    yield ChatStreamEvent(kind="token", payload=text)
+                if choice.get("finish_reason"):
+                    usage = data.get("usage", {})
+                    yield ChatStreamEvent(
+                        kind="done",
+                        payload={
                             "finish_reason": choice["finish_reason"],
                             "tokens_in": usage.get("prompt_tokens"),
                             "tokens_out": usage.get("completion_tokens"),
                             "model": request.model,
-                        })
+                        },
+                    )
 
     async def pty(
         self,
@@ -799,7 +786,10 @@ class ClaudeBackend(CliBackendBase):
         env = dict(request.env)
         env.update(self._env(credential, resolved_iso(isolation_dir)))
         return await AsyncPtyHandle.spawn(
-            command=request.command, cols=request.cols, rows=request.rows, env=env,
+            command=request.command,
+            cols=request.cols,
+            rows=request.rows,
+            env=env,
         )
 
     def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:

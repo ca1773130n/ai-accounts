@@ -20,7 +20,6 @@ from ai_accounts_core.protocols.storage import (
     HistoryRepository,
     OnboardingRepository,
     SessionRepository,
-    StorageProtocol,
     UsageRepository,
 )
 
@@ -277,10 +276,7 @@ class _SqliteHistoryRepo:
 
     async def list_sessions(self, backend_id: str | None = None) -> list[ChatSession]:
         if backend_id is None:
-            query = (
-                "SELECT id, backend_id, title, created_at, updated_at, model "
-                "FROM chat_sessions"
-            )
+            query = "SELECT id, backend_id, title, created_at, updated_at, model FROM chat_sessions"
             params: tuple[str, ...] = ()
         else:
             query = (
@@ -444,9 +440,7 @@ class _SqliteUsageRepo:
             "SELECT backend_id, priority FROM fallback_chains ORDER BY priority"
         ) as cursor:
             rows = await cursor.fetchall()
-        return [
-            FallbackChainEntry(backend_id=row[0], priority=row[1]) for row in rows
-        ]
+        return [FallbackChainEntry(backend_id=row[0], priority=row[1]) for row in rows]
 
 
 class SqliteStorage:

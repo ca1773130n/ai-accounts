@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.domain.backend import Backend, BackendStatus
 from ai_accounts_core.domain.usage import FallbackChainEntry, UsageWindow
@@ -36,8 +35,18 @@ async def test_put_and_get_snapshots_sqlite(tmp_path: Path):
 
         repo = await storage.usage()
         windows = [
-            UsageWindow(window_type="daily", usage_percent=50.0, resets_at=datetime(2026, 4, 13, tzinfo=UTC), tokens_used=500, tokens_limit=1000),
-            UsageWindow(window_type="monthly", usage_percent=10.0, resets_at=datetime(2026, 5, 1, tzinfo=UTC)),
+            UsageWindow(
+                window_type="daily",
+                usage_percent=50.0,
+                resets_at=datetime(2026, 4, 13, tzinfo=UTC),
+                tokens_used=500,
+                tokens_limit=1000,
+            ),
+            UsageWindow(
+                window_type="monthly",
+                usage_percent=10.0,
+                resets_at=datetime(2026, 5, 1, tzinfo=UTC),
+            ),
         ]
         await repo.put_snapshot("bkd-test1", windows)
 
@@ -61,8 +70,16 @@ async def test_put_and_get_snapshots_fake():
 
     repo = await storage.usage()
     windows = [
-        UsageWindow(window_type="daily", usage_percent=50.0, resets_at=datetime(2026, 4, 13, tzinfo=UTC), tokens_used=500, tokens_limit=1000),
-        UsageWindow(window_type="monthly", usage_percent=10.0, resets_at=datetime(2026, 5, 1, tzinfo=UTC)),
+        UsageWindow(
+            window_type="daily",
+            usage_percent=50.0,
+            resets_at=datetime(2026, 4, 13, tzinfo=UTC),
+            tokens_used=500,
+            tokens_limit=1000,
+        ),
+        UsageWindow(
+            window_type="monthly", usage_percent=10.0, resets_at=datetime(2026, 5, 1, tzinfo=UTC)
+        ),
     ]
     await repo.put_snapshot("bkd-test1", windows)
 
@@ -88,8 +105,12 @@ async def test_get_latest_deduplicates_sqlite(tmp_path: Path):
         await _seed_backend(storage)
 
         repo = await storage.usage()
-        await repo.put_snapshot("bkd-test1", [UsageWindow(window_type="daily", usage_percent=20.0, resets_at=None)])
-        await repo.put_snapshot("bkd-test1", [UsageWindow(window_type="daily", usage_percent=80.0, resets_at=None)])
+        await repo.put_snapshot(
+            "bkd-test1", [UsageWindow(window_type="daily", usage_percent=20.0, resets_at=None)]
+        )
+        await repo.put_snapshot(
+            "bkd-test1", [UsageWindow(window_type="daily", usage_percent=80.0, resets_at=None)]
+        )
 
         result = await repo.get_latest_snapshots("bkd-test1")
         assert len(result) == 1
@@ -104,8 +125,12 @@ async def test_get_latest_deduplicates_fake():
     await _seed_backend(storage)
 
     repo = await storage.usage()
-    await repo.put_snapshot("bkd-test1", [UsageWindow(window_type="daily", usage_percent=20.0, resets_at=None)])
-    await repo.put_snapshot("bkd-test1", [UsageWindow(window_type="daily", usage_percent=80.0, resets_at=None)])
+    await repo.put_snapshot(
+        "bkd-test1", [UsageWindow(window_type="daily", usage_percent=20.0, resets_at=None)]
+    )
+    await repo.put_snapshot(
+        "bkd-test1", [UsageWindow(window_type="daily", usage_percent=80.0, resets_at=None)]
+    )
 
     result = await repo.get_latest_snapshots("bkd-test1")
     assert len(result) == 1
@@ -288,13 +313,17 @@ async def test_set_chain_replaces_previous_sqlite(tmp_path: Path):
         await _seed_backend(storage, "bkd-test2")
 
         repo = await storage.usage()
-        await repo.set_chain([
-            FallbackChainEntry(backend_id="bkd-test1", priority=1),
-            FallbackChainEntry(backend_id="bkd-test2", priority=2),
-        ])
-        await repo.set_chain([
-            FallbackChainEntry(backend_id="bkd-test2", priority=1),
-        ])
+        await repo.set_chain(
+            [
+                FallbackChainEntry(backend_id="bkd-test1", priority=1),
+                FallbackChainEntry(backend_id="bkd-test2", priority=2),
+            ]
+        )
+        await repo.set_chain(
+            [
+                FallbackChainEntry(backend_id="bkd-test2", priority=1),
+            ]
+        )
 
         chain = await repo.get_chain()
         assert len(chain) == 1
@@ -310,13 +339,17 @@ async def test_set_chain_replaces_previous_fake():
     await _seed_backend(storage, "bkd-test2")
 
     repo = await storage.usage()
-    await repo.set_chain([
-        FallbackChainEntry(backend_id="bkd-test1", priority=1),
-        FallbackChainEntry(backend_id="bkd-test2", priority=2),
-    ])
-    await repo.set_chain([
-        FallbackChainEntry(backend_id="bkd-test2", priority=1),
-    ])
+    await repo.set_chain(
+        [
+            FallbackChainEntry(backend_id="bkd-test1", priority=1),
+            FallbackChainEntry(backend_id="bkd-test2", priority=2),
+        ]
+    )
+    await repo.set_chain(
+        [
+            FallbackChainEntry(backend_id="bkd-test2", priority=1),
+        ]
+    )
 
     chain = await repo.get_chain()
     assert len(chain) == 1

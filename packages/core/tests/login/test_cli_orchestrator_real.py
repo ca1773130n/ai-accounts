@@ -1,7 +1,6 @@
 import shutil
 
 import pytest
-
 from ai_accounts_core.login.cli_orchestrator import CliOrchestrator
 
 

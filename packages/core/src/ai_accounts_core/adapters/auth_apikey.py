@@ -36,7 +36,7 @@ class ApiKeyAuth:
             return None
         if not header.lower().startswith(_PREFIX):
             return None
-        presented = header[len(_PREFIX):]
+        presented = header[len(_PREFIX) :]
         if not hmac.compare_digest(presented, self._token):
             return None
         return self._principal

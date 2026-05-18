@@ -2,22 +2,21 @@ import asyncio
 import logging
 from typing import Any
 
-from litestar import Litestar, get
-from litestar.config.cors import CORSConfig
-from litestar.di import Provide
-
 from ai_accounts_core import __version__ as core_version
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.login.registry import LoginSessionRegistry
 from ai_accounts_core.metadata import BackendRegistry
 from ai_accounts_core.services.accounts import AccountService
-from ai_accounts_core.services.errors import ServiceError
 from ai_accounts_core.services.chat import ChatService
+from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
 from ai_accounts_core.services.chat_state import ChatStateService
+from ai_accounts_core.services.errors import ServiceError
 from ai_accounts_core.services.onboarding import OnboardingService
 from ai_accounts_core.services.pty import PtyService
-from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
 from ai_accounts_core.services.scheduler import AccountScheduler
+from litestar import Litestar, get
+from litestar.config.cors import CORSConfig
+from litestar.di import Provide
 
 from .auth_middleware import AuthMiddleware
 from .config import AiAccountsConfig
@@ -34,7 +33,6 @@ from .routes.models import ModelsController
 from .routes.onboarding import OnboardingController
 from .routes.pty_ws import PtyController, pty_websocket
 from .routes.scheduler import SchedulerController
-
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +71,7 @@ def _enforce_production_guards(config: AiAccountsConfig) -> None:
 
     vault_cls = type(config.vault).__name__
     if "Fake" in vault_cls:
-        violations.append(
-            f"vault is a test fake ({vault_cls}); use EnvKeyVault or a KMS adapter"
-        )
+        violations.append(f"vault is a test fake ({vault_cls}); use EnvKeyVault or a KMS adapter")
 
     if config.auth is None:
         violations.append("auth is unset; configure ApiKeyAuth or an OIDC adapter")
@@ -90,8 +86,7 @@ def _enforce_production_guards(config: AiAccountsConfig) -> None:
 
     if violations:
         raise RuntimeError(
-            "ai-accounts refuses to start in production mode:\n  - "
-            + "\n  - ".join(violations)
+            "ai-accounts refuses to start in production mode:\n  - " + "\n  - ".join(violations)
         )
 
 
@@ -113,18 +108,10 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         accounts=account_service,
         backend_kinds=tuple(impls.keys()),
     )
-    chat_service = ChatService(
-        account_service=account_service, storage=config.storage
-    )
-    pty_service = PtyService(
-        account_service=account_service, storage=config.storage
-    )
-    scheduler = AccountScheduler(
-        account_service=account_service, storage=config.storage
-    )
-    orchestrator = ChatOrchestrator(
-        chat_service=chat_service, scheduler=scheduler
-    )
+    chat_service = ChatService(account_service=account_service, storage=config.storage)
+    pty_service = PtyService(account_service=account_service, storage=config.storage)
+    scheduler = AccountScheduler(account_service=account_service, storage=config.storage)
+    orchestrator = ChatOrchestrator(chat_service=chat_service, scheduler=scheduler)
     chat_state = ChatStateService()
 
     backend_registry = BackendRegistry()

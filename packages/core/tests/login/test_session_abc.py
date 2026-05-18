@@ -2,7 +2,6 @@ import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
-
 from ai_accounts_core.login.events import (
     LoginComplete,
     LoginEvent,

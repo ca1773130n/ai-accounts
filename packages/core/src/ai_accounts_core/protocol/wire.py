@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 import msgspec
 
@@ -22,9 +22,7 @@ class SessionEndEvent(
     reason: str | None = None
 
 
-class ChatTokenEvent(
-    msgspec.Struct, tag="chat_token", tag_field="type", frozen=True, kw_only=True
-):
+class ChatTokenEvent(msgspec.Struct, tag="chat_token", tag_field="type", frozen=True, kw_only=True):
     protocol_version: int = WIRE_PROTOCOL_VERSION
     session_id: str
     token: str
@@ -40,35 +38,27 @@ class ChatToolCallEvent(
     arguments: str
 
 
-class ChatDoneEvent(
-    msgspec.Struct, tag="chat_done", tag_field="type", frozen=True, kw_only=True
-):
+class ChatDoneEvent(msgspec.Struct, tag="chat_done", tag_field="type", frozen=True, kw_only=True):
     protocol_version: int = WIRE_PROTOCOL_VERSION
     session_id: str
     tokens_in: int | None = None
     tokens_out: int | None = None
 
 
-class PtyOutputEvent(
-    msgspec.Struct, tag="pty_output", tag_field="type", frozen=True, kw_only=True
-):
+class PtyOutputEvent(msgspec.Struct, tag="pty_output", tag_field="type", frozen=True, kw_only=True):
     protocol_version: int = WIRE_PROTOCOL_VERSION
     session_id: str
     data: bytes
 
 
-class PtyResizeEvent(
-    msgspec.Struct, tag="pty_resize", tag_field="type", frozen=True, kw_only=True
-):
+class PtyResizeEvent(msgspec.Struct, tag="pty_resize", tag_field="type", frozen=True, kw_only=True):
     protocol_version: int = WIRE_PROTOCOL_VERSION
     session_id: str
     cols: int
     rows: int
 
 
-class PtyExitEvent(
-    msgspec.Struct, tag="pty_exit", tag_field="type", frozen=True, kw_only=True
-):
+class PtyExitEvent(msgspec.Struct, tag="pty_exit", tag_field="type", frozen=True, kw_only=True):
     protocol_version: int = WIRE_PROTOCOL_VERSION
     session_id: str
     exit_code: int
@@ -82,17 +72,7 @@ class ErrorEvent(msgspec.Struct, tag="error", tag_field="type", frozen=True, kw_
 
 
 WireEvent = Annotated[
-    Union[
-        SessionStartEvent,
-        SessionEndEvent,
-        ChatTokenEvent,
-        ChatToolCallEvent,
-        ChatDoneEvent,
-        PtyOutputEvent,
-        PtyResizeEvent,
-        PtyExitEvent,
-        ErrorEvent,
-    ],
+    SessionStartEvent | SessionEndEvent | ChatTokenEvent | ChatToolCallEvent | ChatDoneEvent | PtyOutputEvent | PtyResizeEvent | PtyExitEvent | ErrorEvent,
     msgspec.Meta(description="Tagged union of all events flowing between server and client"),
 ]
 

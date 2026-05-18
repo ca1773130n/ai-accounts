@@ -121,10 +121,8 @@ async def _run_probe(
         return False, f"spawn failed: {os_err}"
 
     try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=probe_timeout
-        )
-    except asyncio.TimeoutError:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=probe_timeout)
+    except TimeoutError:
         try:
             proc.kill()
             await proc.wait()
@@ -154,7 +152,7 @@ def _suggested_name(kind: str, path: Path) -> str:
         return f"{kind} (default)"
     prefix = f"{kind}-"
     if stripped.startswith(prefix):
-        return stripped[len(prefix):]
+        return stripped[len(prefix) :]
     return stripped
 
 
@@ -168,9 +166,7 @@ def _glob_candidates(kind: str) -> list[Path]:
     return [p for p in candidates if p.is_dir()]
 
 
-async def discover_for_kind(
-    kind: str, *, probe_timeout: float = 12.0
-) -> list[DiscoveredConfig]:
+async def discover_for_kind(kind: str, *, probe_timeout: float = 12.0) -> list[DiscoveredConfig]:
     """Discover + probe all candidates for one backend kind in parallel."""
     candidates = _glob_candidates(kind)
     if not candidates:
@@ -189,9 +185,7 @@ async def discover_for_kind(
     return list(await asyncio.gather(*[_one(p) for p in candidates]))
 
 
-async def discover_all(
-    kinds: list[str], *, probe_timeout: float = 12.0
-) -> list[DiscoveredConfig]:
+async def discover_all(kinds: list[str], *, probe_timeout: float = 12.0) -> list[DiscoveredConfig]:
     """Run discovery across multiple kinds in parallel. Skips unknown kinds."""
     known = [k for k in kinds if k in _HOME_GLOB]
     if not known:

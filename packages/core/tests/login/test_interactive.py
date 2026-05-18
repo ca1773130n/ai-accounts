@@ -12,7 +12,6 @@ from ai_accounts_core.login.events import (
     LoginComplete,
     LoginEvent,
     ProgressUpdate,
-    StdoutChunk,
     UrlPrompt,
 )
 from ai_accounts_core.login.interactive import run_interactive_cli_login
@@ -89,14 +88,16 @@ async def _collect(
 
 async def test_sends_action_after_idle():
     """After REPL idle, the action command (/login) is written."""
-    orch = MockOrchestrator([
-        # Some initial output so recent_lines is non-empty
-        (0.0, "Welcome to Claude\n"),
-        # Then idle ticks exceeding repl_idle_trigger_seconds
-        (0.15, None),
-        (0.15, None),
-        # EOF
-    ])
+    orch = MockOrchestrator(
+        [
+            # Some initial output so recent_lines is non-empty
+            (0.0, "Welcome to Claude\n"),
+            # Then idle ticks exceeding repl_idle_trigger_seconds
+            (0.15, None),
+            (0.15, None),
+            # EOF
+        ]
+    )
     await _collect(orch, action_command="/login")
     assert any(b"/login\r" in w for w in orch._writes), (
         f"expected /login\\r in writes, got {orch._writes}"
@@ -113,12 +114,14 @@ async def test_detects_menu_and_yields_menu_prompt():
 
     # All menu lines in one chunk so parse_menu_options sees all 3 at once
     menu_block = "❯ 1. Dark mode\n  2. Light mode\n  3. High contrast\n"
-    orch = MockOrchestrator([
-        (0.0, menu_block),
-        # idle after menu
-        (0.15, None),
-        # EOF
-    ])
+    orch = MockOrchestrator(
+        [
+            (0.0, menu_block),
+            # idle after menu
+            (0.15, None),
+            # EOF
+        ]
+    )
     events = await _collect(orch, answers=answers, action_command="/login")
     menu_prompts = [e for e in events if isinstance(e, MenuPrompt)]
     assert len(menu_prompts) >= 1, f"expected MenuPrompt, got events: {events}"
@@ -138,11 +141,13 @@ async def test_navigates_menu_via_arrow_keys():
     await answers.put(PromptAnswer(prompt_id="any", answer="3"))
 
     menu_block = "❯ 1. Dark mode\n  2. Light mode\n  3. High contrast\n"
-    orch = MockOrchestrator([
-        (0.0, menu_block),
-        (0.15, None),
-        # EOF
-    ])
+    orch = MockOrchestrator(
+        [
+            (0.0, menu_block),
+            (0.15, None),
+            # EOF
+        ]
+    )
     await _collect(orch, answers=answers, action_command="/login")
     # send_menu_selection(2) -> 2x down-arrow + enter
     assert orch._menu_selections == [2], f"expected [2], got {orch._menu_selections}"
@@ -154,13 +159,15 @@ async def test_navigates_menu_via_arrow_keys():
 
 async def test_emits_url_prompt_after_action():
     """A URL in output after action command yields a UrlPrompt."""
-    orch = MockOrchestrator([
-        (0.0, "Welcome\n"),
-        (0.15, None),  # idle triggers /login
-        (0.15, None),
-        (0.0, "Visit https://accounts.google.com/o/oauth2/auth?code=abc to login\n"),
-        # EOF
-    ])
+    orch = MockOrchestrator(
+        [
+            (0.0, "Welcome\n"),
+            (0.15, None),  # idle triggers /login
+            (0.15, None),
+            (0.0, "Visit https://accounts.google.com/o/oauth2/auth?code=abc to login\n"),
+            # EOF
+        ]
+    )
     events = await _collect(orch, action_command="/login")
     url_prompts = [e for e in events if isinstance(e, UrlPrompt)]
     assert len(url_prompts) == 1
@@ -169,11 +176,13 @@ async def test_emits_url_prompt_after_action():
 
 async def test_force_completes_on_success_idle():
     """Success marker + idle grace period yields LoginComplete."""
-    orch = MockOrchestrator([
-        (0.0, "Authentication successful\n"),
-        (0.15, None),
-        (0.15, None),
-    ])
+    orch = MockOrchestrator(
+        [
+            (0.0, "Authentication successful\n"),
+            (0.15, None),
+            (0.15, None),
+        ]
+    )
     events = await _collect(orch, action_command=None)
     assert any(isinstance(e, LoginComplete) for e in events), (
         f"expected LoginComplete, got {[type(e).__name__ for e in events]}"
@@ -182,9 +191,11 @@ async def test_force_completes_on_success_idle():
 
 async def test_emits_progress_update_immediately():
     """The very first event yielded is a ProgressUpdate."""
-    orch = MockOrchestrator([
-        (0.0, "Hello\n"),
-    ])
+    orch = MockOrchestrator(
+        [
+            (0.0, "Hello\n"),
+        ]
+    )
     events = await _collect(orch, action_command=None)
     assert len(events) >= 1
     assert isinstance(events[0], ProgressUpdate), (

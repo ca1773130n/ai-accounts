@@ -18,7 +18,6 @@ from pathlib import Path
 import httpx
 import msgspec
 
-
 _CLIPROXY_BINARY = "cliproxyapi"
 _CLIPROXY_INSTALL_COMMANDS = [
     ["go", "install", "github.com/router-for-me/CLIProxyAPI/cmd/server@latest"],
@@ -124,11 +123,7 @@ def _make_fake_open_dir() -> Path:
     """Create a temp dir with a fake ``open`` that writes its URL argument."""
     tmp = Path(tempfile.mkdtemp(prefix="aia-cliproxy-"))
     fake_open = tmp / "open"
-    fake_open.write_text(
-        '#!/bin/sh\n'
-        'echo "$1" > "$(dirname "$0")/captured.url"\n'
-        'exit 0\n'
-    )
+    fake_open.write_text('#!/bin/sh\necho "$1" > "$(dirname "$0")/captured.url"\nexit 0\n')
     fake_open.chmod(fake_open.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     xdg = tmp / "xdg-open"
     xdg.symlink_to(fake_open)
@@ -201,7 +196,7 @@ async def start_cliproxy_login(
 
         try:
             line = await asyncio.wait_for(proc.stdout.readline(), timeout=0.3)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             continue
         if not line:
             break
@@ -287,6 +282,7 @@ async def forward_cliproxy_callback(callback_url: str) -> dict:
         return {"status": "error", "message": "callback path contains traversal"}
     # Split into segments and refuse "." / ".." or empty segments mid-path.
     from pathlib import PurePosixPath as _Path
+
     parts = _Path(raw_path).parts
     if any(p in ("..", ".") for p in parts):
         return {"status": "error", "message": "callback path contains traversal"}
@@ -374,7 +370,8 @@ async def cliproxy_list_models(kind: str) -> list[dict[str, object]] | None:
     if not isinstance(items, list):
         return None
     filtered = [
-        m for m in items
+        m
+        for m in items
         if isinstance(m, dict) and m.get("owned_by") == expected_owner and m.get("id")
     ]
     # Best-effort: persist successful results so subsequent offline calls
@@ -477,10 +474,7 @@ def write_cliproxy_config(port: int = 8317, api_key: str = "not-needed") -> Path
     auth_dir = _CLIPROXY_CONFIG.parent
     auth_dir.mkdir(parents=True, exist_ok=True)
     _CLIPROXY_CONFIG.write_text(
-        f"port: {port}\n"
-        f'auth-dir: "{auth_dir}"\n'
-        f"api-keys:\n"
-        f'  - "{api_key}"\n'
+        f'port: {port}\nauth-dir: "{auth_dir}"\napi-keys:\n  - "{api_key}"\n'
     )
     return _CLIPROXY_CONFIG
 
@@ -501,7 +495,12 @@ def start_cliproxy_server(
     import time as _time
 
     if not is_cliproxy_installed():
-        return {"status": "error", "port": port, "pid": None, "message": "cliproxyapi not installed"}
+        return {
+            "status": "error",
+            "port": port,
+            "pid": None,
+            "message": "cliproxyapi not installed",
+        }
 
     write_cliproxy_config(port, api_key)
 
@@ -519,7 +518,12 @@ def start_cliproxy_server(
             start_new_session=True,
         )
     except FileNotFoundError:
-        return {"status": "error", "port": port, "pid": None, "message": "cliproxyapi binary not found"}
+        return {
+            "status": "error",
+            "port": port,
+            "pid": None,
+            "message": "cliproxyapi binary not found",
+        }
     except Exception as exc:
         return {"status": "error", "port": port, "pid": None, "message": str(exc)}
 
@@ -528,7 +532,12 @@ def start_cliproxy_server(
         if _check_healthy(port, api_key):
             stderr_file.close()
             stderr_path.unlink(missing_ok=True)
-            return {"status": "ok", "port": port, "pid": proc.pid, "message": f"started on port {port}"}
+            return {
+                "status": "ok",
+                "port": port,
+                "pid": proc.pid,
+                "message": f"started on port {port}",
+            }
         _time.sleep(0.5)
 
     # Timeout — capture stderr for diagnostics

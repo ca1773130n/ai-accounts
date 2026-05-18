@@ -1,5 +1,4 @@
 import pytest
-
 from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.pty import PtyService
 from ai_accounts_core.testing.fakes import FakeBackend, FakeStorage, FakeVault

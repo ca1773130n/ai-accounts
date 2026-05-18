@@ -3,13 +3,12 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from litestar.testing import AsyncTestClient
-
 from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.testing import FakeBackend, FakeVault
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
+from litestar.testing import AsyncTestClient
 
 
 @pytest_asyncio.fixture
@@ -30,9 +29,7 @@ async def client(tmp_path: Path) -> AsyncIterator[AsyncTestClient]:
 
 @pytest.mark.asyncio
 async def test_begin_returns_session_id(client: AsyncTestClient):
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "t"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "t"})
     backend_id = r.json()["id"]
 
     begin = await client.post(
@@ -54,9 +51,7 @@ async def test_begin_unknown_backend_returns_404(client: AsyncTestClient):
 
 @pytest.mark.asyncio
 async def test_begin_unsupported_flow_returns_400(client: AsyncTestClient):
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "t"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "t"})
     backend_id = r.json()["id"]
     begin = await client.post(
         f"/api/v1/backends/{backend_id}/login/begin",
@@ -67,9 +62,7 @@ async def test_begin_unsupported_flow_returns_400(client: AsyncTestClient):
 
 @pytest.mark.asyncio
 async def test_respond_unknown_session_returns_404(client: AsyncTestClient):
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "t"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "t"})
     backend_id = r.json()["id"]
     resp = await client.post(
         f"/api/v1/backends/{backend_id}/login/respond",
@@ -80,9 +73,7 @@ async def test_respond_unknown_session_returns_404(client: AsyncTestClient):
 
 @pytest.mark.asyncio
 async def test_cancel_unknown_session_is_idempotent(client: AsyncTestClient):
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "t"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "t"})
     backend_id = r.json()["id"]
     cancel = await client.post(
         f"/api/v1/backends/{backend_id}/login/cancel",
@@ -94,9 +85,7 @@ async def test_cancel_unknown_session_is_idempotent(client: AsyncTestClient):
 @pytest.mark.asyncio
 async def test_begin_then_cancel_returns_204(client: AsyncTestClient):
     """Begin a login session and immediately cancel it without responding."""
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "t"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "t"})
     backend_id = r.json()["id"]
 
     begin = await client.post(
@@ -122,9 +111,7 @@ async def test_begin_then_respond_drives_session(client: AsyncTestClient):
     correctly reach the session via the registry without needing to
     consume the SSE stream (which is finicky under AsyncTestClient).
     """
-    r = await client.post(
-        "/api/v1/backends/", json={"kind": "fake", "display_name": "t"}
-    )
+    r = await client.post("/api/v1/backends/", json={"kind": "fake", "display_name": "t"})
     backend_id = r.json()["id"]
 
     begin = await client.post(

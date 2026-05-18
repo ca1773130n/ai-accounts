@@ -64,7 +64,9 @@ def cached_live(provider: str) -> list[Model] | None:
             Model(
                 id=mid,
                 display_name=str(m.get("display_name") or mid),
-                context_window=m.get("context_window") if isinstance(m.get("context_window"), int) else None,
+                context_window=m.get("context_window")
+                if isinstance(m.get("context_window"), int)
+                else None,
             )
         )
     return out or None
@@ -118,7 +120,9 @@ _STATIC_CLAUDE: tuple[Model, ...] = (
     Model(id="claude-opus-4-5-20251101", display_name="Claude Opus 4.5", context_window=200_000),
     Model(id="claude-sonnet-4-7", display_name="Claude Sonnet 4.7", context_window=1_000_000),
     Model(id="claude-sonnet-4-6", display_name="Claude Sonnet 4.6", context_window=1_000_000),
-    Model(id="claude-sonnet-4-5-20250929", display_name="Claude Sonnet 4.5", context_window=1_000_000),
+    Model(
+        id="claude-sonnet-4-5-20250929", display_name="Claude Sonnet 4.5", context_window=1_000_000
+    ),
     Model(id="claude-haiku-4-5-20251001", display_name="Claude Haiku 4.5", context_window=200_000),
 )
 

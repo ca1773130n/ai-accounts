@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 
 import pytest
-
 from ai_accounts_core.backends.codex import CodexBackend
 from ai_accounts_core.domain.chat import ChatMessage, ChatRole
 from ai_accounts_core.protocols.backend import ChatRequest, ChatStreamEvent

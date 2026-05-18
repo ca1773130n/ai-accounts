@@ -1,5 +1,4 @@
 import msgspec
-
 from ai_accounts_core.metadata.types import (
     BackendMetadata,
     InstallCheck,
