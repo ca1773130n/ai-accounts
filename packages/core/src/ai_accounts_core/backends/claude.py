@@ -58,6 +58,206 @@ _CLAUDE_CONSOLE_URL_RE = re.compile(
 )
 
 
+def _parse_keychain_claude_items(dump_output: str) -> list[tuple[str, str | None]]:
+    """Parse `security dump-keychain` output into ``[(service, account)]``
+    tuples for every ``genp`` item whose service name starts with
+    ``Claude Code-credentials-``.
+
+    Why a parser (rather than regex on svce alone): macOS keychain can
+    contain MULTIPLE items with the same service name but different
+    accounts — most commonly when the Sentry MCP plugin's OAuth flow
+    creates an ``acct="unknown"`` orphan alongside the real Claude
+    account's ``acct="neo"`` entry. ``security find-generic-password
+    -s SVC -w`` returns the FIRST match (often the orphan) which has no
+    ``claudeAiOauth`` field — making the probe falsely report "not
+    signed in" even though the real credential is sitting right next
+    to it. To fix this we need both fields so we can ask for the
+    specific item via ``-a``.
+
+    Returned list preserves keychain ordering and may contain
+    duplicates (same service, same account) — caller should dedup if
+    that matters. Account is ``None`` when the item has no ``acct``
+    attribute (rare; pass-through to ``find-generic-password`` will
+    use the implicit default).
+    """
+    items: list[tuple[str, str | None]] = []
+    current_service: str | None = None
+    current_account: str | None = None
+    for line in dump_output.splitlines():
+        # Each genp item block starts with `keychain:` then attributes.
+        # We don't need to track block boundaries strictly — collecting
+        # the most-recent svce+acct seen and emitting when svce changes
+        # is enough because each block has at most one of each field.
+        if 'class: "genp"' in line:
+            # Reset on new genp item; this is the cleanest delimiter.
+            current_service = None
+            current_account = None
+            continue
+        m_svc = re.search(r'"svce"<blob>="(Claude Code-credentials-[^"]+)"', line)
+        if m_svc:
+            current_service = m_svc.group(1)
+            continue
+        m_acc = re.search(r'"acct"<blob>="([^"]*)"', line)
+        if m_acc:
+            current_account = m_acc.group(1)
+        # Emit when we have both — the keychain dump always lists svce
+        # before acct for a given item, so by the time acct lands we
+        # have a complete pair. Subsequent acct lines for the same item
+        # (rare) would overwrite; that's fine for our use case.
+        if current_service is not None and current_account is not None:
+            items.append((current_service, current_account))
+            # Don't reset — a duplicate emit on a second acct line is
+            # benign; the class:"genp" guard above resets on next item.
+    return items
+
+
+def _expected_claude_keychain_service(config_dir: Path) -> str:
+    """Return the keychain service name the Claude CLI uses for
+    credentials at ``config_dir``.
+
+    Format observed empirically: ``Claude Code-credentials-<hex8>`` where
+    ``hex8`` is the first 8 hex chars of ``sha256(resolved_config_dir)``.
+    Confirmed against real keychain entries: sha256('/Users/neo/.claude-
+    personal1')[:8] == '784b7f43' and sha256('/Users/neo/.claude-personal2')
+    [:8] == 'd552d744' — both matched live items.
+    """
+    import hashlib
+    resolved = str(Path(config_dir).expanduser().resolve())
+    h = hashlib.sha256(resolved.encode()).hexdigest()[:8]
+    return f"Claude Code-credentials-{h}"
+
+
+async def claude_is_logged_in_via_macos_keychain(
+    config_dir: Path | None = None,
+    *,
+    overall_timeout: float = 8.0,
+) -> bool:
+    """Return True iff macOS keychain has a non-empty,
+    not-yet-expired ``claudeAiOauth.accessToken`` for ``config_dir``
+    (or for any Claude Code config when ``config_dir`` is None).
+
+    Used by the discovery probe as a fast, free, side-effect-free
+    alternative to ``claude -p hello`` — which costs upstream tokens,
+    can take up to ~12s, and (critically) can falsely report "not
+    signed in" when the keychain has a duplicate item with the same
+    service name (e.g. MCP plugin OAuth orphan). This direct check
+    enumerates ALL items with the expected service name and probes
+    each with ``-a <account>`` so duplicates are correctly
+    disambiguated.
+
+    The whole call is wrapped in ``asyncio.wait_for(timeout=
+    overall_timeout)`` because the inner per-item ``find-generic-
+    password`` calls are sequential — a user with many keychain
+    entries could otherwise block discovery for tens of seconds. On
+    timeout we return False (caller falls back to the subprocess
+    probe).
+
+    Tokens whose ``expiresAt`` (epoch milliseconds, as written by
+    Claude Code) is already past are treated as not-logged-in — they
+    would just 401 on first use and pollute the freshly-imported
+    backend with an immediate ERROR status.
+
+    Returns False on any platform other than macOS.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        return await asyncio.wait_for(
+            _claude_keychain_walk(config_dir),
+            timeout=overall_timeout,
+        )
+    except TimeoutError:
+        logger.debug(
+            "claude_is_logged_in_via_macos_keychain: exceeded %.1fs "
+            "overall budget — caller should fall back to subprocess probe",
+            overall_timeout,
+        )
+        return False
+
+
+async def _claude_keychain_walk(config_dir: Path | None) -> bool:
+    """Inner body of :func:`claude_is_logged_in_via_macos_keychain` —
+    factored out so the public function can wrap it in a single
+    overall ``asyncio.wait_for``.
+    """
+    import time as _time
+    try:
+        dump = await asyncio.to_thread(
+            subprocess.run,
+            ["security", "dump-keychain"],
+            capture_output=True,
+            timeout=10,
+            text=True,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        logger.debug("security dump-keychain failed: %r", exc)
+        return False
+    if dump.returncode != 0:
+        return False
+    items = _parse_keychain_claude_items(dump.stdout)
+    if not items:
+        return False
+    if config_dir is not None:
+        expected = _expected_claude_keychain_service(config_dir)
+        items = [it for it in items if it[0] == expected]
+        if not items:
+            return False
+    # Dedup (service, account) pairs so the same item isn't probed
+    # twice (e.g. duplicate emit from the parser's fall-through).
+    seen: set[tuple[str, str | None]] = set()
+    deduped = [it for it in items if not (it in seen or seen.add(it))]
+    # Claude Code writes expiresAt as epoch milliseconds — compare
+    # against now-ms with a small skew tolerance so a token expiring
+    # in the next 60s is also rejected (it would 401 by the time the
+    # caller actually uses it).
+    now_ms = int(_time.time() * 1000)
+    skew_ms = 60_000
+    for service, account in deduped:
+        argv = ["security", "find-generic-password", "-s", service, "-w"]
+        if account is not None:
+            argv = [
+                "security", "find-generic-password",
+                "-s", service, "-a", account, "-w",
+            ]
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                argv,
+                capture_output=True,
+                timeout=5,
+                text=True,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            logger.debug(
+                "find-generic-password -s %s -a %s failed: %r",
+                service, account, exc,
+            )
+            continue
+        if proc.returncode != 0 or not proc.stdout.strip():
+            continue
+        try:
+            data = json.loads(proc.stdout.strip())
+        except json.JSONDecodeError:
+            continue
+        inner = data.get("claudeAiOauth") if isinstance(data, dict) else None
+        if not isinstance(inner, dict):
+            continue
+        token = inner.get("accessToken")
+        if not isinstance(token, str) or not token:
+            continue
+        expires_at = inner.get("expiresAt")
+        if isinstance(expires_at, (int, float)) and expires_at > 0:
+            if expires_at - skew_ms <= now_ms:
+                logger.debug(
+                    "claude keychain item %s/%s has expired accessToken "
+                    "(expiresAt=%s, now=%s) — treating as not logged in",
+                    service, account, expires_at, now_ms,
+                )
+                continue
+        return True
+    return False
+
+
 class _ClaudeCliBrowserSession(LoginSession):
     """Interactive ``claude`` login session.
 
@@ -500,18 +700,36 @@ class ClaudeBackend(CliBackendBase):
             return None
         if dump.returncode != 0:
             return None
-        services = re.findall(r'"svce"<blob>="(Claude Code-credentials-[^"]+)"', dump.stdout)
-        for service in services:
+        # Use the structured parser instead of a bare svce regex so that
+        # when two genp items share a service name (e.g. an MCP plugin
+        # OAuth orphan stored next to the real Claude account entry)
+        # we can disambiguate via `-a <account>` rather than always
+        # getting `find-generic-password`'s first match — which was
+        # silently returning the orphan's password (no `claudeAiOauth`)
+        # and making this sweep falsely report "no token".
+        items = _parse_keychain_claude_items(dump.stdout)
+        seen: set[tuple[str, str | None]] = set()
+        deduped = [it for it in items if not (it in seen or seen.add(it))]
+        for service, account in deduped:
+            argv = ["security", "find-generic-password", "-s", service, "-w"]
+            if account is not None:
+                argv = [
+                    "security", "find-generic-password",
+                    "-s", service, "-a", account, "-w",
+                ]
             try:
                 proc = await asyncio.to_thread(
                     subprocess.run,
-                    ["security", "find-generic-password", "-s", service, "-w"],
+                    argv,
                     capture_output=True,
                     timeout=5,
                     text=True,
                 )
             except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
-                logger.debug("find-generic-password %s failed: %r", service, exc)
+                logger.debug(
+                    "find-generic-password -s %s -a %s failed: %r",
+                    service, account, exc,
+                )
                 continue
             if proc.returncode != 0 or not proc.stdout.strip():
                 continue

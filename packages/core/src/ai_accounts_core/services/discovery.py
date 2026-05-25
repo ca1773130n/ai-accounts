@@ -92,6 +92,44 @@ class DiscoveredConfig:
     backend_id: str | None = None
 
 
+async def _claude_keychain_quick_check(config_path: Path) -> bool | None:
+    """Fast pre-check for Claude on macOS: ask the keychain directly
+    whether ``config_path`` has a valid OAuth token.
+
+    Returns:
+        ``True``  — keychain has a non-empty ``claudeAiOauth.accessToken``
+                    for this config_dir; caller can skip the subprocess
+                    probe entirely.
+        ``False`` — definitively not logged in via keychain.
+        ``None``  — non-macOS or keychain dump unavailable; caller
+                    should fall back to the subprocess probe.
+
+    Why this exists: ``claude -p hello`` costs upstream tokens, takes
+    up to ~12s, and is a false-negative magnet when the keychain has
+    a duplicate item with the same service name (e.g. an orphan MCP
+    plugin OAuth entry shadowing the real Claude account credential).
+    A direct keychain read with proper account-scoped lookup costs
+    nothing and handles duplicates correctly.
+    """
+    import sys as _sys
+    if _sys.platform != "darwin":
+        return None
+    try:
+        # Import inside the function so the discovery → claude-backend
+        # dependency arrow stays one-way at module load.
+        from ai_accounts_core.backends.claude import (
+            claude_is_logged_in_via_macos_keychain,
+        )
+    except ImportError:
+        return None
+    try:
+        ok = await claude_is_logged_in_via_macos_keychain(config_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("claude keychain quick-check raised: %r", exc)
+        return None
+    return True if ok else False
+
+
 async def _run_probe(
     kind: str, config_path: Path, *, probe_timeout: float
 ) -> tuple[bool, str | None]:
@@ -100,6 +138,14 @@ async def _run_probe(
     Uses ``asyncio.create_subprocess_exec`` (argv list, no shell), so the
     config_path string cannot be used for shell injection.
     """
+    # Claude on macOS: try the keychain quick-check first. A True
+    # result skips the upstream API call entirely (cheap + reliable);
+    # a False/None result still runs the subprocess probe as a
+    # tie-breaker.
+    if kind == "claude":
+        quick = await _claude_keychain_quick_check(config_path)
+        if quick is True:
+            return True, None
     try:
         argv, env_overrides = _probe_for(kind, str(config_path))
     except ValueError as exc:
