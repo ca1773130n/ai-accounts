@@ -1,6 +1,6 @@
 [project]
 name = "ai-accounts-litestar"
-version = "0.3.13"
+version = "0.3.14"
 description = "Litestar HTTP layer for ai-accounts."
 readme = "README.md"
 license = {text = "Apache-2.0"}

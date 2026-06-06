@@ -2,6 +2,23 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.14 — 2026-06-07
+
+Login-wizard reliability: the cli_browser flow no longer hangs on "Preparing sign-in…" when the OAuth URL detection misses, plus keychain-sweep fixes.
+
+### Fixed
+
+- **cli_browser login: surface the OAuth URL reliably; fail fast instead of hanging** (`ai-accounts-core`, `login/interactive.py`). Three compounding defects left the wizard's "Preparing sign-in…" spinner up forever after answering the login-method menu: (1) the fake-browser capture file — the only channel carrying the *complete* OAuth URL — was polled only during idle ticks, which Claude 2.1.x's "Opening browser…" spinner animation starves; it is now polled on every loop iteration. (2) The TUI paints the URL with cursor-positioning escapes that `strip_ansi` renders as spaces *inside* the URL (`https://cl ud .com/…`), so the permissive generic regex emitted bare fragments like `https://cl`; generic matches must now look like a complete URL (dotted host + path). (3) A new url-wait watchdog (90 s, disabled once a URL is emitted, reset on menu/text answers) fails the session with the recent CLI output instead of spinning silently when every detector misses. (da25300)
+- **Keychain dump parser drops acct-less items** (`ai-accounts-core`, `backends/claude.py`). The 0.3.13-era disambiguating parser only emitted `(service, account)` pairs when an `acct` attribute was present — entries without one parsed to nothing and the keychain looked empty, regressing the corrupted-entry sweep. Acct-less items are now flushed as `(service, None)` at item boundaries, matching the documented contract. (e97cca1)
+- **Disambiguate duplicate Claude Code credential entries** (`ai-accounts-core`). `security find-generic-password -s SVC` returns the *first* match when two genp items share a service name (e.g. an MCP-plugin OAuth orphan next to the real account), making discovery falsely report "not signed in". The dump parser now yields svce+acct pairs so lookups are account-scoped via `-a`, with an `expiresAt` check and an overall `asyncio.wait_for` budget; the keychain quick-check also short-circuits the token-costing `claude -p hello` probe. (fb576d8)
+- **Two real bugs surfaced by ruff** — an F821 undefined name and a B023 loop-variable capture. (3a7dc1d)
+- **`just bump` re-links editable workspace packages** so the release pipeline's `uv run pytest` doesn't fail collection with stale dist-info. (e8ea975)
+
+### Changed
+
+- **Lint pass** — `ruff format` + safe auto-fixes across the Python packages, no behavior change. (70ac8c0)
+- **argv smoke test skips on a hung CLI** — a binary that can't answer `--version`/`--help` within 10 s is a broken local install, not subcommand drift; treat it like "not on PATH". (ee8d89c)
+
 ## 0.3.13 — 2026-05-19
 
 Codebase review pass: dedup the four CLI backends, unify the chat wire shape, externalize the cliproxyapi compatibility table, and add the e2e SSE test that would have caught the 0.3.9/0.3.10/0.3.12 chat regressions.
