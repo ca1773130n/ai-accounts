@@ -82,32 +82,46 @@ def _parse_keychain_claude_items(dump_output: str) -> list[tuple[str, str | None
     """
     items: list[tuple[str, str | None]] = []
     current_service: str | None = None
-    current_account: str | None = None
+    current_has_acct = False
+
+    def _flush_acctless() -> None:
+        # An item that ended (next genp block / next svce / EOF) without
+        # any acct attribute is still a real entry — emit it with
+        # account=None so the caller probes it via the implicit default.
+        # Dropping these regressed the corrupted-entry sweep: a dump
+        # whose items carry no acct lines parsed to [] and the whole
+        # keychain looked empty.
+        nonlocal current_service, current_has_acct
+        if current_service is not None and not current_has_acct:
+            items.append((current_service, None))
+        current_service = None
+        current_has_acct = False
+
     for line in dump_output.splitlines():
         # Each genp item block starts with `keychain:` then attributes.
         # We don't need to track block boundaries strictly — collecting
         # the most-recent svce+acct seen and emitting when svce changes
         # is enough because each block has at most one of each field.
         if 'class: "genp"' in line:
-            # Reset on new genp item; this is the cleanest delimiter.
-            current_service = None
-            current_account = None
+            # New genp item; this is the cleanest delimiter.
+            _flush_acctless()
             continue
         m_svc = re.search(r'"svce"<blob>="(Claude Code-credentials-[^"]+)"', line)
         if m_svc:
+            # A new svce also closes any pending acct-less item (minimal
+            # dumps — and some keychain variants — omit the class line).
+            _flush_acctless()
             current_service = m_svc.group(1)
             continue
         m_acc = re.search(r'"acct"<blob>="([^"]*)"', line)
-        if m_acc:
-            current_account = m_acc.group(1)
         # Emit when we have both — the keychain dump always lists svce
         # before acct for a given item, so by the time acct lands we
         # have a complete pair. Subsequent acct lines for the same item
-        # (rare) would overwrite; that's fine for our use case.
-        if current_service is not None and current_account is not None:
-            items.append((current_service, current_account))
-            # Don't reset — a duplicate emit on a second acct line is
-            # benign; the class:"genp" guard above resets on next item.
+        # (rare) emit again; duplicates are benign (callers dedup).
+        if m_acc and current_service is not None:
+            current_has_acct = True
+            items.append((current_service, m_acc.group(1)))
+    _flush_acctless()
     return items
 
 
