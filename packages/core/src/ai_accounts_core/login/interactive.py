@@ -23,6 +23,11 @@ because the OAuth URL never arrives until the TUI is dismissed.
    REPL into the OAuth flow after the first-run TUI is dismissed.
 6. On :data:`_LOGIN_SUCCESS_RE` match: records the timestamp and force-
    completes after ``login_success_grace_seconds`` of additional idle.
+7. On EVERY iteration (chunk or idle): polls the fake-browser capture file
+   for the complete OAuth URL — the CLI's "Opening browser…" spinner keeps
+   the PTY busy, so an idle-only check would starve — and runs the URL-wait
+   watchdog, failing the session if nothing is detected after the action
+   command instead of spinning forever.
 """
 
 from __future__ import annotations
@@ -83,6 +88,18 @@ MENU_RENDER_GRACE_SECONDS: float = 0.3
 MENU_RESPONSE_TIMEOUT: float = 300.0
 EAGER_FOLLOWUP_ENTER_SECONDS: float = 5.0
 
+# ``URL_WAIT_TIMEOUT_SECONDS`` — how long the loop may run after sending the
+#   action command without detecting a URL, a menu, a text prompt, or a
+#   success marker before failing the session. Without this, an unrecognized
+#   TUI screen (or a URL that both detectors miss) leaves the wizard on its
+#   "Preparing sign-in…" spinner *forever* — the CLI's spinner animation
+#   keeps producing output, so neither idle-detection nor EOF ever fires.
+#   The OAuth URL normally appears within ~5 s of the login-method menu;
+#   90 s is generous. NOTE: the timer is disabled once a URL is emitted —
+#   the user may legitimately take many minutes to finish OAuth in the
+#   browser. It resets whenever the user answers a menu or text prompt.
+URL_WAIT_TIMEOUT_SECONDS: float = 90.0
+
 
 # Small mutable container shared between a backend session's ``write_eager``
 # and the interactive login loop. Set ``sent=True`` immediately before writing
@@ -106,6 +123,14 @@ from ai_accounts_core.login.cli_orchestrator import (
     CliOrchestrator,
     parse_menu_options,
 )
+
+# A generic-regex match is only trusted when it looks like a *complete* URL:
+# dotted host plus a path. Claude's TUI paints the OAuth URL with cursor-
+# positioning escapes, which strip_ansi renders as spaces INSIDE the URL
+# ("https://cl ud .com/cai/oauth/…") — the permissive _URL_IN_OUTPUT_RE then
+# captures a bare fragment like "https://cl". Emitting that would open a
+# garbage tab; the complete URL arrives via the fake-browser capture instead.
+_PLAUSIBLE_URL_RE = re.compile(r"^https?://[^\s/]+\.[^\s/]+/\S+")
 
 # Text input prompts — lines ending with ">" or ":" that ask for user input.
 # Matches: "Paste code here if prompted >", "Enter the code:", "? Question:"
@@ -221,6 +246,7 @@ async def run_interactive_cli_login(
     menu_render_grace_seconds: float = MENU_RENDER_GRACE_SECONDS,
     menu_response_timeout: float = MENU_RESPONSE_TIMEOUT,
     eager_followup_enter_seconds: float = EAGER_FOLLOWUP_ENTER_SECONDS,
+    url_wait_timeout_seconds: float = URL_WAIT_TIMEOUT_SECONDS,
 ) -> AsyncIterator[LoginEvent]:
     """Drive ``orchestrator`` through an interactive CLI login flow.
 
@@ -244,6 +270,10 @@ async def run_interactive_cli_login(
     url_already_emitted = False
     pending_menu = False
     pending_menu_options_count = 0
+    # Anchor for the URL-wait watchdog: when the action was sent / the last
+    # prompt was answered. Mere stdout chunks do NOT reset it — the hang
+    # mode this guards against is a CLI spinner producing output forever.
+    watchdog_anchor = time.monotonic()
 
     # Immediate progress so the wizard transitions out of "connecting".
     yield ProgressUpdate(label=progress_label)
@@ -256,18 +286,49 @@ async def run_interactive_cli_login(
 
         now = time.monotonic()
 
+        # Check the fake-browser capture on EVERY iteration — not just idle
+        # ticks. While the CLI animates its "Opening browser…" spinner the
+        # PTY never goes idle, and the capture file (the only channel that
+        # carries the *complete* URL — stdout copies arrive fragmented by
+        # TUI cursor-positioning) would otherwise never be read.
+        if not url_already_emitted:
+            captured = orchestrator.poll_captured_oauth_url()
+            if captured:
+                url_already_emitted = True
+                logger.info(
+                    "URL detected via fake-browser capture (%s)", _safe_url_origin(captured)
+                )
+                yield UrlPrompt(prompt_id="auth", url=captured)
+
+        # URL-wait watchdog: after the action command, *something* must be
+        # detected (URL / menu / text prompt / success) within the timeout.
+        # Otherwise the CLI is sitting on a screen none of our detectors
+        # recognize and the wizard would show its spinner forever.
+        if (
+            action_sent
+            and not url_already_emitted
+            and not login_success_seen
+            and (now - watchdog_anchor) >= url_wait_timeout_seconds
+        ):
+            tail = " | ".join(ln.strip() for ln in recent_lines[-3:] if ln.strip())
+            logger.warning(
+                "url-wait watchdog fired after %.0fs; recent output: %s",
+                now - watchdog_anchor,
+                safe_log_text(tail),
+            )
+            yield LoginFailed(
+                code="url_wait_timeout",
+                message=(
+                    "The CLI did not produce a sign-in URL or prompt within "
+                    f"{int(url_wait_timeout_seconds)}s. It may be stuck on a screen "
+                    f"this wizard does not recognize. Recent CLI output: {tail}"
+                )[:300],
+            )
+            return
+
         if chunk is None:
             # Idle tick — TUI has stopped outputting.
             idle_since_last_output = now - last_output_time
-
-            # Check for OAuth URLs captured by the fake browser script.
-            # The CLI tried to open a browser on the server; the fake
-            # browser wrote the URL to a temp file instead.
-            if not url_already_emitted:
-                captured = orchestrator.poll_captured_oauth_url()
-                if captured:
-                    url_already_emitted = True
-                    yield UrlPrompt(prompt_id="auth", url=captured)
 
             # Menu detection during idle — like Agented, we only parse
             # menus after the TUI has gone quiet, ensuring all option
@@ -322,6 +383,7 @@ async def run_interactive_cli_login(
                     pending_menu = False
                     recent_lines = []
                     last_output_time = time.monotonic()
+                    watchdog_anchor = last_output_time
                     continue
 
             # Trigger action command once REPL looks idle.
@@ -338,6 +400,7 @@ async def run_interactive_cli_login(
                     action_sent = True
                     yield ProgressUpdate(label=f"Sent {action_command}")
                     last_output_time = now
+                    watchdog_anchor = now
                     continue
 
             # Force-complete after seeing a success marker + grace period.
@@ -365,6 +428,13 @@ async def run_interactive_cli_login(
                     logger.info("URL detected via backend regex (%s)", _safe_url_origin(m.group(0)))
             if m is None:
                 m = _URL_IN_OUTPUT_RE.search(chunk)
+                if m is not None and not _PLAUSIBLE_URL_RE.match(m.group(0)):
+                    # Fragment like "https://cl" — see _PLAUSIBLE_URL_RE.
+                    logger.info(
+                        "generic URL match rejected as fragment (%s)",
+                        _safe_url_origin(m.group(0)),
+                    )
+                    m = None
                 if m is not None:
                     logger.info("URL detected via generic regex (%s)", _safe_url_origin(m.group(0)))
             if m is not None:
@@ -479,6 +549,7 @@ async def run_interactive_cli_login(
 
                     recent_lines = []
                     last_output_time = time.monotonic()
+                    watchdog_anchor = last_output_time
                     break  # Only handle one prompt per chunk
 
     # Loop exit — caller wraps in try/finally to terminate + wait.

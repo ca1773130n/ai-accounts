@@ -201,3 +201,91 @@ async def test_emits_progress_update_immediately():
     assert isinstance(events[0], ProgressUpdate), (
         f"expected ProgressUpdate first, got {type(events[0]).__name__}"
     )
+
+
+class CapturingOrchestrator(MockOrchestrator):
+    """MockOrchestrator whose fake-browser capture yields a URL after N polls."""
+
+    def __init__(self, script, captured_url: str, ready_after_polls: int = 2):
+        super().__init__(script)
+        self._captured_url: str | None = captured_url
+        self._polls_until_ready = ready_after_polls
+
+    def poll_captured_oauth_url(self) -> str | None:
+        if self._captured_url is None:
+            return None
+        if self._polls_until_ready > 0:
+            self._polls_until_ready -= 1
+            return None
+        url, self._captured_url = self._captured_url, None
+        return url
+
+
+async def test_captured_url_surfaces_during_continuous_output():
+    """The fake-browser capture is read even when the CLI never goes idle.
+
+    Regression: Claude's "Opening browser to sign in…" spinner animates
+    continuously, so the PTY never produces an idle tick. The capture file
+    (the only channel carrying the COMPLETE OAuth URL) used to be polled
+    only during idle — the wizard hung on "Preparing sign-in…" forever.
+    """
+    spinner_chunks = [(0.0, f"✻ Opening browser to sign in… {i}\n") for i in range(10)]
+    orch = CapturingOrchestrator(
+        [(0.0, "Welcome\n"), (0.15, None), (0.15, None), *spinner_chunks],
+        captured_url="https://claude.com/cai/oauth/authorize?code=true&state=xyz",
+        ready_after_polls=4,
+    )
+    events = await _collect(orch, action_command="/login")
+    url_prompts = [e for e in events if isinstance(e, UrlPrompt)]
+    assert len(url_prompts) == 1, f"expected captured UrlPrompt, got {events}"
+    assert url_prompts[0].url == "https://claude.com/cai/oauth/authorize?code=true&state=xyz"
+
+
+async def test_generic_url_match_rejects_fragments():
+    """A cursor-positioning-fragmented URL must not be emitted.
+
+    strip_ansi renders the TUI's column moves as spaces inside the URL
+    ("https://cl ud .com/…"); the permissive generic regex then matches the
+    bare fragment "https://cl". Opening that in a tab is garbage — the loop
+    must wait for the fake-browser capture instead.
+    """
+    import re
+
+    claude_re = re.compile(r"https://(?:claude\.ai|claude\.com)/\S+")
+    orch = MockOrchestrator(
+        [
+            (0.0, "Welcome\n"),
+            (0.15, None),
+            (0.15, None),
+            (0.0, "Use the url below to sign in https://cl ud .com/cai/oauth/auth\n"),
+            (0.15, None),
+        ]
+    )
+    events = await _collect(orch, action_command="/login", url_regex=claude_re)
+    url_prompts = [e for e in events if isinstance(e, UrlPrompt)]
+    assert url_prompts == [], f"fragment must not be emitted, got {url_prompts}"
+
+
+async def test_watchdog_fails_after_url_wait_timeout():
+    """No URL / menu / prompt / success after the action ⇒ LoginFailed.
+
+    Previously the loop idled forever and the wizard showed its spinner
+    indefinitely with no feedback.
+    """
+    from ai_accounts_core.login.events import LoginFailed
+
+    orch = MockOrchestrator(
+        [
+            (0.0, "Welcome\n"),
+            (0.15, None),  # idle → /login sent, watchdog anchored
+            (0.15, None),
+            (0.15, None),
+            (0.15, None),  # > url_wait_timeout_seconds accumulated
+            (0.15, None),
+            (0.15, None),
+        ]
+    )
+    events = await _collect(orch, action_command="/login", url_wait_timeout_seconds=0.3)
+    failed = [e for e in events if isinstance(e, LoginFailed)]
+    assert failed, f"expected LoginFailed, got {[type(e).__name__ for e in events]}"
+    assert failed[0].code == "url_wait_timeout"
