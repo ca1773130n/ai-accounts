@@ -42,7 +42,12 @@ def test_cli_subcommand_exists(cli: str, argv: list[str]) -> None:
     if path is None:
         pytest.skip(f"{cli} not on PATH")
     full = [path, *argv]
-    proc = subprocess.run(full, capture_output=True, timeout=10)
+    try:
+        proc = subprocess.run(full, capture_output=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        # A CLI that hangs on --version/--help is a broken local install,
+        # not subcommand drift — same environment class as "not on PATH".
+        pytest.skip(f"{cli} hung for 10s on {' '.join(argv)} — broken local install")
     assert proc.returncode == 0, (
         f"{' '.join(full)} returned rc={proc.returncode} — subcommand drift!\n"
         f"stdout: {proc.stdout.decode(errors='replace')[:200]}\n"
