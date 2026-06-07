@@ -201,3 +201,76 @@ async def test_update_backend_preserves_fields_when_omitted(tmp_path):
     updated = await service.update(created.id)
     assert updated.display_name == "Keep"
     assert updated.config == {"email": "a@b"}
+
+
+# ── discover(): probe timeouts must be inconclusive, not destructive ────
+
+
+@pytest.mark.asyncio
+async def test_discover_timeout_does_not_downgrade_ready_backend(tmp_path, monkeypatch):
+    """A probe timeout is no evidence the login is dead. Downgrading
+    READY → ERROR on timeout knocked perfectly-valid backends out of
+    scheduler.pick() ('No ai-accounts backend available' in HypePaper)."""
+    service, storage, vault, fake_backend = _make_service(tmp_path)
+    cfg_dir = tmp_path / "backend_dirs" / ".fake-personal"
+    cfg_dir.parent.mkdir(exist_ok=True)
+    cfg_dir.mkdir()
+    b = await service.create("fake", display_name="p1", config={"config_path": str(cfg_dir)})
+    await service.store_credential(b.id, b"fake-credential")
+    b = await service.validate(b.id)
+    assert b.status == BackendStatus.READY
+
+    from ai_accounts_core.services.discovery import DiscoveredConfig
+
+    async def fake_discover_all(kinds, *, probe_timeout=12.0):
+        return [
+            DiscoveredConfig(
+                kind="fake",
+                path=str(cfg_dir),
+                suggested_name="p1",
+                is_logged_in=False,
+                error="probe timed out after 12.0s",
+            )
+        ]
+
+    monkeypatch.setattr(
+        "ai_accounts_core.services.discovery.discover_all", fake_discover_all
+    )
+    enriched = await service.discover_existing()
+    refreshed = await service.get(b.id)
+    assert refreshed.status == BackendStatus.READY, "timeout must not downgrade READY"
+    assert enriched[0].backend_id == b.id
+
+
+@pytest.mark.asyncio
+async def test_discover_definitive_failure_still_downgrades(tmp_path, monkeypatch):
+    """A definitive not-logged-in probe (no timeout) keeps the existing
+    READY → ERROR sync so genuinely-expired logins still surface."""
+    service, storage, vault, fake_backend = _make_service(tmp_path)
+    cfg_dir = tmp_path / "backend_dirs" / ".fake-personal"
+    cfg_dir.parent.mkdir(exist_ok=True)
+    cfg_dir.mkdir()
+    b = await service.create("fake", display_name="p1", config={"config_path": str(cfg_dir)})
+    await service.store_credential(b.id, b"fake-credential")
+    b = await service.validate(b.id)
+    assert b.status == BackendStatus.READY
+
+    from ai_accounts_core.services.discovery import DiscoveredConfig
+
+    async def fake_discover_all(kinds, *, probe_timeout=12.0):
+        return [
+            DiscoveredConfig(
+                kind="fake",
+                path=str(cfg_dir),
+                suggested_name="p1",
+                is_logged_in=False,
+                error="not logged in",
+            )
+        ]
+
+    monkeypatch.setattr(
+        "ai_accounts_core.services.discovery.discover_all", fake_discover_all
+    )
+    await service.discover_existing()
+    refreshed = await service.get(b.id)
+    assert refreshed.status == BackendStatus.ERROR

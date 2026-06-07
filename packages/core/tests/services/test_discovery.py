@@ -12,6 +12,7 @@ import pytest
 from ai_accounts_core.services.discovery import (
     _glob_candidates,
     _probe_for,
+    _run_probe,
     _suggested_name,
     discover_for_kind,
 )
@@ -46,18 +47,20 @@ def test_suggested_name_unrelated_dir():
 
 
 @pytest.mark.parametrize(
-    "kind,expected_cli,expected_env_key",
+    "kind,expected_argv_prefix,expected_env_key",
     [
-        ("claude", "claude", "CLAUDE_CONFIG_DIR"),
-        ("codex", "codex", "CODEX_HOME"),
-        ("gemini", "gemini", "GEMINI_CLI_HOME"),
-        ("opencode", "opencode", "OPENCODE_HOME"),
+        ("claude", ["claude", "-p", "hello"], "CLAUDE_CONFIG_DIR"),
+        # codex: `login status` — free and fast. The old `codex exec hello`
+        # probe cost tokens and routinely blew the 12s probe_timeout,
+        # false-negativing a perfectly valid login.
+        ("codex", ["codex", "login", "status"], "CODEX_HOME"),
+        ("gemini", ["gemini", "-p", "hello"], "GEMINI_CLI_HOME"),
+        ("opencode", ["opencode", "run", "hello"], "OPENCODE_HOME"),
     ],
 )
-def test_probe_for_shape(kind, expected_cli, expected_env_key, tmp_path):
+def test_probe_for_shape(kind, expected_argv_prefix, expected_env_key, tmp_path):
     argv, env = _probe_for(kind, str(tmp_path))
-    assert argv[0] == expected_cli
-    assert "hello" in argv  # all four probes send a "hello" prompt
+    assert argv == expected_argv_prefix
     assert env.get(expected_env_key) == str(tmp_path.resolve())
 
 
@@ -134,3 +137,44 @@ async def test_discover_for_kind_probes_each_candidate(tmp_path, monkeypatch):
     assert len(fail_items) == 1
     assert fail_items[0].path.endswith(".claude-work")
     assert fail_items[0].error == "stub fail"
+
+
+# ── _run_probe: codex text inspection ───────────────────────────────────
+# `codex login status` exits 0 even when logged OUT, so rc alone is not
+# evidence of auth — the runner must inspect the status text (and check
+# BOTH streams: codex 0.121 prints to stdout, 0.128+ to stderr).
+
+
+def _fake_proc(rc: int, stdout: bytes = b"", stderr: bytes = b""):
+    proc = AsyncMock()
+    proc.returncode = rc
+    proc.communicate = AsyncMock(return_value=(stdout, stderr))
+    return proc
+
+
+@pytest.mark.asyncio
+async def test_run_probe_codex_rc0_but_not_logged_in(tmp_path, monkeypatch):
+    import shutil as _shutil
+
+    monkeypatch.setattr(_shutil, "which", lambda name: f"/usr/bin/{name}")
+    with patch(
+        "asyncio.create_subprocess_exec",
+        new=AsyncMock(return_value=_fake_proc(0, stdout=b"Not logged in\n")),
+    ):
+        ok, err = await _run_probe("codex", tmp_path, probe_timeout=1.0)
+    assert ok is False
+    assert "not logged in" in (err or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_run_probe_codex_logged_in_via_stderr(tmp_path, monkeypatch):
+    import shutil as _shutil
+
+    monkeypatch.setattr(_shutil, "which", lambda name: f"/usr/bin/{name}")
+    with patch(
+        "asyncio.create_subprocess_exec",
+        new=AsyncMock(return_value=_fake_proc(0, stderr=b"Logged in using ChatGPT\n")),
+    ):
+        ok, err = await _run_probe("codex", tmp_path, probe_timeout=1.0)
+    assert ok is True
+    assert err is None

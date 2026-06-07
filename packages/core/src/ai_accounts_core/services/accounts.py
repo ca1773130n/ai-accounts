@@ -156,6 +156,32 @@ class AccountService:
             # result. The probe is a real prompt (claude -p hello, etc.),
             # so it catches expired tokens that the file-probe validate()
             # would miss on macOS.
+            #
+            # EXCEPT on probe timeout: a slow CLI is no evidence the login
+            # is dead. Downgrading READY → ERROR on timeout knocked valid
+            # backends out of scheduler.pick() until the next validate()
+            # ("No ai-accounts backend available" downstream).
+            probe_timed_out = bool(c.error) and c.error.startswith("probe timed out")
+            if (
+                probe_timed_out
+                and not c.is_logged_in
+                and backend.status == BackendStatus.READY
+            ):
+                logger.info(
+                    "discovery: probe timed out for %s — keeping READY (inconclusive)",
+                    backend.id,
+                )
+                enriched.append(
+                    DiscoveredConfig(
+                        kind=c.kind,
+                        path=c.path,
+                        suggested_name=c.suggested_name,
+                        is_logged_in=True,  # reflect the row we trust
+                        error=c.error,
+                        backend_id=backend.id,
+                    )
+                )
+                continue
             new_status = BackendStatus.READY if c.is_logged_in else BackendStatus.ERROR
             if backend.status != new_status:
                 logger.info(

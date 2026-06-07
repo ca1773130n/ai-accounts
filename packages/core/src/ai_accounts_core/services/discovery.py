@@ -60,17 +60,20 @@ _HOME_GLOB: dict[str, str] = {
 def _probe_for(kind: str, config_dir: str) -> tuple[list[str], dict[str, str]]:
     """Build (argv, env_overrides) for the per-kind liveness probe.
 
-    The probe is a one-word non-interactive prompt — success means the CLI
-    can reach its upstream API with the credentials in ``config_dir``.
+    For most kinds the probe is a one-word non-interactive prompt — success
+    means the CLI can reach its upstream API with the credentials in
+    ``config_dir``. Codex uses ``codex login status`` instead: it's free,
+    instant, and the old ``codex exec hello`` probe routinely blew the 12s
+    probe_timeout (a real model call), false-negativing valid logins —
+    which then downgraded already-imported backends READY → ERROR via the
+    discover_existing() status sync. NOTE: ``codex login status`` exits 0
+    even when logged out, so _run_probe inspects the status text for codex.
     """
     abs_dir = str(Path(config_dir).expanduser().resolve())
     if kind == "claude":
         return (["claude", "-p", "hello"], {"CLAUDE_CONFIG_DIR": abs_dir})
     if kind == "codex":
-        return (
-            ["codex", "exec", "--skip-git-repo-check", "hello"],
-            {"CODEX_HOME": abs_dir},
-        )
+        return (["codex", "login", "status"], {"CODEX_HOME": abs_dir})
     if kind == "gemini":
         return (["gemini", "-p", "hello"], {"GEMINI_CLI_HOME": abs_dir})
     if kind == "opencode":
@@ -177,6 +180,16 @@ async def _run_probe(
         return False, f"probe timed out after {probe_timeout}s"
 
     if proc.returncode == 0:
+        if kind == "codex":
+            # `codex login status` exits 0 even when logged OUT — inspect
+            # the status text. Codex 0.121 prints to stdout, 0.128+ to
+            # stderr; check both (mirrors backends/codex.py validate()).
+            out_text = (stdout or b"").decode("utf-8", errors="replace").lower()
+            err_text = (stderr or b"").decode("utf-8", errors="replace").lower()
+            text = f"{out_text}\n{err_text}"
+            if "logged in" in text and "not logged in" not in text:
+                return True, None
+            return False, "not logged in"
         return True, None
     err = (stderr or b"").decode("utf-8", errors="replace").strip()
     if not err:
