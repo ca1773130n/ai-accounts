@@ -57,6 +57,26 @@ _CLAUDE_CONSOLE_URL_RE = re.compile(
     r"https://(?:claude\.ai|claude\.com|console\.anthropic\.com|platform\.claude\.com)/\S+"
 )
 
+# `claude /login` opens a browser with redirect_uri pointing at the CLI's
+# OWN localhost callback server (random port). That redirect only resolves
+# in a browser on the same host as the sidecar, and it bypasses the
+# wizard's paste-code UX entirely (the success line then stays buffered
+# behind the TUI redraw gate and the wizard never completes). The CLI's
+# printed fallback URL is identical except redirect_uri targets the
+# platform paste page — same client_id, same PKCE challenge, same state —
+# so rewriting the redirect reproduces the paste-variant URL exactly.
+# Matches both percent-encoded (argv to `open`) and plain forms.
+_LOCALHOST_REDIRECT_RE = re.compile(
+    r"redirect_uri=(?:http%3A%2F%2F|http://)(?:localhost|127\.0\.0\.1)(?:%3A|:)\d+[^&]*",
+    re.IGNORECASE,
+)
+_CLAUDE_PASTE_REDIRECT = "redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback"
+
+
+def _rewrite_localhost_callback_to_paste(url: str) -> str:
+    """Rewrite the CLI's localhost-callback OAuth URL to the paste-code variant."""
+    return _LOCALHOST_REDIRECT_RE.sub(_CLAUDE_PASTE_REDIRECT, url)
+
 
 def _parse_keychain_claude_items(dump_output: str) -> list[tuple[str, str | None]]:
     """Parse `security dump-keychain` output into ``[(service, account)]``
@@ -389,6 +409,7 @@ class _ClaudeCliBrowserSession(LoginSession):
                 progress_label=progress_label,
                 action_command=action_command,
                 url_regex=_CLAUDE_CONSOLE_URL_RE,
+                captured_url_transform=_rewrite_localhost_callback_to_paste,
                 eager_state=self._eager_state,
             ):
                 # Send Enter to dismiss "Press Enter to continue"

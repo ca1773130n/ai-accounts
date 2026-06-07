@@ -37,7 +37,7 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from re import Pattern
 
@@ -239,6 +239,7 @@ async def run_interactive_cli_login(
     progress_label: str,
     action_command: str | None,
     url_regex: Pattern[str] | None = None,
+    captured_url_transform: Callable[[str], str] | None = None,
     eager_state: EagerCodeState | None = None,
     idle_slice_seconds: float = IDLE_SLICE_SECONDS,
     repl_idle_trigger_seconds: float = REPL_IDLE_TRIGGER_SECONDS,
@@ -294,6 +295,14 @@ async def run_interactive_cli_login(
         if not url_already_emitted:
             captured = orchestrator.poll_captured_oauth_url()
             if captured:
+                # The URL the CLI hands to `open` may target the CLI's own
+                # localhost callback server — useless in the operator's
+                # browser when it runs on a different host, and the wrong
+                # UX for paste-code wizards even locally. Backends supply a
+                # transform to rewrite it (e.g. Claude: localhost callback →
+                # platform paste callback).
+                if captured_url_transform is not None:
+                    captured = captured_url_transform(captured)
                 url_already_emitted = True
                 logger.info(
                     "URL detected via fake-browser capture (%s)", _safe_url_origin(captured)

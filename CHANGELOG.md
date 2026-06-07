@@ -2,6 +2,15 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.15 — 2026-06-07
+
+Discovery no longer kills valid codex backends: free login-status probe + timeout-tolerant status sync.
+
+### Fixed
+
+- **Codex discovery probe: `codex login status` instead of a paid model call** (`ai-accounts-core`, `services/discovery.py`). The old `codex exec hello` probe was a real model call under the 12s probe_timeout — codex routinely takes longer, so valid logins probed as logged-out, and every Discover click burned upstream tokens. The new probe is free and instant; since `codex login status` exits 0 even when logged out, the runner inspects the status text on BOTH streams (codex 0.121 prints to stdout, 0.128+ to stderr), mirroring `backends/codex.py validate()`. (6c61c44)
+- **`discover_existing()` no longer downgrades READY backends on probe timeout** (`ai-accounts-core`, `services/accounts.py`). A slow CLI is no evidence the login is dead, but the status sync treated any probe failure as authoritative and flipped already-imported backends READY → ERROR — knocking them out of `scheduler.pick()` until the next `validate()` (downstream symptom: "No ai-accounts backend available" with a perfectly valid account). Timeouts are now inconclusive: the READY row is kept and the discovered config surfaces as logged-in with the timeout noted in `error`. Definitive not-logged-in results still downgrade. (6c61c44)
+
 ## 0.3.14 — 2026-06-07
 
 Login-wizard reliability: the cli_browser flow no longer hangs on "Preparing sign-in…" when the OAuth URL detection misses, plus keychain-sweep fixes.

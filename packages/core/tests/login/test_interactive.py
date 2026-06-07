@@ -241,6 +241,59 @@ async def test_captured_url_surfaces_during_continuous_output():
     assert url_prompts[0].url == "https://claude.com/cai/oauth/authorize?code=true&state=xyz"
 
 
+async def test_captured_url_passes_through_transform():
+    """A backend-supplied transform rewrites the captured URL before emission.
+
+    Regression: claude's `open` URL targets the CLI's own localhost callback
+    server (random port) — the wizard opened it and the user's browser ended
+    up on http://localhost:<port>/callback instead of the paste-code page.
+    """
+    orch = CapturingOrchestrator(
+        [(0.0, "Welcome\n"), (0.15, None), (0.15, None), (0.0, "spinner\n")],
+        captured_url="https://claude.com/cai/oauth/authorize?code=true&redirect_uri=http%3A%2F%2Flocalhost%3A59462%2Fcallback&state=abc",
+        ready_after_polls=1,
+    )
+    events = await _collect(
+        orch,
+        action_command="/login",
+        captured_url_transform=lambda u: u.replace(
+            "redirect_uri=http%3A%2F%2Flocalhost%3A59462%2Fcallback",
+            "redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback",
+        ),
+    )
+    url_prompts = [e for e in events if isinstance(e, UrlPrompt)]
+    assert len(url_prompts) == 1
+    assert "platform.claude.com%2Foauth%2Fcode%2Fcallback" in url_prompts[0].url
+    assert "localhost" not in url_prompts[0].url
+
+
+def test_claude_localhost_callback_rewrite():
+    """The claude rewriter swaps a localhost redirect_uri for the paste
+    callback and leaves every other param (and non-localhost URLs) intact."""
+    from ai_accounts_core.backends.claude import _rewrite_localhost_callback_to_paste
+
+    encoded = (
+        "https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a"
+        "&redirect_uri=http%3A%2F%2Flocalhost%3A60996%2Fcallback"
+        "&scope=org%3Acreate_api_key&code_challenge=XYZ&state=S1"
+    )
+    out = _rewrite_localhost_callback_to_paste(encoded)
+    assert "redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback" in out
+    assert "localhost" not in out
+    assert "code_challenge=XYZ" in out and "state=S1" in out and "code=true" in out
+
+    plain = "https://claude.ai/oauth/authorize?redirect_uri=http://127.0.0.1:1455/callback&state=S2"
+    out2 = _rewrite_localhost_callback_to_paste(plain)
+    assert "redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback" in out2
+    assert "127.0.0.1" not in out2
+
+    already_paste = (
+        "https://claude.com/cai/oauth/authorize"
+        "?redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&state=S3"
+    )
+    assert _rewrite_localhost_callback_to_paste(already_paste) == already_paste
+
+
 async def test_generic_url_match_rejects_fragments():
     """A cursor-positioning-fragmented URL must not be emitted.
 
