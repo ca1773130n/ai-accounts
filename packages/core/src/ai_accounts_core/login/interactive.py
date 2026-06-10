@@ -232,6 +232,16 @@ from ai_accounts_core.login.events import (
 )
 
 
+# Post-OAuth completion watchdog. Once the sign-in URL has been shown (the user
+# is authorizing in the browser + pasting the code), this much CONTINUOUS CLI
+# silence with no recognized success means the code was submitted but the CLI
+# never confirmed (or it stalled). We then surface a real failure WITH the
+# CLI's last output, instead of hanging until the session TTL — which the
+# wizard otherwise renders as the opaque "login stream ended unexpectedly".
+# Generous so a human has time to authorize + paste.
+POST_URL_COMPLETION_TIMEOUT_SECONDS = 120.0
+
+
 async def run_interactive_cli_login(
     *,
     orchestrator: CliOrchestrator,
@@ -411,6 +421,33 @@ async def run_interactive_cli_login(
                     last_output_time = now
                     watchdog_anchor = now
                     continue
+
+            # Post-OAuth completion watchdog (see POST_URL_COMPLETION_TIMEOUT_
+            # SECONDS): the code was submitted but the CLI went silent without
+            # reporting success. Emit a real failure WITH its last output so the
+            # cause is visible — and so the next attempt's logs capture exactly
+            # what the CLI showed post-code — instead of hanging indefinitely.
+            if (
+                url_already_emitted
+                and not login_success_seen
+                and not pending_menu
+                and idle_since_last_output >= POST_URL_COMPLETION_TIMEOUT_SECONDS
+            ):
+                tail = "\n".join(ln for ln in recent_lines[-12:] if ln.strip())
+                logger.warning(
+                    "login completion timeout after %.0fs idle; last output: %s",
+                    idle_since_last_output,
+                    safe_log_text(tail, max_chars=500),
+                )
+                yield LoginFailed(
+                    code="completion_timeout",
+                    message=(
+                        "Timed out waiting for the CLI to confirm sign-in after "
+                        "the code was submitted. Last CLI output:\n"
+                        + safe_log_text(tail, max_chars=400)
+                    )[:600],
+                )
+                return
 
             # Force-complete after seeing a success marker + grace period.
             if login_success_seen and (now - login_success_time) >= login_success_grace_seconds:
