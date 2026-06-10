@@ -59,6 +59,11 @@ _NUMBERED_OPTION_RE = re.compile(
     r")\s*$"
 )
 
+# Selection cursor that marks the active row of a real interactive menu.
+# parse_menu_options requires at least one matched option to carry it, so
+# numbered prose (footers, release notes) isn't mistaken for a menu.
+_OPTION_CURSOR_RE = re.compile(r"^\s*[❯●○◉]")
+
 # Login success markers — fires force-complete path when seen in stdout.
 _LOGIN_SUCCESS_RE = re.compile(
     r"(?:"
@@ -93,9 +98,19 @@ def parse_menu_options(recent_lines: list[str]) -> list[MenuOption]:
 
     Dedupes by option number: menus that redraw on terminal repaint will
     emit the same option multiple times — keep the first occurrence.
+
+    A line only counts as a menu option when at least one matched option in
+    the block carries a SELECTION CURSOR (``❯``/``●``/``○``/``◉``). Real
+    interactive menus always highlight the active row with such a marker;
+    numbered PROSE in CLI output does not. Without this guard the login
+    wizard scraped Claude Code's footer/notice lines — "Claude can make
+    mistakes", "Due to prompt injection risks, only use it with code you
+    trust", numbered release-note bullets — and presented them as bogus
+    "Choose an option" cards (the broken account-add wizard users hit).
     """
     options: list[MenuOption] = []
     seen_numbers: set[int] = set()
+    saw_cursor = False
     for line in recent_lines:
         m = _NUMBERED_OPTION_RE.match(line)
         if not m:
@@ -109,6 +124,8 @@ def parse_menu_options(recent_lines: list[str]) -> list[MenuOption]:
         if num in seen_numbers:
             continue
         seen_numbers.add(num)
+        if _OPTION_CURSOR_RE.match(line):
+            saw_cursor = True
         options.append(
             MenuOption(
                 number=num,
@@ -116,6 +133,9 @@ def parse_menu_options(recent_lines: list[str]) -> list[MenuOption]:
                 description=desc.strip() if desc else None,
             )
         )
+    # No highlighted row → this is numbered prose, not an interactive menu.
+    if not saw_cursor:
+        return []
     return options
 
 
