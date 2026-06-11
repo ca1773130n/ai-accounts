@@ -548,50 +548,66 @@ async def run_interactive_cli_login(
                         prompt=stripped,
                         hidden=False,
                     )
-                    # Block until user responds — spinner output will queue
-                    # up in the reader but we won't process it until the
-                    # user submits their answer.
-                    try:
-                        answer = await asyncio.wait_for(
-                            answers.get(), timeout=menu_response_timeout
-                        )
-                    except TimeoutError:
-                        yield LoginFailed(
-                            code="prompt_timeout",
-                            message="Text input timed out",
-                        )
-                        return
-                    await orchestrator.write((answer.answer.strip() + "\r").encode())
-                    # Note: deliberately do NOT flip eager_state.sent here.
-                    # eager_state is the contract between ``write_eager``
-                    # (eager paste) and the text-prompt handler — the
-                    # normal ``respond()`` path is independent. Treating
-                    # this write as "eager" would silently swallow the
-                    # next prompt, e.g. an in-session "Press Enter to
-                    # retry" after a bad code, leaving the wizard hung.
-
-                    # Claude v2 TUI buffers "Login successful. Press Enter
-                    # to continue…" behind an internal redraw gate: the
-                    # success line never reaches stdout until a second
-                    # Enter arrives. Schedule a best-effort follow-up so
-                    # the login loop doesn't hang on the regex. On the
-                    # error path the extra Enter just dismisses
-                    # "Press Enter to retry" — harmless.
-                    delay = eager_followup_enter_seconds
-
-                    # Bind `delay` via default arg so each iteration's task
-                    # captures its own value — otherwise a later iteration
-                    # could reassign `delay` before this task wakes from
-                    # asyncio.sleep, sending the wrong follow-up timing.
-                    async def _poke_tui_after_paste(delay: float = delay) -> None:
-                        await asyncio.sleep(delay)
+                    # Wait for the code via EITHER path:
+                    #   * respond()   -> a structured answer arrives in `answers`
+                    #   * eager paste -> write_eager() already wrote the code to
+                    #                    the PTY and set eager_state.sent
+                    # We MUST watch eager_state here, not just answers. When the
+                    # TextPrompt fires BEFORE the user pastes, a plain blocking
+                    # answers.get() can't be woken by write_eager (it touches the
+                    # PTY + flag, not the queue): the code lands on the CLI but
+                    # this loop stays parked until prompt_timeout and never reads
+                    # the CLI's response — the "login stream ended unexpectedly"
+                    # hang. Poll both and resume the read loop on whichever fires.
+                    answer = None
+                    deadline = time.monotonic() + menu_response_timeout
+                    while True:
+                        if eager_state is not None and eager_state.sent:
+                            eager_state.sent = False
+                            logger.info(
+                                "text prompt satisfied by eager paste — resuming read loop"
+                            )
+                            break
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            yield LoginFailed(
+                                code="prompt_timeout",
+                                message="Text input timed out",
+                            )
+                            return
                         try:
-                            await orchestrator.write(b"\r")
-                            logger.info("post-paste follow-up Enter sent")
-                        except Exception as exc:  # pragma: no cover
-                            logger.warning("post-paste follow-up failed: %s", exc)
+                            answer = await asyncio.wait_for(
+                                answers.get(), timeout=min(0.5, remaining)
+                            )
+                            break
+                        except TimeoutError:
+                            continue
 
-                    asyncio.create_task(_poke_tui_after_paste())
+                    if answer is not None:
+                        # Structured respond() path: we write the code AND a
+                        # follow-up Enter ourselves. The eager path's
+                        # write_eager already wrote the code + its own Enter, so
+                        # we add nothing there (double-submitting would corrupt
+                        # the code / dismiss the wrong prompt).
+                        await orchestrator.write((answer.answer.strip() + "\r").encode())
+
+                        # Claude v2 TUI buffers "Login successful. Press Enter to
+                        # continue…" behind an internal redraw gate; a follow-up
+                        # Enter flushes it so the success regex can match. On the
+                        # error path the extra Enter just dismisses "Press Enter
+                        # to retry" — harmless. Bind `delay` via default arg so
+                        # each iteration's task captures its own value.
+                        delay = eager_followup_enter_seconds
+
+                        async def _poke_tui_after_paste(delay: float = delay) -> None:
+                            await asyncio.sleep(delay)
+                            try:
+                                await orchestrator.write(b"\r")
+                                logger.info("post-paste follow-up Enter sent")
+                            except Exception as exc:  # pragma: no cover
+                                logger.warning("post-paste follow-up failed: %s", exc)
+
+                        asyncio.create_task(_poke_tui_after_paste())
 
                     recent_lines = []
                     last_output_time = time.monotonic()
