@@ -166,7 +166,26 @@ async def start_cliproxy_login(
     if config_dir is not None:
         env["CLIPROXY_CONFIG_DIR"] = str(config_dir)
 
-    argv = [_CLIPROXY_BINARY, flag]
+    # cliproxyapi >= 7.x refuses to start without a config file: spawned with
+    # no -config it dies on "failed to load config: open config.yaml ..."
+    # BEFORE printing the OAuth URL — which surfaced to the wizard as the 400
+    # "could not capture OAuth URL". Write a minimal config (the login writes
+    # the resulting credential into auth-dir) and point the binary at it.
+    # `-no-browser` makes it PRINT the auth URL instead of trying to open a
+    # browser the headless host doesn't have. Verified against v7.1.62.
+    cfg_dir = Path(config_dir) if config_dir is not None else fake_dir
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    config_path = cfg_dir / "config.yaml"
+    if not config_path.exists():
+        config_path.write_text(
+            'host: "127.0.0.1"\n'
+            "port: 8317\n"
+            f'auth-dir: "{cfg_dir}"\n'
+            "api-keys: []\n"
+            "debug: false\n"
+        )
+
+    argv = [_CLIPROXY_BINARY, "-config", str(config_path), "-no-browser", flag]
     try:
         proc = await asyncio.create_subprocess_exec(
             *argv,
