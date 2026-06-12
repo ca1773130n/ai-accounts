@@ -37,6 +37,15 @@ from .errors import (
 
 logger = logging.getLogger(__name__)
 
+# Cheapest model per backend kind for keep-alive / scheduled pings. A
+# keep-alive only needs to exercise the auth-refresh path, so we use the
+# smallest model to minimise quota burn — on Claude (Claude Code), the
+# default would otherwise be Sonnet/Opus. Kinds absent here fall back to the
+# backend's configured model (or "default").
+_KEEP_ALIVE_MODELS: dict[str, str] = {
+    "claude": "claude-haiku-4-5-20251001",
+}
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -541,9 +550,16 @@ class AccountService:
             content="hi",
             created_at=_now(),
         )
+        # Use the cheapest model for the kind (Haiku for Claude Code) so the
+        # 2-hourly keep-alive doesn't burn Sonnet/Opus quota.
+        keep_alive_model = (
+            _KEEP_ALIVE_MODELS.get(backend.kind)
+            or backend.config.get("model")
+            or "default"
+        )
         request = ChatRequest(
             messages=(probe,),
-            model=backend.config.get("model") or "default",
+            model=keep_alive_model,
             params={"max_tokens": 1},
         )
 
