@@ -18,10 +18,11 @@ from ai_accounts_core.domain.backend import (
     BackendStatus,
     DetectResult,
 )
+from ai_accounts_core.domain.chat import ChatMessage, ChatRole
 from ai_accounts_core.ids import new_id
 from ai_accounts_core.login import LoginSession
 from ai_accounts_core.login.registry import LoginSessionRegistry
-from ai_accounts_core.protocols.backend import BackendProtocol, Model
+from ai_accounts_core.protocols.backend import BackendProtocol, ChatRequest, Model
 from ai_accounts_core.protocols.storage import StorageProtocol
 from ai_accounts_core.protocols.vault import VaultProtocol
 
@@ -497,6 +498,71 @@ class AccountService:
             await self._update_status(backend, BackendStatus.ERROR, last_error="validation failed")
             raise BackendValidationFailed(backend_id)
         return await self._update_status(backend, BackendStatus.READY, last_error=None)
+
+    async def keep_alive(self, backend_id: str) -> bool:
+        """Send a minimal throwaway turn to keep the backend's auth fresh.
+
+        ``validate()`` only probes for credential *presence* — it never
+        makes an authenticated call, so it cannot refresh an OAuth access
+        token. CLI/cliproxy-backed kinds (Claude, Codex, Gemini, OpenCode)
+        refresh their short-lived access token **only when they actually
+        invoke the provider**, using the long-lived refresh token. A
+        long-idle account's access token therefore expires silently and the
+        next real chat 401s ("all accounts exhausted").
+
+        This drives one tiny ``impl.chat`` (a single "hi", ``max_tokens=1``)
+        which exercises that refresh-on-use path. It deliberately does NOT
+        create a ChatSession or persist any message, so it leaves no trace
+        in the user's chat history.
+
+        Returns ``True`` when the call completed cleanly. On failure it flips
+        the backend to ``ERROR`` (so the UI surfaces "needs re-login") and
+        returns ``False``. A clean call on a previously non-READY backend
+        promotes it back to ``READY`` — so keep-alive doubles as recovery
+        for an account whose token had lapsed but whose refresh token is
+        still valid.
+        """
+        backend = await self.get(backend_id)
+        impl = self._impl_for(backend.kind)
+        repo = await self._storage.backends()
+        stored = await repo.get_credential(backend_id)
+        if stored is None:
+            logger.info("keep_alive: %s has no stored credential — skipping", backend_id)
+            return False
+        plaintext = await self._vault.decrypt(
+            stored.ciphertext, context={"backend_id": backend_id}
+        )
+        config_dir = await self._resolve_config_dir(backend_id)
+
+        probe = ChatMessage(
+            id=new_id("msg"),
+            session_id="keepalive",
+            role=ChatRole.USER,
+            content="hi",
+            created_at=_now(),
+        )
+        request = ChatRequest(
+            messages=(probe,),
+            model=backend.config.get("model") or "default",
+            params={"max_tokens": 1},
+        )
+
+        saw_error: str | None = None
+        try:
+            async for event in impl.chat(request, plaintext, isolation_dir=config_dir):
+                if event.kind == "error":
+                    saw_error = str(event.payload)[:300] if event.payload else "chat error"
+        except Exception as exc:  # noqa: BLE001 — any failure means "not healthy"
+            saw_error = f"keep-alive failed: {exc}"[:300]
+
+        if saw_error is not None:
+            logger.info("keep_alive: %s unhealthy — %s", backend_id, saw_error)
+            await self._update_status(backend, BackendStatus.ERROR, last_error=saw_error)
+            return False
+
+        if backend.status is not BackendStatus.READY:
+            await self._update_status(backend, BackendStatus.READY, last_error=None)
+        return True
 
     async def list_models(self, backend_id: str) -> builtins.list[Model]:
         backend = await self.get(backend_id)
