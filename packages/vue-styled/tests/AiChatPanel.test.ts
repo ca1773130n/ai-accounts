@@ -120,9 +120,12 @@ describe('ChatBubble', () => {
     expect(w.find('.aia-bubble__content').html()).toContain('<strong>bold</strong>');
   });
 
-  it('shows backend badge when provided', () => {
-    const w = mount(ChatBubble, { props: { role: 'assistant', content: 'hi', backend: 'claude' } });
-    expect(w.find('.aia-bubble__backend').text()).toBe('claude');
+  it('labels the author by backend and shows the model pill', () => {
+    const w = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', backend: 'claude', model: 'opus' },
+    });
+    expect(w.find('.aia-bubble__role').text()).toBe('Claude');
+    expect(w.find('.aia-bubble__model').text()).toBe('Opus');
   });
 
   it('shows streaming cursor class', () => {
@@ -138,11 +141,13 @@ describe('ChatBubble', () => {
     expect(w.find('.aia-bubble__time').text()).not.toBe('');
   });
 
-  it('renders avatar U for user, AI for assistant', () => {
+  it('renders avatar U for user, author-initial for assistant (never "AI")', () => {
     const user = mount(ChatBubble, { props: { role: 'user', content: '' } });
     expect(user.find('.aia-bubble__avatar').text()).toBe('U');
-    const ai = mount(ChatBubble, { props: { role: 'assistant', content: '' } });
-    expect(ai.find('.aia-bubble__avatar').text()).toBe('AI');
+    const generic = mount(ChatBubble, { props: { role: 'assistant', content: '' } });
+    expect(generic.find('.aia-bubble__avatar').text()).toBe('A');
+    const claude = mount(ChatBubble, { props: { role: 'assistant', content: '', backend: 'claude' } });
+    expect(claude.find('.aia-bubble__avatar').text()).toBe('C');
   });
 });
 

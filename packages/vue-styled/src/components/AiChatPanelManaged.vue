@@ -20,6 +20,7 @@ import CompoundSynthesis from './CompoundSynthesis.vue';
 import ChatBubble from './ChatBubble.vue';
 import MessageActions from './MessageActions.vue';
 import ProcessGroup from './ProcessGroup.vue';
+import { backendDisplayName } from '../utils/assistantLabel';
 
 /**
  * Loose message shape — accepts any caller's message representation.
@@ -29,6 +30,7 @@ interface MessageLike {
   role: 'user' | 'assistant' | 'system' | 'tool' | string;
   content: string;
   backend?: string | null;
+  model?: string | null;
   timestamp?: string | null;
 }
 
@@ -156,20 +158,12 @@ const emit = defineEmits<{
 
 const chatContainer = ref<HTMLElement | null>(null);
 
-const BACKEND_DISPLAY_NAMES: Record<string, string> = {
-  claude: 'Claude',
-  codex: 'Codex',
-  gemini: 'Gemini',
-  opencode: 'OpenCode',
-};
-
-/** Display name for the currently selected backend (used for streaming/thinking indicators). */
-const assistantName = computed(() => BACKEND_DISPLAY_NAMES[props.selectedBackend ?? 'auto'] ?? 'AI');
-
-/** Display name for a specific message (uses only the message's stored backend, never the current dropdown). */
-function messageAssistantName(msg: MessageLike): string {
-  return (msg.backend && BACKEND_DISPLAY_NAMES[msg.backend]) || 'AI';
-}
+/** Display name for the currently selected backend, used for the welcome
+ *  screen + streaming / thinking indicators. Falls back to a generic
+ *  "Assistant" while the backend is still 'auto' / unresolved (never "AI").
+ *  Per-message bubbles derive their own name from `msg.backend` inside
+ *  ChatBubble, so this is only the live-selection label. */
+const assistantName = computed(() => backendDisplayName(props.selectedBackend) || 'Assistant');
 
 /** Non-undefined view of `messages` for template iteration — withDefaults
  *  resolves the prop type with `| undefined` under exactOptionalPropertyTypes. */
@@ -354,8 +348,8 @@ const processGroupEntries = computed(() => {
           :content="msg.content"
           :timestamp="msg.timestamp ?? null"
           :backend="msg.backend ?? null"
+          :model="msg.model ?? null"
           :avatar-paths="iconPaths"
-          :assistant-name="messageAssistantName(msg)"
           :skip-transition="messagesArr.length > 10 && index < messagesArr.length - 5"
         />
         <MessageActions
@@ -373,8 +367,8 @@ const processGroupEntries = computed(() => {
         role="assistant"
         :content="streamingContent ?? ''"
         :backend="selectedBackend ?? null"
+        :model="selectedModel ?? null"
         :avatar-paths="iconPaths"
-        :assistant-name="assistantName"
         :streaming="true"
       />
 

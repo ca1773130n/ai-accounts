@@ -9,6 +9,7 @@ import AllModeResponses from './AllModeResponses.vue';
 import CompoundSynthesis from './CompoundSynthesis.vue';
 import FinalizationBanner from './FinalizationBanner.vue';
 import ProcessGroup from './ProcessGroup.vue';
+import { backendDisplayName } from '../utils/assistantLabel';
 
 const props = withDefaults(defineProps<{
   density?: 'minimal' | 'detailed';
@@ -47,6 +48,13 @@ const emit = defineEmits<{
 const chat = useSmartChat();
 const scroll = useSmartScroll();
 const { client } = useAiAccounts();
+
+// Avatar-style letter for the welcome screen — tracks the selected backend
+// (Claude -> "C") and falls back to "A" (Assistant), never "AI".
+const welcomeInitial = computed(() => {
+  const name = backendDisplayName(chat.selectedBackend.value) || 'Assistant';
+  return name.charAt(0).toUpperCase();
+});
 const backends = ref<BackendDTO[]>([]);
 // Models per backend kind, populated lazily from /api/v1/backends/{id}/models.
 // Empty arrays render as a disabled dropdown; once loaded, the user can pick.
@@ -202,7 +210,7 @@ async function handleFinalize() {
     <div ref="scroll.containerRef" class="aia-smart-panel__messages">
       <!-- Welcome screen -->
       <div v-if="chat.messages.value.length === 0 && !chat.isStreaming.value" class="aia-smart-panel__welcome">
-        <div class="aia-smart-panel__welcome-icon">AI</div>
+        <div class="aia-smart-panel__welcome-icon">{{ welcomeInitial }}</div>
         <h3 class="aia-smart-panel__welcome-title">{{ welcomeTitle }}</h3>
         <p class="aia-smart-panel__welcome-sub">{{ welcomeSubtitle }}</p>
       </div>
@@ -213,6 +221,8 @@ async function handleFinalize() {
         :role="msg.role"
         :content="msg.content"
         :timestamp="msg.created_at"
+        :backend="chat.selectedBackend.value"
+        :model="msg.model ?? chat.selectedModel.value"
         :show-actions="resolvedShowActions"
         :all-messages="chat.messages.value"
       />
@@ -222,6 +232,8 @@ async function handleFinalize() {
         v-if="chat.isStreaming.value && chat.chatMode.value === 'single' && chat.streamingContent.value"
         role="assistant"
         :content="chat.streamingContent.value"
+        :backend="chat.selectedBackend.value"
+        :model="chat.selectedModel.value"
         :streaming="true"
       />
 

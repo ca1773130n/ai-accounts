@@ -4,6 +4,7 @@ import { marked } from 'marked';
 import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
 import MessageActions from './MessageActions.vue';
+import { backendDisplayName, modelDisplayName } from '../utils/assistantLabel';
 
 interface MessageLike {
   role: string;
@@ -30,16 +31,23 @@ const props = withDefaults(
   defineProps<{
     role: 'user' | 'assistant' | 'system' | 'tool';
     content: string;
+    /** Backend kind that produced this message (claude / codex / gemini /
+     *  opencode). Drives the assistant author name shown in the header. */
     backend?: string | null;
+    /** Model id that produced this message (e.g. `opus`, `gpt-5.1`).
+     *  Rendered as a small pill beside the author name when present. */
+    model?: string | null;
     timestamp?: string | null;
     streaming?: boolean;
     showActions?: boolean;
     allMessages?: MessageLike[];
-    /** Custom SVG path(s) for the avatar icon. If omitted, the role
-     *  letter (U/AI/S/T) is rendered. Back-migrated from Agented. */
+    /** Custom SVG path(s) for the avatar icon. If omitted, a single
+     *  letter (U / author-initial / S / T) is rendered. Back-migrated
+     *  from Agented. */
     avatarPaths?: string[];
-    /** Display name shown in the bubble header for non-user roles
-     *  (defaults to capitalized role). Back-migrated from Agented. */
+    /** Explicit display name for the bubble header for non-user roles.
+     *  When omitted, the name is derived from `backend` (falling back to
+     *  a generic "Assistant"). Back-migrated from Agented. */
     assistantName?: string;
     /** When true, suppress the 350ms fade-in animation (used for
      *  mass-rendering historical messages). Back-migrated from
@@ -83,6 +91,37 @@ function copyCode(e: Event) {
   const pre = btn.closest('.aia-code-block')?.querySelector('code');
   if (pre) navigator.clipboard.writeText(pre.textContent || '');
 }
+
+// Author name shown in the header. Users are always "You"; assistants are
+// labelled by who actually answered — an explicit `assistantName`, else the
+// backend display name, else a generic "Assistant" (never "AI"). The
+// backend-derived name applies only to assistant rows so a `backend` prop
+// passed alongside a system/tool bubble can't mislabel it.
+const authorName = computed(() => {
+  if (props.role === 'user') return 'You';
+  const explicit = props.assistantName?.trim();
+  if (explicit) return explicit;
+  if (props.role === 'assistant') {
+    return backendDisplayName(props.backend) || 'Assistant';
+  }
+  return props.role;
+});
+
+// Single-letter avatar fallback (used when no `avatarPaths` SVG is given).
+// Derives the assistant letter from the resolved author name so it tracks
+// the backend (Claude -> "C") instead of a hardcoded "AI".
+const avatarLetter = computed(() => {
+  if (props.role === 'user') return 'U';
+  if (props.role === 'tool') return 'T';
+  if (props.role === 'system') return 'S';
+  return (authorName.value.charAt(0) || 'A').toUpperCase();
+});
+
+// Model pill text; only assistant rows carry a model, so the pill never
+// leaks onto user / system / tool bubbles. Empty string hides the pill.
+const modelLabel = computed(() =>
+  props.role === 'assistant' ? modelDisplayName(props.model) : '',
+);
 </script>
 
 <template>
@@ -104,17 +143,13 @@ function copyCode(e: Event) {
         <path v-for="(d, i) in avatarPaths" :key="i" :d="d" />
       </svg>
       <template v-else>
-        {{ role === 'user' ? 'U' : role === 'tool' ? 'T' : 'AI' }}
+        {{ avatarLetter }}
       </template>
     </div>
     <div class="aia-bubble__body">
       <div class="aia-bubble__header">
-        <span class="aia-bubble__role">{{
-          role === 'user'
-            ? 'You'
-            : assistantName ?? role
-        }}</span>
-        <span v-if="backend" class="aia-bubble__backend">{{ backend }}</span>
+        <span class="aia-bubble__role">{{ authorName }}</span>
+        <span v-if="modelLabel" class="aia-bubble__model">{{ modelLabel }}</span>
         <span v-if="timeStr" class="aia-bubble__time">{{ timeStr }}</span>
       </div>
       <div class="aia-bubble__content" @click="copyCode" v-html="html" />
@@ -142,7 +177,7 @@ function copyCode(e: Event) {
 .aia-bubble__body { flex: 1; min-width: 0; }
 .aia-bubble__header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
 .aia-bubble__role { font-size: var(--aia-text-xs, 12px); font-weight: 600; text-transform: capitalize; color: var(--aia-fg-muted, #a1a1aa); }
-.aia-bubble__backend { font-size: 0.65rem; padding: 1px 6px; border-radius: var(--aia-radius-sm, 4px); background: var(--aia-bg-hover, #1f1f1f); color: var(--aia-fg-subtle, #71717a); }
+.aia-bubble__model { font-size: 0.65rem; padding: 1px 6px; border-radius: var(--aia-radius-sm, 4px); background: var(--aia-bg-hover, #1f1f1f); color: var(--aia-fg-subtle, #71717a); }
 .aia-bubble__time { font-size: 0.65rem; color: var(--aia-fg-subtle, #71717a); margin-left: auto; }
 .aia-bubble__content { font-size: var(--aia-text-sm, 14px); line-height: 1.6; color: var(--aia-fg, #fafafa); }
 .aia-bubble__content :deep(pre) { background: var(--aia-bg, #0a0a0a); border-radius: var(--aia-radius, 8px); padding: 0.75rem; overflow-x: auto; margin: 0.5rem 0; font-size: 0.8rem; }
