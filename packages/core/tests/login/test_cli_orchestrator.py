@@ -66,9 +66,15 @@ def test_parse_menu_options_does_not_match_diff_hunks():
 
 
 def test_parse_menu_options_dedupes_repeats():
-    """Menu redraws emit the same option multiple times — keep first."""
+    """Menu redraws emit the same option multiple times — keep first.
+
+    A real interactive menu highlights its active row with a selection
+    cursor (``❯``); without one ``parse_menu_options`` treats the lines as
+    numbered prose and returns nothing (see d600c43), so the dedup case is
+    exercised with the cursor present.
+    """
     lines = [
-        "  1. First label",
+        "❯ 1. First label",
         "  1. First label (redraw)",
         "  2. Second label",
     ]
