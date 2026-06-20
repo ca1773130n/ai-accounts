@@ -7,6 +7,7 @@ chat routing, config.yaml management) stays in host apps.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import re
 import shutil
@@ -147,12 +148,14 @@ async def start_cliproxy_login(
     # Codex uses the device-code flow (URL + code) rather than the
     # browser-callback flow — device-code works even when the playground
     # is reached over a remote URL.
-    # Gemini uses the bare "--login" Google account flow (cliproxyapi has
-    # no separate "--gemini-login" — Google CLI auth is the default).
+    # Gemini now uses Antigravity OAuth (`-antigravity-login`) instead of the
+    # plain Google account flow — Google deprecated the Gemini CLI in favour of
+    # Antigravity, and cliproxyapi ships a native Antigravity login.
     flag_map = {
         "claude": "--claude-login",
         "codex": "--codex-device-login",
-        "gemini": "--login",
+        "gemini": "-antigravity-login",
+        "kimi": "-kimi-login",
     }
     flag = flag_map.get(backend_kind)
     if flag is None:
@@ -206,10 +209,8 @@ async def start_cliproxy_login(
     assert proc.stdout is not None
     while asyncio.get_running_loop().time() < deadline:
         if captured_url_path.exists() and url is None:
-            try:
+            with contextlib.suppress(OSError):
                 url = captured_url_path.read_text().strip() or None
-            except OSError:
-                pass
             if url:
                 break
 
@@ -418,10 +419,8 @@ def detect_cliproxy() -> tuple[str, str] | None:
         for line in text.splitlines():
             line = line.strip()
             if line.startswith("port:"):
-                try:
+                with contextlib.suppress(ValueError):
                     port = int(line.split(":", 1)[1].strip())
-                except ValueError:
-                    pass
             elif line.startswith("- ") and api_key == "not-needed":
                 # First item under api-keys list
                 api_key = line[2:].strip().strip('"').strip("'")
@@ -449,10 +448,8 @@ def _parse_config() -> tuple[int, str]:
         for line in _CLIPROXY_CONFIG.read_text().splitlines():
             line = line.strip()
             if line.startswith("port:"):
-                try:
+                with contextlib.suppress(ValueError):
                     port = int(line.split(":", 1)[1].strip())
-                except ValueError:
-                    pass
             elif line.startswith("- ") and api_key == "not-needed":
                 api_key = line[2:].strip().strip('"').strip("'")
     return port, api_key
@@ -529,13 +526,13 @@ def start_cliproxy_server(
     config_path = str(_CLIPROXY_CONFIG)
     stderr_path = Path(tempfile.mktemp(suffix="-cliproxy-stderr.log"))
     try:
-        stderr_file = open(stderr_path, "w")
-        proc = subprocess.Popen(
-            [_CLIPROXY_BINARY, "--config", config_path],
-            stdout=subprocess.DEVNULL,
-            stderr=stderr_file,
-            start_new_session=True,
-        )
+        with open(stderr_path, "w") as stderr_file:
+            proc = subprocess.Popen(
+                [_CLIPROXY_BINARY, "--config", config_path],
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
     except FileNotFoundError:
         return {
             "status": "error",
@@ -549,7 +546,6 @@ def start_cliproxy_server(
     deadline = _time.monotonic() + 10
     while _time.monotonic() < deadline:
         if _check_healthy(port, api_key):
-            stderr_file.close()
             stderr_path.unlink(missing_ok=True)
             return {
                 "status": "ok",
@@ -560,12 +556,9 @@ def start_cliproxy_server(
         _time.sleep(0.5)
 
     # Timeout — capture stderr for diagnostics
-    stderr_file.close()
     stderr_content = ""
-    try:
+    with contextlib.suppress(Exception):
         stderr_content = stderr_path.read_text(errors="replace")[-500:]
-    except Exception:
-        pass
     stderr_path.unlink(missing_ok=True)
 
     try:

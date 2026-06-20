@@ -149,6 +149,9 @@ _STATIC: dict[str, tuple[Model, ...]] = {
     "codex": _STATIC_CODEX,
     "gemini": (),
     "opencode": (),
+    "openrouter": (),
+    "openai_compat": (),
+    "kimi": (),
 }
 
 

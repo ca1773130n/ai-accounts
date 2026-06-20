@@ -132,6 +132,64 @@ describe('AccountWizard', () => {
     // The wizard should render without throwing — the proxy step is
     // available in the step machine but not shown yet (we're on step 1).
     expect(w.exists()).toBe(true);
-    expect(w.html()).toContain('Subscription');
+    expect(w.html()).toContain('account?');
+  });
+
+  it('renders a collapsed 3-phase step indicator', async () => {
+    const { client } = mkRoutingClient();
+    const w = mount(AccountWizard, {
+      props: { initialBackendKind: 'claude' },
+      global: { plugins: [[aiAccountsPlugin, { client }]] },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    await nextTick();
+    // The indicator collapses the 5 internal steps into 3 displayed phases:
+    // Setup / Login / Finish.
+    const dots = w.findAll('.wizard-steps .step-indicator');
+    expect(dots).toHaveLength(3);
+    const labels = w.findAll('.wizard-steps .step-label').map((l) => l.text());
+    expect(labels).toEqual(['Setup', 'Login', 'Finish']);
+  });
+
+  it('does not show a config-path input on the CLI step by default', async () => {
+    const items = [
+      {
+        kind: 'claude',
+        display_name: 'Claude Code',
+        icon_url: null,
+        install_check: { command: [], version_regex: '' },
+        login_flows: [
+          {
+            kind: 'cli_browser',
+            display_name: 'Browser',
+            description: '',
+            requires_inputs: [],
+          },
+        ],
+        plan_options: null,
+        config_schema: {},
+        supports_multi_account: true,
+        isolation_env_var: 'CLAUDE_CONFIG_DIR',
+      },
+    ];
+    const w = mount(AccountWizard, {
+      props: { initialBackendKind: 'claude' },
+      global: { plugins: [[aiAccountsPlugin, { client: mkClient(items) }]] },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    await nextTick();
+    // Advance to the CLI step (internal step 2) without going through the
+    // subscription radio — the path override now lives behind an <details>
+    // "Advanced" toggle that is collapsed by default, so no bare text input
+    // is rendered in the cli step body up front.
+    (w.vm as unknown as { currentStep: string }).currentStep = 'cli';
+    await nextTick();
+    await nextTick();
+    const advanced = w.find('details.config-advanced');
+    expect(advanced.exists()).toBe(true);
+    // Collapsed <details> means the override input is not open for editing.
+    expect(advanced.attributes('open')).toBeUndefined();
   });
 });

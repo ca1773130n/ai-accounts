@@ -15,6 +15,7 @@ import httpx
 
 from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
+from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.login import (
     LoginComplete,
@@ -285,7 +286,7 @@ class GeminiBackend(CliBackendBase):
 
     metadata: ClassVar[BackendMetadata] = BackendMetadata(
         kind="gemini",
-        display_name="Gemini",
+        display_name="Antigravity",
         icon_url=None,
         install_check=InstallCheck(
             command=["gemini", "--version"],
@@ -301,7 +302,7 @@ class GeminiBackend(CliBackendBase):
             # for users where it does work (Gemini Code Assist / Pro).
             LoginFlowSpec(
                 kind="api_key",
-                display_name="API key",
+                display_name="Gemini API key (Google AI Studio)",
                 description=(
                     "Paste a Google AI Studio API key — direct, no OAuth. "
                     "Get one at https://aistudio.google.com/apikey "
@@ -311,13 +312,13 @@ class GeminiBackend(CliBackendBase):
             ),
             LoginFlowSpec(
                 kind="cli_browser",
-                display_name="Sign in with Google (subscription)",
+                display_name="Sign in with Antigravity (subscription)",
                 description=(
-                    "Sign in to your Google account via CLIProxyAPI. "
-                    "Works with Gemini Code Assist / Pro / Ultra "
-                    "subscriptions. NOTE: Google's OAuth consent gate is "
+                    "Sign in to your Google Antigravity subscription via "
+                    "CLIProxyAPI. Works with Gemini Code Assist / Pro / Ultra "
+                    "plans. NOTE: Google's OAuth consent gate can be "
                     "unreliable for this client; if it hangs, switch back "
-                    "to API key."
+                    "to the Gemini API key."
                 ),
                 requires_inputs=[],
             ),
@@ -346,7 +347,12 @@ class GeminiBackend(CliBackendBase):
             return _GeminiCliProxySession()
         raise ValueError(f"unsupported flow_kind: {flow_kind}")
 
-    # detect() inherited from CliBackendBase.
+    async def detect(self) -> DetectResult:
+        # Antigravity needs no terminal CLI — OAuth runs through cliproxyapi's
+        # `-antigravity-login`. The legacy `gemini` binary is no longer
+        # installed, so report available to keep the wizard's CLI step a
+        # non-blocking "No CLI required" note rather than probing for it.
+        return DetectResult(installed=True, notes="No CLI required")
 
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
         # Gemini CLI 0.35+ has no `auth status` subcommand. Two paths:

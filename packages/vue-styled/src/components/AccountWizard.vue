@@ -47,6 +47,10 @@ const defaultT = (_key: string, fallback?: string | Record<string, unknown>): st
     'accountWizard.stepLogin': 'Login',
     'accountWizard.stepPlanSave': 'Plan & Save',
     'accountWizard.stepDone': 'Done',
+    // Collapsed 3-phase indicator labels (Setup / Login / Finish).
+    'accountWizard.phaseSetup': 'Setup',
+    'accountWizard.phaseLogin': 'Login',
+    'accountWizard.phaseFinish': 'Finish',
     'accountWizard.yesHaveAccount': 'Yes, I have an account',
     'accountWizard.yesHaveAccountDesc': 'I already have a subscription for this backend',
     'accountWizard.noSkip': 'Skip for now',
@@ -64,6 +68,7 @@ const defaultT = (_key: string, fallback?: string | Record<string, unknown>): st
     'accountWizard.emailHelp': 'Optional — used to tag the account',
     'accountWizard.cliInstalled': 'CLI detected',
     'accountWizard.cliNotInstalled': 'CLI not detected',
+    'accountWizard.noCliRequired': 'No CLI required',
     'accountWizard.installCli': 'Install CLI',
     'accountWizard.configPath': 'Config path',
     'accountWizard.createDir': 'Create',
@@ -102,8 +107,6 @@ const defaultT = (_key: string, fallback?: string | Record<string, unknown>): st
     'accountWizard.tour.sub.next.message': 'Click Continue — we verify the CLI is installed and move to step 2.',
     'accountWizard.tour.cli.status.title': 'CLI install check',
     'accountWizard.tour.cli.status.message': 'Confirm the CLI is installed. If it isn\'t, the "Install" button will fetch it for you.',
-    'accountWizard.tour.cli.path.title': 'Confirm the config directory',
-    'accountWizard.tour.cli.path.message': 'This is the per-account config dir. We auto-create it on the next step. Click "Customize" if you need a different path.',
     'accountWizard.tour.cli.next.title': 'Launch the CLI',
     'accountWizard.tour.cli.next.message': 'Click Continue — we launch the CLI behind the scenes and move to step 3 (Sign in).',
     'accountWizard.tour.login.booting.title': 'Starting the CLI — pick your account type',
@@ -133,7 +136,7 @@ const defaultT = (_key: string, fallback?: string | Record<string, unknown>): st
     'accountWizard.tour.done.add.title': 'Add another account?',
     'accountWizard.tour.done.add.message': 'Click here to add another account on the same backend (e.g. a second Claude account).',
     'accountWizard.tour.done.nextBackend.title': 'Move to the next backend',
-    'accountWizard.tour.done.nextBackend.message': 'Click here to advance the tour to the next backend (Codex / Gemini / OpenCode).',
+    'accountWizard.tour.done.nextBackend.message': 'Click here to advance the tour to the next backend (Codex / Antigravity / OpenCode).',
   };
   return map[_key] ?? _key;
 };
@@ -230,7 +233,7 @@ const currentStep = ref<WizardStep>('subscription');
 
 // Backends that the CLIProxyAPI supports registering. Other backends skip
 // the proxy step entirely.
-const PROXY_SUPPORTED_KINDS = ['claude', 'codex', 'gemini'] as const;
+const PROXY_SUPPORTED_KINDS = ['claude', 'codex', 'gemini', 'kimi'] as const;
 const supportsProxy = computed(() =>
   PROXY_SUPPORTED_KINDS.includes(
     (backendKind.value ?? '') as (typeof PROXY_SUPPORTED_KINDS)[number]
@@ -244,18 +247,28 @@ const VISIBLE_STEPS = computed<WizardStep[]>(() => {
   return base;
 });
 
-const currentStepIndex = computed(() =>
-  VISIBLE_STEPS.value.indexOf(currentStep.value)
-);
-
-const stepLabels = computed<Record<WizardStep, string>>(() => ({
-  subscription: t('accountWizard.stepSubscription'),
-  cli: t('accountWizard.stepCliSetup'),
-  login: t('accountWizard.stepLogin'),
-  proxy: 'API Proxy',
-  plan: t('accountWizard.stepPlanSave'),
-  done: t('accountWizard.stepDone'),
+// Displayed step indicator — collapse the internal steps into 3 phases so
+// the indicator fits narrow-mobile breakpoints. The internal STEP_ORDER /
+// VISIBLE_STEPS / goNext / goPrev navigation is untouched; only the dots the
+// user sees are deduped down to Setup / Login / Finish.
+type DisplayPhase = 'setup' | 'login' | 'finish';
+const DISPLAY_PHASES: Record<WizardStep, DisplayPhase> = {
+  subscription: 'setup',
+  cli: 'setup',
+  login: 'login',
+  proxy: 'login',
+  plan: 'finish',
+  done: 'finish',
+};
+const PHASE_ORDER: DisplayPhase[] = ['setup', 'login', 'finish'];
+const phaseLabels = computed<Record<DisplayPhase, string>>(() => ({
+  setup: t('accountWizard.phaseSetup'),
+  login: t('accountWizard.phaseLogin'),
+  finish: t('accountWizard.phaseFinish'),
 }));
+// The phase the user is currently on — drives the active dot.
+const currentPhase = computed<DisplayPhase>(() => DISPLAY_PHASES[currentStep.value]);
+const currentPhaseIndex = computed(() => PHASE_ORDER.indexOf(currentPhase.value));
 
 function goNext() {
   const visible = VISIBLE_STEPS.value;
@@ -307,8 +320,13 @@ function generateSlug(name: string): string {
 const DEFAULT_CONFIG_DIR_MAP: Record<string, string> = {
   claude: '.claude',
   codex: '.codex',
+  // ``gemini`` kind is unchanged internally — only the user-facing label
+  // is "Antigravity". The config dir stays ~/.gemini (no DB/config migration).
   gemini: '.gemini',
   opencode: '.opencode',
+  openrouter: '.openrouter',
+  openai_compat: '.openai_compat',
+  kimi: '.kimi',
 };
 
 /**
@@ -363,6 +381,9 @@ const apiKeyEnv = computed(() => {
     codex: 'OPENAI',
     gemini: 'GOOGLE',
     opencode: 'OPENCODE',
+    openrouter: 'OPENROUTER',
+    openai_compat: 'OPENAI',
+    kimi: 'KIMI',
   };
   const kind = backendKind.value || '';
   const prefix = envMap[kind] || (kind ? kind.toUpperCase() : 'BACKEND');
@@ -376,6 +397,17 @@ const apiKeyEnv = computed(() => {
 // operations (no equivalent in the ai-accounts API); those actions are
 // intentionally omitted. The wizard still surfaces install status.
 // ---------------------------------------------------------------------------
+// Keyless / no-CLI kinds. These backends authenticate via an API key (or, for
+// Antigravity, a native cliproxy OAuth flow) — there's no terminal CLI to
+// install, so the cli step shows a "No CLI required" badge instead of an
+// install check. ``gemini`` is included because Antigravity needs no CLI.
+const NO_CLI_KINDS = ['openrouter', 'openai_compat', 'gemini', 'kimi'] as const;
+const requiresNoCli = computed(() =>
+  NO_CLI_KINDS.includes(
+    (backendKind.value ?? '') as (typeof NO_CLI_KINDS)[number]
+  )
+);
+
 const cliInstalled = ref(false);
 const cliVersion = ref('');
 const isCheckingCli = ref(false);
@@ -792,11 +824,6 @@ const TOUR_SUBSTEPS: Record<WizardStep, TourSubstep[]> = {
       titleKey: 'accountWizard.tour.cli.status.title',
       messageKey: 'accountWizard.tour.cli.status.message',
       done: () => cliInstalled.value,
-    },
-    {
-      selector: '[data-tour="wiz-cli-path"]',
-      titleKey: 'accountWizard.tour.cli.path.title',
-      messageKey: 'accountWizard.tour.cli.path.message',
     },
     {
       selector: '[data-tour="wiz-cli-next"]',
@@ -1389,27 +1416,28 @@ function skipWizard() {
           point at this new login.
         </div>
       </div>
+      <!-- Collapsed indicator: 3 deduped phases (Setup / Login / Finish).
+           The active dot follows the phase of the internal currentStep; the
+           full 5-step navigation underneath is unchanged. -->
       <div class="wizard-steps">
       <div
-        v-for="(step, idx) in VISIBLE_STEPS"
-        :key="step"
+        v-for="(phase, idx) in PHASE_ORDER"
+        :key="phase"
         class="step-indicator"
         :class="{
-          active: currentStep === step,
-          completed: currentStepIndex > idx,
-          clickable: idx < currentStepIndex,
+          active: currentPhase === phase,
+          completed: currentPhaseIndex > idx,
         }"
-        @click="idx < currentStepIndex ? (currentStep = step) : undefined"
       >
         <span class="step-number">
-          <template v-if="currentStepIndex > idx">
+          <template v-if="currentPhaseIndex > idx">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="12" height="12">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
           </template>
           <template v-else>{{ idx + 1 }}</template>
         </span>
-        <span class="step-label">{{ stepLabels[step] }}</span>
+        <span class="step-label">{{ phaseLabels[phase] }}</span>
       </div>
       </div>
     </template>
@@ -1484,8 +1512,33 @@ function skipWizard() {
     <!-- Step 2: CLI Setup -->
     <div v-if="backendKind && currentStep === 'cli'" class="wizard-step" data-tour="wiz-cli">
       <div class="step-body">
-        <!-- CLI status -->
-        <div class="status-card" :class="cliInstalled ? 'status-ok' : 'status-warn'" data-tour="wiz-cli-status">
+        <!-- One-line CLI status badge. For keyless kinds (OpenRouter,
+             generic OpenAI-compatible) and Antigravity there's nothing to
+             install, so the badge reads "No CLI required". The config dir is
+             still auto-generated silently (see suggestConfigPath) and exposed
+             behind the Advanced toggle below for power users. -->
+        <div
+          v-if="requiresNoCli"
+          class="status-card status-ok"
+          data-tour="wiz-cli-status"
+        >
+          <div class="status-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          </div>
+          <div class="status-info">
+            <span class="status-title">{{ backendName }}</span>
+            <span class="status-detail">{{ t('accountWizard.noCliRequired') }}</span>
+          </div>
+        </div>
+        <div
+          v-else
+          class="status-card"
+          :class="cliInstalled ? 'status-ok' : 'status-warn'"
+          data-tour="wiz-cli-status"
+        >
           <div class="status-icon">
             <template v-if="isCheckingCli">
               <div class="spinner-sm"></div>
@@ -1526,29 +1579,24 @@ function skipWizard() {
         </div>
         <pre v-if="installResult && !installResult.success && installResult.stderr" class="install-stderr">{{ installResult.stderr }}</pre>
 
-        <!-- Config directory — read-only confirm. The directory is
-             created on demand by the CLI launch in step 3, so we don't
-             need a manual "Create directory" button anymore. -->
-        <div v-if="configPath" class="config-dir-section" data-tour="wiz-cli-path">
-          <div class="config-dir-label">{{ t('accountWizard.configPath') }}</div>
-          <div class="config-dir-path">
-            <code>{{ configPath }}</code>
-          </div>
-          <div v-if="dirError" class="error-text">{{ dirError }}</div>
-
-          <div class="config-path-edit">
-            <button class="btn-link-sm" @click="configPathManuallyEdited = true" v-if="!configPathManuallyEdited">
-              {{ t('accountWizard.customizePath') }}
-            </button>
-            <div v-if="configPathManuallyEdited" class="form-group compact">
+        <!-- Advanced: per-account config dir override. Hidden by default —
+             the path is auto-generated and the server creates the dir on
+             login. Power users can expand this to set a custom path. -->
+        <details v-if="configPath" class="config-advanced">
+          <summary>{{ t('accountWizard.customizePath') }}</summary>
+          <div class="config-dir-section">
+            <div class="config-dir-label">{{ t('accountWizard.configPath') }}</div>
+            <div class="form-group compact">
               <input
                 v-model="configPath"
                 type="text"
                 :placeholder="`e.g., ~/.${backendKind}-personal`"
+                @input="configPathManuallyEdited = true"
               />
             </div>
+            <div v-if="dirError" class="error-text">{{ dirError }}</div>
           </div>
-        </div>
+        </details>
       </div>
       <div class="step-actions">
         <button class="btn btn-secondary" @click="goPrev">
@@ -2292,23 +2340,6 @@ function skipWizard() {
   font-weight: 500;
   color: var(--text-primary);
   margin-bottom: 0.375rem;
-}
-
-.config-dir-path {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
-}
-
-.config-dir-path code {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.8125rem;
-  color: var(--text-primary);
-  flex: 1;
 }
 
 .dir-created-badge {

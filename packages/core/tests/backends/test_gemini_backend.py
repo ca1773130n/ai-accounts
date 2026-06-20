@@ -6,23 +6,16 @@ from ai_accounts_core.backends.gemini import GeminiBackend
 
 
 @pytest.mark.asyncio
-async def test_detect_finds_cli():
-    backend = GeminiBackend()
-    with (
-        patch("shutil.which", return_value="/usr/local/bin/gemini"),
-        patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"gemini-cli 1.0.0\n", b""))),
-    ):
-        result = await backend.detect()
-    assert result.installed is True
-    assert "gemini" in (result.version or "").lower()
-
-
-@pytest.mark.asyncio
-async def test_detect_missing_cli():
+async def test_detect_is_keyless():
+    # Google deprecated the Gemini CLI in favour of Antigravity; auth runs
+    # through cliproxyapi's `-antigravity-login`, so there is no local binary
+    # to probe. detect() always reports available with a "No CLI required"
+    # note regardless of whether a legacy `gemini` binary is on PATH.
     backend = GeminiBackend()
     with patch("shutil.which", return_value=None):
         result = await backend.detect()
-    assert result.installed is False
+    assert result.installed is True
+    assert result.notes == "No CLI required"
 
 
 def test_supported_login_flows():
