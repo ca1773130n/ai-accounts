@@ -290,13 +290,16 @@ class OpenAiCompatBackend(CliBackendBase):
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        async with httpx.AsyncClient() as client, client.stream(
-            "POST",
-            f"{base_url}/chat/completions",
-            json=body,
-            headers=headers,
-            timeout=120.0,
-        ) as resp:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "POST",
+                f"{base_url}/chat/completions",
+                json=body,
+                headers=headers,
+                timeout=120.0,
+            ) as resp,
+        ):
             if resp.status_code != 200:
                 yield ChatStreamEvent(
                     kind="error",

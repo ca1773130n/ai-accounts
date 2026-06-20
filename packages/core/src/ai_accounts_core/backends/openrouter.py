@@ -210,16 +210,19 @@ class OpenRouterBackend(CliBackendBase):
         }
         if "max_tokens" in request.params:
             body["max_tokens"] = request.params["max_tokens"]
-        async with httpx.AsyncClient() as client, client.stream(
-            "POST",
-            f"{_OPENROUTER_BASE}/chat/completions",
-            json=body,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=120.0,
-        ) as resp:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "POST",
+                f"{_OPENROUTER_BASE}/chat/completions",
+                json=body,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=120.0,
+            ) as resp,
+        ):
             if resp.status_code != 200:
                 yield ChatStreamEvent(
                     kind="error",

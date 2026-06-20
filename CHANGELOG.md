@@ -2,6 +2,39 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.3.17 — 2026-06-20
+
+Google deprecated the Gemini CLI in favour of **Antigravity**; the Gemini account now authenticates through Antigravity. The add-account wizard collapses to three mobile-friendly steps, and three new provider backends ship.
+
+### Added
+
+- **OpenRouter backend** (`ai-accounts-core`, `backends/openrouter.py`). API-key backend over OpenRouter's OpenAI-compatible `/api/v1`. Keyless (no CLI to install). (#30)
+- **OpenAI-compatible (Custom) backend** (`ai-accounts-core`, `backends/openai_compat.py`). Takes a base URL + API key (stored together as a JSON credential) and talks to any `/v1/chat/completions` + `/v1/models` endpoint — covers Qwen, iFlow, Together, Groq, DeepSeek, Mistral, etc. from a single backend. (#30)
+- **Kimi (Moonshot) backend** (`ai-accounts-core`, `backends/kimi.py`). OAuth via CLIProxyAPI's `-kimi-login`; `kimi → moonshot` added to the cliproxy `owned_by` compat map. (#30)
+
+### Changed
+
+- **Gemini account now uses Antigravity OAuth** (`ai-accounts-core`, `cliproxy/manager.py`, `backends/gemini.py`). The cliproxy login flag moves from the bare Google `--login` to `-antigravity-login`, and the backend presents as **Antigravity**. The internal kind stays `"gemini"` so existing accounts keep working with no migration. The `@google/gemini-cli` install step is dropped (Antigravity needs no terminal CLI); `GeminiBackend.detect()` now reports keyless. (#30)
+- **Add-account wizard collapses to 3 steps** (`@ai-accounts/vue-styled`, `AccountWizard.vue`). The step indicator now shows **Setup / Login / Finish** instead of up to five dots — fixes the layout breaking on narrow-mobile widths. The config-directory confirm step is removed; the path is auto-generated and tucked behind an "Advanced" toggle. Keyless backends show a "No CLI required" badge. (#30)
+
+## 0.3.16 — 2026-06-14
+
+Idle-account keep-alive, per-message backend/model labelling in the chat UI, and login-flow reliability fixes.
+
+### Added
+
+- **`AccountService.keep_alive()`** (`ai-accounts-core`, `services/accounts.py`). Refreshes idle OAuth tokens so long-lived accounts don't lapse between uses. (fe5c848)
+- **Chat bubbles labelled by answering backend + model** (`@ai-accounts/vue-styled`). Each response shows which backend/model produced it. (1aa4cb7)
+
+### Changed
+
+- **Claude keep-alive pings use Haiku** to avoid burning premium-model quota on liveness checks. (3238914)
+
+### Fixed
+
+- **cliproxy login prints the OAuth URL reliably** — provide a `config.yaml` and pass `-no-browser` so the binary emits the URL instead of dying on missing config / trying to open a browser on a headless host. (b7714e7)
+- **Login flow**: wake the code prompt on eager paste (post-code hang), add a post-OAuth completion watchdog that fails with CLI output instead of hanging, and require a selection cursor before treating numbered lines as a menu. (6d3e601, c026fbf, d600c43)
+
 ## 0.3.15 — 2026-06-07
 
 Discovery no longer kills valid codex backends: free login-status probe + timeout-tolerant status sync. Claude cli_browser login opens the paste-code page, not the CLI's private localhost callback.

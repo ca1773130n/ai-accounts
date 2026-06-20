@@ -1,6 +1,6 @@
 {
   "name": "@ai-accounts/vue-headless",
-  "version": "0.3.16",
+  "version": "0.3.17",
   "description": "Vue 3 headless composables for ai-accounts",
   "license": "Apache-2.0",
   "type": "module",

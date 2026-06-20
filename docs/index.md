@@ -8,7 +8,7 @@ features:
   - title: Protocol-first
     details: Small, typed interfaces for storage, vault, auth, and backends. Swap any layer.
   - title: Batteries included
-    details: Ships with SQLite, AES-GCM vault, Claude and OpenCode backends, and themeable Vue components.
+    details: Ships with SQLite, AES-GCM vault, seven backends (Claude, Codex, Antigravity, OpenCode, OpenRouter, Kimi, OpenAI-compatible), and themeable Vue components.
   - title: Embeddable
     details: Use the HTTP API, or import services directly for in-process use in CLIs and desktop apps.
 ---

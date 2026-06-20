@@ -1,21 +1,24 @@
 # ai-accounts
 
 Reusable account management, login orchestration, chat, and PTY session package
-for AI CLI backends — **Claude**, **Codex**, **Gemini**, **OpenCode**.
+for AI backends — **Claude**, **Codex**, **Antigravity** (Google), **OpenCode**,
+**OpenRouter**, **Kimi** (Moonshot), and any **OpenAI-compatible** endpoint.
 
 Python ([Litestar](https://litestar.dev)) sidecar API + TypeScript / Vue 3
 client packages. Apache-2.0.
 
-**Latest release: `0.3.9`** ([CHANGELOG](./CHANGELOG.md))
+**Latest release: `0.3.17`** ([CHANGELOG](./CHANGELOG.md))
 
 ---
 
 ## What this is
 
-Many AI CLI tools (`claude`, `codex`, `gemini`, `opencode`) authenticate via OAuth
-and store credentials in per-tool config dirs or the system Keychain. Wiring one
-account works; juggling several across multiple backends, isolating their config
-dirs, and routing chat/PTY traffic through a unified API gets fiddly fast.
+AI backends authenticate in different ways — CLI tools (`claude`, `codex`,
+`opencode`) via OAuth into per-tool config dirs or the system Keychain, Google's
+Antigravity and Kimi via OAuth through CLIProxyAPI, and OpenRouter or any
+OpenAI-compatible endpoint via an API key. Wiring one account works; juggling
+several across multiple backends, isolating their config dirs, and routing
+chat/PTY traffic through a unified API gets fiddly fast.
 
 `ai-accounts` is the layer that does it for you:
 
@@ -40,7 +43,7 @@ dirs, and routing chat/PTY traffic through a unified API gets fiddly fast.
 
 | Package                              | Kind | npm / PyPI                                                              |
 | ------------------------------------ | ---- | ----------------------------------------------------------------------- |
-| `ai-accounts-core`                   | Py   | workspace (depends from `ai-accounts-litestar`); ships `ClaudeBackend`, `CodexBackend`, `GeminiBackend`, `OpenCodeBackend` |
+| `ai-accounts-core`                   | Py   | workspace (depends from `ai-accounts-litestar`); ships `ClaudeBackend`, `CodexBackend`, `GeminiBackend` (Antigravity), `OpenCodeBackend`, `OpenRouterBackend`, `OpenAiCompatBackend`, `KimiBackend` |
 | `ai-accounts-litestar`               | Py   | workspace                                                               |
 | `@ai-accounts/ts-core`               | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/ts-core)               |
 | `@ai-accounts/vue-headless`          | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/vue-headless)          |
@@ -105,6 +108,7 @@ from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.adapters.vault_envkey import EnvKeyVault
 from ai_accounts_core.backends import (
     ClaudeBackend, CodexBackend, GeminiBackend, OpenCodeBackend,
+    OpenRouterBackend, OpenAiCompatBackend, KimiBackend,
 )
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
@@ -114,7 +118,10 @@ app = create_app(AiAccountsConfig(
     storage=SqliteStorage("./accounts.db"),
     vault=EnvKeyVault.from_env(env="production"),  # AI_ACCOUNTS_VAULT_KEY
     auth=ApiKeyAuth(keys={"sk-..."}),
-    backends=(ClaudeBackend(), CodexBackend(), GeminiBackend(), OpenCodeBackend()),
+    backends=(
+        ClaudeBackend(), CodexBackend(), GeminiBackend(), OpenCodeBackend(),
+        OpenRouterBackend(), OpenAiCompatBackend(), KimiBackend(),
+    ),
 ))
 ```
 

@@ -489,13 +489,16 @@ class GeminiBackend(CliBackendBase):
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{request.model}:streamGenerateContent?alt=sse&key={api_key}"
         )
-        async with httpx.AsyncClient() as client, client.stream(
-            "POST",
-            url,
-            json=body,
-            headers={"Content-Type": "application/json"},
-            timeout=120.0,
-        ) as resp:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "POST",
+                url,
+                json=body,
+                headers={"Content-Type": "application/json"},
+                timeout=120.0,
+            ) as resp,
+        ):
             if resp.status_code != 200:
                 yield ChatStreamEvent(
                     kind="error",
