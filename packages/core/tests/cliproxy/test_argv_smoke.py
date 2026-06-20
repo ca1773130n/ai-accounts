@@ -34,10 +34,11 @@ def _flag_map_from_source() -> dict[str, str]:
     return {
         "claude": "--claude-login" if '"claude": "--claude-login"' in src else None,
         "codex": "--codex-device-login" if '"codex": "--codex-device-login"' in src else None,
-        # cliproxyapi has no separate "--gemini-login" flag; "--login" is
-        # the bare Google account login that handles Gemini Code Assist /
-        # Gemini Pro subscriptions.
-        "gemini": "--login" if '"gemini": "--login"' in src else None,
+        # Google deprecated the Gemini CLI in favour of Antigravity; the
+        # gemini account now authenticates via cliproxyapi's
+        # `-antigravity-login` instead of the bare Google `--login`.
+        "gemini": "-antigravity-login" if '"gemini": "-antigravity-login"' in src else None,
+        "kimi": "-kimi-login" if '"kimi": "-kimi-login"' in src else None,
     }
 
 
@@ -50,9 +51,12 @@ def test_flag_map_uses_device_login_for_codex() -> None:
         "reached over a remote URL."
     )
     assert flag_map["claude"] == "--claude-login"
-    assert flag_map["gemini"] == "--login", (
-        "gemini flag must be --login (the bare Google account flow). "
-        "cliproxyapi 6.8.30 has no --gemini-login subcommand."
+    assert flag_map["gemini"] == "-antigravity-login", (
+        "gemini flag must be -antigravity-login. Google deprecated the Gemini "
+        "CLI in favour of Antigravity; cliproxyapi exposes -antigravity-login."
+    )
+    assert flag_map["kimi"] == "-kimi-login", (
+        "kimi flag must be -kimi-login (cliproxyapi's Moonshot OAuth flow)."
     )
 
 

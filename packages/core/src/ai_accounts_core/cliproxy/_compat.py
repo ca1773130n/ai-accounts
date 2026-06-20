@@ -26,6 +26,7 @@ _DEFAULT_OWNED_BY: dict[str, str] = {
     "claude": "anthropic",
     "codex": "openai",
     "gemini": "google",
+    "kimi": "moonshot",
 }
 
 

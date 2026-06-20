@@ -247,19 +247,6 @@ const VISIBLE_STEPS = computed<WizardStep[]>(() => {
   return base;
 });
 
-const currentStepIndex = computed(() =>
-  VISIBLE_STEPS.value.indexOf(currentStep.value)
-);
-
-const stepLabels = computed<Record<WizardStep, string>>(() => ({
-  subscription: t('accountWizard.stepSubscription'),
-  cli: t('accountWizard.stepCliSetup'),
-  login: t('accountWizard.stepLogin'),
-  proxy: 'API Proxy',
-  plan: t('accountWizard.stepPlanSave'),
-  done: t('accountWizard.stepDone'),
-}));
-
 // Displayed step indicator — collapse the internal steps into 3 phases so
 // the indicator fits narrow-mobile breakpoints. The internal STEP_ORDER /
 // VISIBLE_STEPS / goNext / goPrev navigation is untouched; only the dots the
@@ -414,7 +401,7 @@ const apiKeyEnv = computed(() => {
 // Antigravity, a native cliproxy OAuth flow) — there's no terminal CLI to
 // install, so the cli step shows a "No CLI required" badge instead of an
 // install check. ``gemini`` is included because Antigravity needs no CLI.
-const NO_CLI_KINDS = ['openrouter', 'openai_compat', 'gemini'] as const;
+const NO_CLI_KINDS = ['openrouter', 'openai_compat', 'gemini', 'kimi'] as const;
 const requiresNoCli = computed(() =>
   NO_CLI_KINDS.includes(
     (backendKind.value ?? '') as (typeof NO_CLI_KINDS)[number]
@@ -2353,23 +2340,6 @@ function skipWizard() {
   font-weight: 500;
   color: var(--text-primary);
   margin-bottom: 0.375rem;
-}
-
-.config-dir-path {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
-}
-
-.config-dir-path code {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.8125rem;
-  color: var(--text-primary);
-  flex: 1;
 }
 
 .dir-created-badge {
