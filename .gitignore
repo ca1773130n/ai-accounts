@@ -55,3 +55,7 @@ uv-*.lock
 
 # cliproxyapi fake-open shim temp dirs (leaks if the login flow aborts before reap)
 aia-cliproxy-*/
+
+# Local tooling artifacts
+.worktrees/
+.tesserae/
