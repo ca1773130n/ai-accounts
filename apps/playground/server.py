@@ -21,10 +21,13 @@ from ai_accounts_core.adapters.auth_noauth import NoAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.adapters.vault_envkey import EnvKeyVault
 from ai_accounts_core.backends import (
+    AiderBackend,
     ClaudeBackend,
     CodexBackend,
     AntigravityBackend,
+    CrushBackend,
     DeepSeekBackend,
+    GooseBackend,
     KimiBackend,
     OpenAiCompatBackend,
     OpenCodeBackend,
@@ -50,6 +53,9 @@ app = create_app(
             KimiBackend(),
             DeepSeekBackend(),
             QwenBackend(),
+            GooseBackend(),
+            AiderBackend(),
+            CrushBackend(),
         ),
         backend_dirs_path=Path("./backend_dirs"),
     )

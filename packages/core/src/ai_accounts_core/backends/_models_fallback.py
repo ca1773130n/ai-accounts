@@ -160,6 +160,9 @@ _STATIC: dict[str, tuple[Model, ...]] = {
         Model(id="qwen3-coder-plus", display_name="Qwen3 Coder Plus"),
         Model(id="qwen3-coder-flash", display_name="Qwen3 Coder Flash"),
     ),
+    "goose": (),
+    "aider": (),
+    "crush": (),
 }
 
 
