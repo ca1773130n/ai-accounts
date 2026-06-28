@@ -384,6 +384,8 @@ const apiKeyEnv = computed(() => {
     openrouter: 'OPENROUTER',
     openai_compat: 'OPENAI',
     kimi: 'KIMI',
+    deepseek: 'DEEPSEEK',
+    qwen: 'DASHSCOPE',
   };
   const kind = backendKind.value || '';
   const prefix = envMap[kind] || (kind ? kind.toUpperCase() : 'BACKEND');
@@ -401,7 +403,7 @@ const apiKeyEnv = computed(() => {
 // Antigravity, a native cliproxy OAuth flow) — there's no terminal CLI to
 // install, so the cli step shows a "No CLI required" badge instead of an
 // install check. ``antigravity`` is included because Antigravity needs no CLI.
-const NO_CLI_KINDS = ['openrouter', 'openai_compat', 'antigravity', 'kimi'] as const;
+const NO_CLI_KINDS = ['openrouter', 'openai_compat', 'antigravity', 'kimi', 'deepseek', 'qwen'] as const;
 const requiresNoCli = computed(() =>
   NO_CLI_KINDS.includes(
     (backendKind.value ?? '') as (typeof NO_CLI_KINDS)[number]

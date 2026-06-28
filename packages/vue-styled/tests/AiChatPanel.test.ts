@@ -128,6 +128,17 @@ describe('ChatBubble', () => {
     expect(w.find('.aia-bubble__model').text()).toBe('Opus');
   });
 
+  it('labels deepseek and qwen backends by their display names', () => {
+    const ds = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', backend: 'deepseek' },
+    });
+    expect(ds.find('.aia-bubble__role').text()).toBe('DeepSeek');
+    const qw = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', backend: 'qwen' },
+    });
+    expect(qw.find('.aia-bubble__role').text()).toBe('Qwen');
+  });
+
   it('shows streaming cursor class', () => {
     const w = mount(ChatBubble, { props: { role: 'assistant', content: 'typing...', streaming: true } });
     expect(w.find('.aia-bubble--streaming').exists()).toBe(true);

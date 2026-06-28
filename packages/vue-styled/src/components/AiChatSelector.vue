@@ -69,6 +69,8 @@ function backendLabel(b: BackendDTO): string {
     codex: 'Codex',
     antigravity: 'Antigravity',
     opencode: 'OpenCode',
+    deepseek: 'DeepSeek',
+    qwen: 'Qwen',
   }
   return KIND_LABELS[b.kind] ?? b.kind
 }

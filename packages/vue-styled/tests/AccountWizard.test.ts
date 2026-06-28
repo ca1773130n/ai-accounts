@@ -192,4 +192,29 @@ describe('AccountWizard', () => {
     // Collapsed <details> means the override input is not open for editing.
     expect(advanced.attributes('open')).toBeUndefined();
   });
+
+  it('maps deepseek/qwen to keyless API-key env prefixes', async () => {
+    const { client } = mkRoutingClient();
+    const w = mount(AccountWizard, {
+      props: { initialBackendKind: 'deepseek' },
+      global: { plugins: [[aiAccountsPlugin, { client }]] },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const vm = w.vm as unknown as {
+      backendKind: string;
+      accountName: string;
+      apiKeyEnv: string;
+      requiresNoCli: boolean;
+    };
+    vm.accountName = 'work';
+    await nextTick();
+    expect(vm.apiKeyEnv).toBe('DEEPSEEK_API_KEY_WORK');
+    expect(vm.requiresNoCli).toBe(true);
+
+    vm.backendKind = 'qwen';
+    await nextTick();
+    expect(vm.apiKeyEnv).toBe('DASHSCOPE_API_KEY_WORK');
+    expect(vm.requiresNoCli).toBe(true);
+  });
 });

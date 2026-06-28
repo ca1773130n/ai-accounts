@@ -23,6 +23,8 @@ const DEFAULT_KINDS = [
   { id: 'opencode', display: 'OpenCode' },
   { id: 'antigravity', display: 'Antigravity' },
   { id: 'codex', display: 'Codex' },
+  { id: 'deepseek', display: 'DeepSeek' },
+  { id: 'qwen', display: 'Qwen' },
 ];
 
 const DEFAULT_SUPPORTED_FLOWS: Record<string, string[]> = {
@@ -30,6 +32,8 @@ const DEFAULT_SUPPORTED_FLOWS: Record<string, string[]> = {
   opencode: ['api_key'],
   antigravity: ['api_key', 'oauth_device'],
   codex: ['api_key', 'oauth_device'],
+  deepseek: ['api_key'],
+  qwen: ['api_key'],
 };
 
 const displayKinds = computed(() => props.kinds ?? DEFAULT_KINDS);

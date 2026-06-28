@@ -12,6 +12,8 @@ const BACKEND_DISPLAY_NAMES: Record<string, string> = {
   codex: 'Codex',
   antigravity: 'Antigravity',
   opencode: 'OpenCode',
+  deepseek: 'DeepSeek',
+  qwen: 'Qwen',
 };
 
 /**
