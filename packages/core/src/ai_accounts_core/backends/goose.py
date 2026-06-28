@@ -275,9 +275,14 @@ class GooseBackend(CliBackendBase):
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
         # Goose exposes no machine-readable models-list command and no stable
-        # HTTP surface — models are provider-defined. Use the static fallback.
+        # HTTP surface — models are provider-defined. Surface the model the
+        # account was configured with so the chat UI/all-mode has a selectable
+        # entry; fall back to the static set otherwise.
         from ai_accounts_core.backends._models_fallback import fallback
 
+        _provider, _api_key, model = _decode_goose_credential(credential)
+        if model:
+            return [Model(id=model, display_name=model)]
         return fallback("goose")
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:

@@ -255,9 +255,13 @@ class AiderBackend(CliBackendBase):
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
         # No live models endpoint — aider's --list-models reads LiteLLM's static
-        # registry. Return the curated fallback list.
+        # registry. Surface the configured model so the chat UI/all-mode has a
+        # selectable entry; fall back to the curated list otherwise.
         from ai_accounts_core.backends._models_fallback import fallback
 
+        _provider, _api_key, model = _decode_credential(credential)
+        if model:
+            return [Model(id=model, display_name=model)]
         return fallback("aider")
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:

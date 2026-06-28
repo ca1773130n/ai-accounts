@@ -101,13 +101,28 @@ async def install_backend_cli(kind: str) -> InstallResult:
 
     last_result: InstallResult | None = None
     for strategy in strategies:
-        proc = await asyncio.create_subprocess_exec(
-            *strategy.argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        exit_code = proc.returncode or 0
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *strategy.argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            exit_code = proc.returncode or 0
+        except (FileNotFoundError, OSError) as exc:
+            # The installer command itself isn't available (e.g. pipx missing
+            # while uv is present) — record the failure and try the next
+            # strategy instead of raising before the fallback runs.
+            last_result = InstallResult(
+                kind=kind,
+                success=False,
+                display=strategy.display,
+                stdout="",
+                stderr=f"{type(exc).__name__}: {exc}",
+                exit_code=127,
+                binary_path=None,
+            )
+            continue
         binary_path = shutil.which(strategy.check_binary)
         success = exit_code == 0 and binary_path is not None
 

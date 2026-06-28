@@ -207,22 +207,21 @@ async def test_login_emits_preset_menu_first(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_login_preset_keyless_round_trips(tmp_path: Path):
-    """Selecting a preset fills base_url, skips the base_url prompt, and an
-    empty API key is accepted (login completes for keyless local servers)."""
+    """A keyless local preset (Ollama) fills base_url AND skips the api_key
+    prompt entirely: the bundled LoginStream can't submit a blank field, so
+    login must complete with NO text prompts and an empty-key credential."""
     backend = OpenAiCompatBackend()
     session = backend.begin_login(
         flow_kind="api_key", config={}, vault_ctx={}, isolation_dir=tmp_path
     )
     events_task = asyncio.create_task(_drain(session))
     await asyncio.sleep(0)
-    await session.respond(PromptAnswer(prompt_id="preset", answer="1"))  # Ollama
-    await asyncio.sleep(0)
-    await session.respond(PromptAnswer(prompt_id="api_key", answer=""))  # blank OK
+    await session.respond(PromptAnswer(prompt_id="preset", answer="1"))  # Ollama (keyless)
     events = await events_task
 
     text_prompts = [e for e in events if isinstance(e, TextPrompt)]
     completes = [e for e in events if isinstance(e, LoginComplete)]
-    assert [p.prompt_id for p in text_prompts] == ["api_key"]  # base_url skipped
+    assert text_prompts == []  # base_url AND api_key prompts both skipped
     assert len(completes) == 1
     assert session.credential is not None
     decoded = json.loads(session.credential.decode())

@@ -285,10 +285,13 @@ class CrushBackend(CliBackendBase):
         return bool(api_key)
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
-        # No first-class `crush models --json`; live enumeration would require
-        # parsing the Catwalk catalog. Fall back to the shipped static set.
+        # No first-class `crush models --json`; surface the configured model so
+        # the chat UI/all-mode has a selectable entry, else the static set.
         from ai_accounts_core.backends._models_fallback import fallback
 
+        _provider, _api_key, model = _decode_credential(credential)
+        if model:
+            return [Model(id=model, display_name=model)]
         return fallback("crush")
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:

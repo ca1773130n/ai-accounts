@@ -78,6 +78,13 @@ _PRESETS: tuple[tuple[str, str, str], ...] = (
     ("custom", "Custom base URL", ""),
 )
 
+# Localhost presets that need no API key. The bundled LoginStream can't submit a
+# blank field, so for these we skip the key prompt entirely and store an empty
+# key — otherwise keyless setup (Ollama/LM Studio/…) is impossible from the UI.
+_KEYLESS_PRESETS: frozenset[str] = frozenset(
+    {"ollama", "lmstudio", "vllm", "llamacpp", "oobabooga"}
+)
+
 
 def _decode_credential(credential: bytes) -> tuple[str, str]:
     """Return ``(base_url, api_key)`` from JSON credential bytes.
@@ -171,6 +178,7 @@ class _OpenAiCompatApiKeySession(LoginSession):
             if choice.isdigit() and 1 <= int(choice) <= len(_PRESETS)
             else len(_PRESETS) - 1  # default to Custom on anything unexpected
         )
+        preset_key = _PRESETS[idx][0]
         base_url = _PRESETS[idx][2]  # "" for Custom
 
         # Step 1 — base URL (only when no preset was chosen). The TextPrompt's
@@ -196,22 +204,27 @@ class _OpenAiCompatApiKeySession(LoginSession):
                 yield LoginFailed(code="invalid_base_url", message="Base URL cannot be empty")
                 return
 
-        # Step 2 — API key (OPTIONAL for local/keyless servers like Ollama or
-        # LM Studio). An empty answer is allowed — do NOT fail on a blank key.
-        yield TextPrompt(
-            prompt_id="api_key",
-            prompt="API key (optional — leave blank for local servers like Ollama / LM Studio)",
-            hidden=True,
-        )
-        ans = await self._next_answer()
-        if ans is None:
-            yield LoginFailed(code="response_timeout", message="No response within 5 minutes")
-            return
-        if ans.prompt_id == "__cancel__":
-            self._done = True
-            yield LoginFailed(code="cancelled", message="Login cancelled")
-            return
-        api_key = (ans.answer or "").strip()  # empty is allowed for keyless servers
+        # Step 2 — API key. Keyless localhost presets (Ollama/LM Studio/vLLM/
+        # llama.cpp/oobabooga) need none, and the bundled LoginStream can't
+        # submit a blank field — so skip the prompt entirely for those and store
+        # an empty key. Cloud presets (Qwen) and Custom still prompt.
+        if preset_key in _KEYLESS_PRESETS:
+            api_key = ""
+        else:
+            yield TextPrompt(
+                prompt_id="api_key",
+                prompt="API key (leave blank only if your endpoint needs none)",
+                hidden=True,
+            )
+            ans = await self._next_answer()
+            if ans is None:
+                yield LoginFailed(code="response_timeout", message="No response within 5 minutes")
+                return
+            if ans.prompt_id == "__cancel__":
+                self._done = True
+                yield LoginFailed(code="cancelled", message="Login cancelled")
+                return
+            api_key = (ans.answer or "").strip()  # empty allowed for keyless servers
 
         self._credential = json.dumps({"api_key": api_key, "base_url": base_url}).encode("utf-8")
         self._done = True
@@ -342,9 +355,16 @@ class OpenAiCompatBackend(CliBackendBase):
                         for m in items
                         if isinstance(m, dict) and m.get("id")
                     ]
+                # 200 but empty data → no model loaded; an empty dropdown is
+                # the correct signal (e.g. Ollama with nothing pulled).
+                return fallback("openai_compat")
         except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError):
             pass
-        return fallback("openai_compat")
+        # /models is absent (404 on old llama.cpp / oobabooga-without-api) or
+        # unreachable, yet the endpoint already validated — surface one
+        # placeholder so the chat UI/all-mode can start. Such single-model
+        # servers ignore the model id and serve their one loaded model.
+        return [Model(id="default", display_name="default (server model)")]
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         return []  # OpenAI-compatible endpoints have no standard usage API

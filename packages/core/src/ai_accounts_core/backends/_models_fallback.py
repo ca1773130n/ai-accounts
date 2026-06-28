@@ -151,7 +151,14 @@ _STATIC: dict[str, tuple[Model, ...]] = {
     "openrouter": (),
     "openai_compat": (),
     "kimi": (),
-    "deepseek": (),
+    # DeepSeek's /models is live, but ship the two stable ids as a fallback so
+    # the dropdown isn't empty when the endpoint is unreachable.
+    "deepseek": (
+        Model(id="deepseek-chat", display_name="DeepSeek Chat"),
+        Model(id="deepseek-reasoner", display_name="DeepSeek Reasoner"),
+    ),
+    # goose/aider/crush surface their account's configured model from the
+    # credential (see each backend's list_models); the static set stays empty.
     "goose": (),
     "aider": (),
     "crush": (),
