@@ -44,8 +44,8 @@ def test_register_duplicate_raises():
 
 def test_get_by_kind():
     reg = BackendRegistry()
-    reg.register(_meta("gemini"))
-    assert reg.get("gemini").display_name == "Gemini"
+    reg.register(_meta("antigravity"))
+    assert reg.get("antigravity").display_name == "Antigravity"
 
 
 def test_get_missing_raises():

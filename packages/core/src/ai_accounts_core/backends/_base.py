@@ -1,7 +1,7 @@
 """Shared base class for CLI-backed backends.
 
 Pulls out the parts that were copy-pasted four times across
-``claude.py``, ``codex.py``, ``gemini.py``, ``opencode.py``:
+``claude.py``, ``codex.py``, ``antigravity.py``, ``opencode.py``:
 
 - ``_run`` — wrapper around the asyncio subprocess spawn helper returning
   ``(returncode, stdout, stderr)``.

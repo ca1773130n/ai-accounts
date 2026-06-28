@@ -74,8 +74,8 @@ def _decode_credential(credential: bytes) -> tuple[str, str]:
 class _OpenAiCompatApiKeySession(LoginSession):
     """Two-step api_key flow: prompt for base_url, then for the API key.
 
-    Sequential TextPrompts are driven the same way gemini's
-    ``_GeminiCliProxySession`` drives UrlPrompt → TextPrompt: each prompt is
+    Sequential TextPrompts are driven the same way antigravity's
+    ``_AntigravityCliProxySession`` drives UrlPrompt → TextPrompt: each prompt is
     yielded, then the session blocks on the answer queue for the client's
     reply before yielding the next. The resulting credential is JSON bytes
     ``{"api_key": ..., "base_url": ...}``.

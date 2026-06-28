@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from ai_accounts_core.backends.gemini import GeminiBackend
+from ai_accounts_core.backends.antigravity import AntigravityBackend
 from ai_accounts_core.login.events import (
     LoginComplete,
     LoginFailed,
@@ -16,10 +16,10 @@ async def _drain(session):
 
 
 @pytest.mark.asyncio
-async def test_gemini_oauth_device_flow_unsupported(tmp_path: Path):
-    """Gemini CLI 0.35+ has no `auth` subcommand; oauth_device is removed."""
+async def test_antigravity_oauth_device_flow_unsupported(tmp_path: Path):
+    """Antigravity CLI 0.35+ has no `auth` subcommand; oauth_device is removed."""
 
-    backend = GeminiBackend()
+    backend = AntigravityBackend()
     with pytest.raises(ValueError, match="unsupported"):
         backend.begin_login(
             flow_kind="oauth_device",
@@ -30,8 +30,8 @@ async def test_gemini_oauth_device_flow_unsupported(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_gemini_api_key_accepts_inputs(tmp_path: Path):
-    backend = GeminiBackend()
+async def test_antigravity_api_key_accepts_inputs(tmp_path: Path):
+    backend = AntigravityBackend()
     session = backend.begin_login(
         flow_kind="api_key",
         config={},
@@ -51,8 +51,8 @@ async def test_gemini_api_key_accepts_inputs(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_gemini_api_key_rejects_empty(tmp_path: Path):
-    backend = GeminiBackend()
+async def test_antigravity_api_key_rejects_empty(tmp_path: Path):
+    backend = AntigravityBackend()
     session = backend.begin_login(
         flow_kind="api_key",
         config={},
@@ -70,11 +70,11 @@ async def test_gemini_api_key_rejects_empty(tmp_path: Path):
     assert failures[0].code == "invalid_key"
 
 
-def test_gemini_metadata_shape():
-    meta = GeminiBackend.metadata
-    assert meta.kind == "gemini"
+def test_antigravity_metadata_shape():
+    meta = AntigravityBackend.metadata
+    assert meta.kind == "antigravity"
     assert meta.supports_multi_account is True
-    assert meta.isolation_env_var == "GEMINI_CLI_HOME"
+    assert meta.isolation_env_var == "ANTIGRAVITY_HOME"
     flow_kinds = {f.kind for f in meta.login_flows}
     # cli_browser delegates to cliproxyapi --login (Google subscription
     # flow). api_key is kept as fallback for direct AI Studio access.

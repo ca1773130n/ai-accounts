@@ -40,7 +40,7 @@ class Migration:
     statements: tuple[str, ...]
 
 
-CURRENT_VERSION = 2
+CURRENT_VERSION = 3
 
 
 MIGRATIONS: tuple[Migration, ...] = (
@@ -52,6 +52,13 @@ MIGRATIONS: tuple[Migration, ...] = (
             "ALTER TABLE backends ADD COLUMN rate_limit_reason TEXT",
             "ALTER TABLE backends ADD COLUMN last_used_at TEXT",
             "ALTER TABLE backends ADD COLUMN last_polled_at TEXT",
+        ),
+    ),
+    Migration(
+        version=3,
+        description="rename backend kind 'gemini' to 'antigravity'",
+        statements=(
+            "UPDATE backends SET kind='antigravity' WHERE kind='gemini'",
         ),
     ),
 )

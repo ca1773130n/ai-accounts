@@ -84,7 +84,7 @@ describe('LoginStream', () => {
         }),
       });
       const w = mount(LoginStream, {
-        props: { session: session as never, backendKind: 'gemini', email: 'alice@example.com' },
+        props: { session: session as never, backendKind: 'antigravity', email: 'alice@example.com' },
       });
       const anchor = w.find('a.aia-url-link');
       const href = anchor.attributes('href')!;
@@ -118,7 +118,7 @@ describe('LoginStream', () => {
         }),
       });
       const w = mount(LoginStream, {
-        props: { session: session as never, backendKind: 'gemini', email: '' },
+        props: { session: session as never, backendKind: 'antigravity', email: '' },
       });
       const btn = w.find('button.aia-copy-incognito-btn');
       expect(btn.exists()).toBe(true);

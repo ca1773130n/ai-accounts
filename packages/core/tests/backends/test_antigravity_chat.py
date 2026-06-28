@@ -5,7 +5,7 @@ import re
 from datetime import UTC, datetime
 
 import pytest
-from ai_accounts_core.backends.gemini import GeminiBackend
+from ai_accounts_core.backends.antigravity import AntigravityBackend
 from ai_accounts_core.domain.chat import ChatMessage, ChatRole
 from ai_accounts_core.protocols.backend import ChatRequest, ChatStreamEvent
 
@@ -24,27 +24,27 @@ def _sse(*events: str) -> bytes:
     return "".join(events).encode()
 
 
-_GEMINI_URL_RE = re.compile(
+_ANTIGRAVITY_URL_RE = re.compile(
     r"https://generativelanguage\.googleapis\.com/v1beta/models/.+:streamGenerateContent.*"
 )
 
 
 @pytest.mark.asyncio
-async def test_gemini_chat_streams_tokens(tmp_path, httpx_mock):
+async def test_antigravity_chat_streams_tokens(tmp_path, httpx_mock):
     sse = _sse(
         'data: {"candidates":[{"content":{"parts":[{"text":"Hi there"}],"role":"model"},"finishReason":null}]}\n\n',
         'data: {"candidates":[{"content":{"parts":[{"text":""}],"role":"model"},"finishReason":"STOP"}]}\n\n',
     )
     httpx_mock.add_response(
-        url=_GEMINI_URL_RE,
+        url=_ANTIGRAVITY_URL_RE,
         method="POST",
         content=sse,
         headers={"content-type": "text/event-stream"},
     )
-    backend = GeminiBackend()
+    backend = AntigravityBackend()
     events: list[ChatStreamEvent] = []
     async for e in backend.chat(
-        ChatRequest(messages=(_msg("user", "Hello"),), model="gemini-2.0-flash"),
+        ChatRequest(messages=(_msg("user", "Hello"),), model="antigravity-2.0-flash"),
         b"AIzaSy-test-key",
         isolation_dir=tmp_path,
     ):
@@ -56,17 +56,17 @@ async def test_gemini_chat_streams_tokens(tmp_path, httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_gemini_chat_role_mapping(tmp_path, httpx_mock):
+async def test_antigravity_chat_role_mapping(tmp_path, httpx_mock):
     sse = _sse(
         'data: {"candidates":[{"content":{"parts":[{"text":"OK"}],"role":"model"},"finishReason":"STOP"}]}\n\n',
     )
     httpx_mock.add_response(
-        url=_GEMINI_URL_RE,
+        url=_ANTIGRAVITY_URL_RE,
         method="POST",
         content=sse,
         headers={"content-type": "text/event-stream"},
     )
-    backend = GeminiBackend()
+    backend = AntigravityBackend()
     async for _ in backend.chat(
         ChatRequest(
             messages=(
@@ -75,7 +75,7 @@ async def test_gemini_chat_role_mapping(tmp_path, httpx_mock):
                 _msg("assistant", "Hello"),
                 _msg("user", "Thanks"),
             ),
-            model="gemini-2.0-flash",
+            model="antigravity-2.0-flash",
         ),
         b"AIzaSy-test-key",
         isolation_dir=tmp_path,
@@ -90,17 +90,17 @@ async def test_gemini_chat_role_mapping(tmp_path, httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_gemini_chat_api_error(tmp_path, httpx_mock):
+async def test_antigravity_chat_api_error(tmp_path, httpx_mock):
     httpx_mock.add_response(
-        url=_GEMINI_URL_RE,
+        url=_ANTIGRAVITY_URL_RE,
         method="POST",
         status_code=403,
         content=b"Forbidden",
     )
-    backend = GeminiBackend()
+    backend = AntigravityBackend()
     events: list[ChatStreamEvent] = []
     async for e in backend.chat(
-        ChatRequest(messages=(_msg("user", "Hi"),), model="gemini-2.0-flash"),
+        ChatRequest(messages=(_msg("user", "Hi"),), model="antigravity-2.0-flash"),
         b"bad-key",
         isolation_dir=tmp_path,
     ):

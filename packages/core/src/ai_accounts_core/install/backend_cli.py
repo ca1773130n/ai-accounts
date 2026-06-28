@@ -36,7 +36,7 @@ _INSTALL_STRATEGIES: dict[str, list[InstallCommand]] = {
             check_binary="codex",
         ),
     ],
-    # Antigravity (internal kind "gemini") needs no terminal CLI — login is
+    # Antigravity (internal kind "antigravity") needs no terminal CLI — login is
     # handled via cliproxyapi's native Antigravity OAuth, so there's no
     # install strategy to register.
     "opencode": [

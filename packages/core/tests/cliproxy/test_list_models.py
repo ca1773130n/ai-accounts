@@ -76,7 +76,7 @@ async def test_returns_none_when_proxy_unreachable(proxy_down):
     with proxy_down:
         assert await cliproxy_list_models("claude") is None
         assert await cliproxy_list_models("codex") is None
-        assert await cliproxy_list_models("gemini") is None
+        assert await cliproxy_list_models("antigravity") is None
 
 
 @pytest.mark.asyncio
@@ -119,24 +119,24 @@ async def test_filters_by_owned_by(proxy_up):
         {"id": "claude-sonnet-4-6", "owned_by": "anthropic"},
         {"id": "gpt-5-codex", "owned_by": "openai"},
         {"id": "gpt-5", "owned_by": "openai"},
-        {"id": "gemini-2.5-pro", "owned_by": "google"},
+        {"id": "antigravity-2.5-pro", "owned_by": "google"},
         {"id": "some-other", "owned_by": "huggingface"},
     ]
     with proxy_up, _fake_async_client(_fake_models_response(items)):
         claude = await cliproxy_list_models("claude")
         codex = await cliproxy_list_models("codex")
-        gemini = await cliproxy_list_models("gemini")
+        antigravity = await cliproxy_list_models("antigravity")
 
     assert [m["id"] for m in claude] == ["claude-opus-4-6", "claude-sonnet-4-6"]
     assert [m["id"] for m in codex] == ["gpt-5-codex", "gpt-5"]
-    assert [m["id"] for m in gemini] == ["gemini-2.5-pro"]
+    assert [m["id"] for m in antigravity] == ["antigravity-2.5-pro"]
 
 
 @pytest.mark.asyncio
 async def test_returns_empty_list_when_no_matches(proxy_up):
     """Cliproxy reachable but advertises zero models for this kind → []
     (NOT None — distinguishes 'cliproxy says no' from 'cliproxy unreachable')."""
-    items = [{"id": "gemini-2.5-pro", "owned_by": "google"}]
+    items = [{"id": "antigravity-2.5-pro", "owned_by": "google"}]
     with proxy_up, _fake_async_client(_fake_models_response(items)):
         result = await cliproxy_list_models("claude")
     assert result == []  # crucial: empty list, not None

@@ -2,7 +2,7 @@
  * Display-name helpers for the answering AI backend + model.
  *
  * Chat bubbles label the assistant by *who actually answered* — the
- * backend (Claude / Codex / Gemini / OpenCode) plus, when known, the
+ * backend (Claude / Codex / Antigravity / OpenCode) plus, when known, the
  * model — instead of a generic "AI". These helpers turn the raw
  * backend kind / model id stored on a message into human labels.
  */
@@ -10,7 +10,7 @@
 const BACKEND_DISPLAY_NAMES: Record<string, string> = {
   claude: 'Claude',
   codex: 'Codex',
-  gemini: 'Gemini',
+  antigravity: 'Antigravity',
   opencode: 'OpenCode',
 };
 

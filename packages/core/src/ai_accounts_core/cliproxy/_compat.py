@@ -25,7 +25,7 @@ _DEFAULT_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1"})
 _DEFAULT_OWNED_BY: dict[str, str] = {
     "claude": "anthropic",
     "codex": "openai",
-    "gemini": "google",
+    "antigravity": "google",
     "kimi": "moonshot",
 }
 

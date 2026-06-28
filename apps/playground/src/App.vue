@@ -134,7 +134,7 @@ onMounted(refresh);
         <div>
           <h1 class="page__title">ai-accounts playground</h1>
           <p class="page__subtitle">
-            Add CLI-backed accounts (Claude, Codex, Gemini, OpenCode), then chat
+            Add CLI-backed accounts (Claude, Codex, Antigravity, OpenCode), then chat
             through a single panel that routes to whichever one you pick.
           </p>
         </div>
@@ -157,7 +157,7 @@ onMounted(refresh);
         </button>
       </header>
       <p v-if="!discoveryRan && !discovering" class="empty" style="text-align: left; padding: 0;">
-        Scans <code>~/.claude*</code>, <code>~/.codex*</code>, <code>~/.gemini*</code>,
+        Scans <code>~/.claude*</code>, <code>~/.codex*</code>, <code>~/.antigravity*</code>,
         <code>~/.opencode*</code> and runs a small prompt against each to find
         accounts you're already signed into. Already-imported paths are hidden.
       </p>
@@ -315,7 +315,7 @@ onMounted(refresh);
   --pg-shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3);
   --kind-claude: #d97757;
   --kind-codex: #10a37f;
-  --kind-gemini: #4285f4;
+  --kind-antigravity: #4285f4;
   --kind-opencode: #a78bfa;
 }
 
@@ -499,7 +499,7 @@ html, body, #app {
 }
 .account-row--claude .account-row__rail { background: var(--kind-claude); }
 .account-row--codex .account-row__rail { background: var(--kind-codex); }
-.account-row--gemini .account-row__rail { background: var(--kind-gemini); }
+.account-row--antigravity .account-row__rail { background: var(--kind-antigravity); }
 .account-row--opencode .account-row__rail { background: var(--kind-opencode); }
 
 .account-row__body { min-width: 0; display: flex; flex-direction: column; gap: 4px; }

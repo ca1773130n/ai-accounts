@@ -34,10 +34,10 @@ def _flag_map_from_source() -> dict[str, str]:
     return {
         "claude": "--claude-login" if '"claude": "--claude-login"' in src else None,
         "codex": "--codex-device-login" if '"codex": "--codex-device-login"' in src else None,
-        # Google deprecated the Gemini CLI in favour of Antigravity; the
-        # gemini account now authenticates via cliproxyapi's
+        # Google deprecated the Antigravity CLI in favour of Antigravity; the
+        # antigravity account now authenticates via cliproxyapi's
         # `-antigravity-login` instead of the bare Google `--login`.
-        "gemini": "-antigravity-login" if '"gemini": "-antigravity-login"' in src else None,
+        "antigravity": "-antigravity-login" if '"antigravity": "-antigravity-login"' in src else None,
         "kimi": "-kimi-login" if '"kimi": "-kimi-login"' in src else None,
     }
 
@@ -51,8 +51,8 @@ def test_flag_map_uses_device_login_for_codex() -> None:
         "reached over a remote URL."
     )
     assert flag_map["claude"] == "--claude-login"
-    assert flag_map["gemini"] == "-antigravity-login", (
-        "gemini flag must be -antigravity-login. Google deprecated the Gemini "
+    assert flag_map["antigravity"] == "-antigravity-login", (
+        "antigravity flag must be -antigravity-login. Google deprecated the Antigravity "
         "CLI in favour of Antigravity; cliproxyapi exposes -antigravity-login."
     )
     assert flag_map["kimi"] == "-kimi-login", (
@@ -84,7 +84,7 @@ def test_device_code_regex_captures_codex_45_format() -> None:
 def test_cliproxyapi_advertises_codex_device_login() -> None:
     """Installed cliproxyapi must expose -codex-device-login.
 
-    Scoped to codex because that's the flag we just changed. Claude/gemini
+    Scoped to codex because that's the flag we just changed. Claude/antigravity
     flag advertisement varies across cliproxyapi versions and is a separate
     concern.
     """

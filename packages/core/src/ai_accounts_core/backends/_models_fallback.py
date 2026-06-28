@@ -139,7 +139,7 @@ _STATIC_CODEX: tuple[Model, ...] = (
     Model(id="gpt-5", display_name="GPT-5", context_window=400_000),
 )
 
-# gemini and opencode have no shipped static set — both rely on live discovery
+# antigravity and opencode have no shipped static set — both rely on live discovery
 # (Google AI Studio / OpenRouter) which is reliable while the credential is
 # valid. Empty fallback is correct: an unreachable upstream yields an empty
 # dropdown, which is preferable to advertising stale ids.
@@ -147,7 +147,7 @@ _STATIC_CODEX: tuple[Model, ...] = (
 _STATIC: dict[str, tuple[Model, ...]] = {
     "claude": _STATIC_CLAUDE,
     "codex": _STATIC_CODEX,
-    "gemini": (),
+    "antigravity": (),
     "opencode": (),
     "openrouter": (),
     "openai_compat": (),

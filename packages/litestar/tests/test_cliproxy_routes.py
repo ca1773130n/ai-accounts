@@ -59,7 +59,7 @@ def test_cliproxy_login_begin_imported(client):
     ):
         r = client.post(
             "/api/v1/cliproxy/login/begin",
-            json={"backend_kind": "gemini"},
+            json={"backend_kind": "antigravity"},
         )
     assert r.status_code == 201
     body = r.json()

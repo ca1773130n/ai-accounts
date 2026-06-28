@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from ai_accounts_core.backends.gemini import GeminiBackend
+from ai_accounts_core.backends.antigravity import AntigravityBackend
 
 
 def _no_cliproxy():
@@ -15,7 +15,7 @@ def _no_cliproxy():
 
 @pytest.mark.asyncio
 async def test_list_models_empty_for_blank_credential(tmp_path):
-    backend = GeminiBackend()
+    backend = AntigravityBackend()
     with _no_cliproxy():
         models = await backend.list_models(b"", isolation_dir=tmp_path)
     assert models == []
@@ -25,7 +25,7 @@ async def test_list_models_empty_for_blank_credential(tmp_path):
 async def test_list_models_uses_http_not_cli(tmp_path, monkeypatch):
     """Patch _run to fail loudly — list_models must not invoke any subprocess."""
 
-    backend = GeminiBackend()
+    backend = AntigravityBackend()
 
     async def explode(spec):
         raise RuntimeError(f"_run should not be called by list_models, got {spec}")
@@ -42,18 +42,18 @@ async def test_list_models_uses_http_not_cli(tmp_path, monkeypatch):
 async def test_list_models_parses_google_response(tmp_path, monkeypatch):
     """Mock httpx.AsyncClient.get to return a fake Google models response."""
 
-    from ai_accounts_core.backends import gemini as gemini_mod
+    from ai_accounts_core.backends import antigravity as antigravity_mod
 
     fake_payload = {
         "models": [
             {
-                "name": "models/gemini-2.5-pro",
-                "displayName": "Gemini 2.5 Pro",
+                "name": "models/antigravity-2.5-pro",
+                "displayName": "Antigravity 2.5 Pro",
                 "inputTokenLimit": 2_000_000,
             },
             {
-                "name": "models/gemini-2.5-flash",
-                "displayName": "Gemini 2.5 Flash",
+                "name": "models/antigravity-2.5-flash",
+                "displayName": "Antigravity 2.5 Flash",
                 "inputTokenLimit": 1_000_000,
             },
         ]
@@ -78,10 +78,10 @@ async def test_list_models_parses_google_response(tmp_path, monkeypatch):
         async def get(self, *a, **kw):
             return _FakeResp()
 
-    monkeypatch.setattr(gemini_mod.httpx, "AsyncClient", _FakeClient)
+    monkeypatch.setattr(antigravity_mod.httpx, "AsyncClient", _FakeClient)
 
-    backend = GeminiBackend()
+    backend = AntigravityBackend()
     models = await backend.list_models(b"fake-key", isolation_dir=tmp_path)
     ids = [m.id for m in models]
-    assert ids == ["gemini-2.5-pro", "gemini-2.5-flash"]
+    assert ids == ["antigravity-2.5-pro", "antigravity-2.5-flash"]
     assert models[0].context_window == 2_000_000

@@ -67,7 +67,7 @@ function backendLabel(b: BackendDTO): string {
   const KIND_LABELS: Record<string, string> = {
     claude: 'Claude',
     codex: 'Codex',
-    gemini: 'Gemini',
+    antigravity: 'Antigravity',
     opencode: 'OpenCode',
   }
   return KIND_LABELS[b.kind] ?? b.kind

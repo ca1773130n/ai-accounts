@@ -233,7 +233,7 @@ const currentStep = ref<WizardStep>('subscription');
 
 // Backends that the CLIProxyAPI supports registering. Other backends skip
 // the proxy step entirely.
-const PROXY_SUPPORTED_KINDS = ['claude', 'codex', 'gemini', 'kimi'] as const;
+const PROXY_SUPPORTED_KINDS = ['claude', 'codex', 'antigravity', 'kimi'] as const;
 const supportsProxy = computed(() =>
   PROXY_SUPPORTED_KINDS.includes(
     (backendKind.value ?? '') as (typeof PROXY_SUPPORTED_KINDS)[number]
@@ -320,9 +320,9 @@ function generateSlug(name: string): string {
 const DEFAULT_CONFIG_DIR_MAP: Record<string, string> = {
   claude: '.claude',
   codex: '.codex',
-  // ``gemini`` kind is unchanged internally — only the user-facing label
-  // is "Antigravity". The config dir stays ~/.gemini (no DB/config migration).
-  gemini: '.gemini',
+  // ``antigravity`` kind is unchanged internally — only the user-facing label
+  // is "Antigravity". The config dir stays ~/.antigravity (no DB/config migration).
+  antigravity: '.antigravity',
   opencode: '.opencode',
   openrouter: '.openrouter',
   openai_compat: '.openai_compat',
@@ -379,7 +379,7 @@ const apiKeyEnv = computed(() => {
   const envMap: Record<string, string> = {
     claude: 'ANTHROPIC',
     codex: 'OPENAI',
-    gemini: 'GOOGLE',
+    antigravity: 'GOOGLE',
     opencode: 'OPENCODE',
     openrouter: 'OPENROUTER',
     openai_compat: 'OPENAI',
@@ -400,8 +400,8 @@ const apiKeyEnv = computed(() => {
 // Keyless / no-CLI kinds. These backends authenticate via an API key (or, for
 // Antigravity, a native cliproxy OAuth flow) — there's no terminal CLI to
 // install, so the cli step shows a "No CLI required" badge instead of an
-// install check. ``gemini`` is included because Antigravity needs no CLI.
-const NO_CLI_KINDS = ['openrouter', 'openai_compat', 'gemini', 'kimi'] as const;
+// install check. ``antigravity`` is included because Antigravity needs no CLI.
+const NO_CLI_KINDS = ['openrouter', 'openai_compat', 'antigravity', 'kimi'] as const;
 const requiresNoCli = computed(() =>
   NO_CLI_KINDS.includes(
     (backendKind.value ?? '') as (typeof NO_CLI_KINDS)[number]
@@ -537,7 +537,7 @@ watch(configPath, () => {
 // ---------------------------------------------------------------------------
 // Step 3: Login — delegates to useLoginSession + <LoginStream>.
 // The login session machine handles URL prompts, text prompts, stdout, and
-// terminal-state transitions. Gemini-specific direct OAuth, PTY SSE, and
+// terminal-state transitions. Antigravity-specific direct OAuth, PTY SSE, and
 // per-kind option/question UI are replaced by the unified login protocol.
 // ---------------------------------------------------------------------------
 const draftAccountId = ref<string>(''); // backend row id once created
@@ -547,7 +547,7 @@ watch(currentStep, async (_step) => {
   // tour-spotlight wiring further down (after every ref the predicates
   // close over). Here we only auto-start login.
   if (currentStep.value === 'login' && loginSession.status.value === 'idle') {
-    // When the backend advertises multiple login flows (e.g. gemini's
+    // When the backend advertises multiple login flows (e.g. antigravity's
     // api_key + cli_browser), don't auto-start — show the method picker
     // first so the user explicitly chooses. Single-flow backends still
     // auto-start as before. The user's pick (selectedFlow) overrides

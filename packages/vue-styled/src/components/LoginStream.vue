@@ -9,7 +9,7 @@ const props = withDefaults(
     /**
      * Render the raw CLI terminal output behind the wizard prompts.
      * Defaults to ``false`` because end-users complained about the
-     * leaked Claude/Codex/Gemini CLI screen being noisy and confusing.
+     * leaked Claude/Codex/Antigravity CLI screen being noisy and confusing.
      * Set to ``true`` from a debugging surface (e.g. an admin console)
      * if you want to see what the underlying PTY is emitting.
      */
@@ -196,7 +196,7 @@ const effectiveOauthUrl = computed(() => {
   const raw = props.session.urlPrompt.value?.url;
   if (!raw) return '';
   const provider =
-    props.backendKind === 'gemini' || props.backendKind === 'codex'
+    props.backendKind === 'antigravity' || props.backendKind === 'codex'
       ? 'google'
       : props.backendKind === 'claude'
         ? 'claude'

@@ -54,7 +54,7 @@ def test_suggested_name_unrelated_dir():
         # probe cost tokens and routinely blew the 12s probe_timeout,
         # false-negativing a perfectly valid login.
         ("codex", ["codex", "login", "status"], "CODEX_HOME"),
-        ("gemini", ["gemini", "-p", "hello"], "GEMINI_CLI_HOME"),
+        ("antigravity", ["antigravity", "-p", "hello"], "ANTIGRAVITY_HOME"),
         ("opencode", ["opencode", "run", "hello"], "OPENCODE_HOME"),
     ],
 )

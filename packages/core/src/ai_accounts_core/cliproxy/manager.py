@@ -148,13 +148,13 @@ async def start_cliproxy_login(
     # Codex uses the device-code flow (URL + code) rather than the
     # browser-callback flow — device-code works even when the playground
     # is reached over a remote URL.
-    # Gemini now uses Antigravity OAuth (`-antigravity-login`) instead of the
-    # plain Google account flow — Google deprecated the Gemini CLI in favour of
+    # Antigravity now uses Antigravity OAuth (`-antigravity-login`) instead of the
+    # plain Google account flow — Google deprecated the Antigravity CLI in favour of
     # Antigravity, and cliproxyapi ships a native Antigravity login.
     flag_map = {
         "claude": "--claude-login",
         "codex": "--codex-device-login",
-        "gemini": "-antigravity-login",
+        "antigravity": "-antigravity-login",
         "kimi": "-kimi-login",
     }
     flag = flag_map.get(backend_kind)

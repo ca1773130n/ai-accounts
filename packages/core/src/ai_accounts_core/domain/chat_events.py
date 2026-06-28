@@ -4,7 +4,7 @@ import msgspec
 class AllModeEvent(msgspec.Struct, frozen=True, kw_only=True):
     kind: str  # "backend_delta" | "backend_complete" | "backend_error" | "backend_timeout"
     backend: str  # backend_id (bkd-…) — keeps streams unique per account
-    backend_kind: str | None = None  # "claude" / "codex" / "gemini" — for color/label
+    backend_kind: str | None = None  # "claude" / "codex" / "antigravity" — for color/label
     account_label: str | None = None  # display_name / email — for the card title
     text: str | None = None
     error: str | None = None

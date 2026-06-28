@@ -13,7 +13,7 @@ class BackendKind:
 
     CLAUDE = "claude"
     OPENCODE = "opencode"
-    GEMINI = "gemini"
+    ANTIGRAVITY = "antigravity"
     CODEX = "codex"
 
 

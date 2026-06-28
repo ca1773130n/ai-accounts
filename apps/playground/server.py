@@ -23,7 +23,7 @@ from ai_accounts_core.adapters.vault_envkey import EnvKeyVault
 from ai_accounts_core.backends import (
     ClaudeBackend,
     CodexBackend,
-    GeminiBackend,
+    AntigravityBackend,
     KimiBackend,
     OpenAiCompatBackend,
     OpenCodeBackend,
@@ -41,7 +41,7 @@ app = create_app(
         backends=(
             ClaudeBackend(),
             OpenCodeBackend(),
-            GeminiBackend(),
+            AntigravityBackend(),
             CodexBackend(),
             OpenRouterBackend(),
             OpenAiCompatBackend(),

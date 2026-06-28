@@ -31,7 +31,7 @@ const props = withDefaults(
   defineProps<{
     role: 'user' | 'assistant' | 'system' | 'tool';
     content: string;
-    /** Backend kind that produced this message (claude / codex / gemini /
+    /** Backend kind that produced this message (claude / codex / antigravity /
      *  opencode). Drives the assistant author name shown in the header. */
     backend?: string | null;
     /** Model id that produced this message (e.g. `opus`, `gpt-5.1`).
