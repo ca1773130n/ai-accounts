@@ -126,12 +126,9 @@
         "required": [
           "config_schema",
           "display_name",
-          "icon_url",
           "install_check",
-          "isolation_env_var",
           "kind",
           "login_flows",
-          "plan_options",
           "supports_multi_account"
         ],
         "title": "BackendMetadata",
@@ -163,7 +160,6 @@
           }
         },
         "required": [
-          "binary_path",
           "display",
           "stderr",
           "stdout",
@@ -330,7 +326,6 @@
           }
         },
         "required": [
-          "binary_path",
           "display",
           "exit_code",
           "kind",
@@ -606,7 +601,6 @@
             "type": "string"
           },
           "title": {
-            "maxLength": 256,
             "oneOf": [
               {
                 "type": "string"
@@ -996,9 +990,7 @@
           }
         },
         "required": [
-          "binary_path",
-          "installed",
-          "version"
+          "installed"
         ],
         "title": "_StatusResponse",
         "type": "object"
