@@ -270,6 +270,9 @@ class AiderBackend(CliBackendBase):
         *,
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
+        if not request.messages:
+            yield ChatStreamEvent(kind="error", payload="no messages provided")
+            return
         env = self._env(credential, isolation_dir)
         cwd = str(resolved_iso(isolation_dir))
         proc = await asyncio.create_subprocess_exec(
@@ -306,6 +309,7 @@ class AiderBackend(CliBackendBase):
             cols=request.cols,
             rows=request.rows,
             env=env,
+            cwd=str(resolved_iso(isolation_dir)),
         )
 
     def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:

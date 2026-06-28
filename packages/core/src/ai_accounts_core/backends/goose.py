@@ -290,6 +290,9 @@ class GooseBackend(CliBackendBase):
         *,
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
+        if not request.messages:
+            yield ChatStreamEvent(kind="error", payload="no messages provided")
+            return
         env = self._env(credential, isolation_dir)
         proc = await asyncio.create_subprocess_exec(
             "goose",
@@ -313,7 +316,7 @@ class GooseBackend(CliBackendBase):
             except ValueError:
                 continue
             text = ev.get("content") or ev.get("text") if isinstance(ev, dict) else None
-            if text:
+            if isinstance(text, str) and text:
                 yield ChatStreamEvent(kind="token", payload=text)
         await proc.wait()
         yield ChatStreamEvent(kind="done", payload={"model": request.model})

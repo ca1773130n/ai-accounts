@@ -54,7 +54,9 @@ def test_suggested_name_unrelated_dir():
         # probe cost tokens and routinely blew the 12s probe_timeout,
         # false-negativing a perfectly valid login.
         ("codex", ["codex", "login", "status"], "CODEX_HOME"),
-        ("antigravity", ["antigravity", "-p", "hello"], "ANTIGRAVITY_HOME"),
+        # antigravity is intentionally absent: it's keyless/cliproxy (no CLI to
+        # probe), so it was removed from discovery to stop a never-installed
+        # probe downgrading a healthy backend to ERROR.
         ("opencode", ["opencode", "run", "hello"], "OPENCODE_HOME"),
     ],
 )

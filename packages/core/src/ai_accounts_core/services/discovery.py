@@ -52,7 +52,6 @@ logger = logging.getLogger(__name__)
 _HOME_GLOB: dict[str, str] = {
     "claude": ".claude*",
     "codex": ".codex*",
-    "antigravity": ".antigravity*",
     "opencode": ".opencode*",
 }
 
@@ -74,8 +73,6 @@ def _probe_for(kind: str, config_dir: str) -> tuple[list[str], dict[str, str]]:
         return (["claude", "-p", "hello"], {"CLAUDE_CONFIG_DIR": abs_dir})
     if kind == "codex":
         return (["codex", "login", "status"], {"CODEX_HOME": abs_dir})
-    if kind == "antigravity":
-        return (["antigravity", "-p", "hello"], {"ANTIGRAVITY_HOME": abs_dir})
     if kind == "opencode":
         return (["opencode", "run", "hello"], {"OPENCODE_HOME": abs_dir})
     raise ValueError(f"no discovery probe configured for kind: {kind}")

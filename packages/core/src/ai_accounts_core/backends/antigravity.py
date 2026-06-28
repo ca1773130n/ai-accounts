@@ -61,16 +61,6 @@ _ANTIGRAVITY_SUCCESS_MARKERS = ("Login successful", "Authenticated")
 _ANTIGRAVITY_FAILURE_MARKERS = ("error:", "failed")
 
 
-def _migrate_legacy_config_dir() -> None:
-    """One-time best-effort move ~/.gemini -> ~/.antigravity. Never raises."""
-    old, new = Path.home() / ".gemini", Path.home() / ".antigravity"
-    try:
-        if old.exists() and not new.exists():
-            shutil.move(str(old), str(new))
-    except Exception:  # pragma: no cover - best effort
-        pass
-
-
 class _AntigravityCliProxySession(LoginSession):
     """OAuth login that delegates to ``cliproxyapi --login``.
 
@@ -299,10 +289,10 @@ class AntigravityBackend(CliBackendBase):
         kind="antigravity",
         display_name="Antigravity",
         icon_url=None,
-        install_check=InstallCheck(
-            command=["antigravity", "--version"],
-            version_regex=r"(\d+\.\d+\.\d+)",
-        ),
+        # Keyless: Antigravity has no terminal CLI to probe (detect() returns
+        # installed=True). `true` exits 0; the permissive regex no-ops the
+        # optional version parse.
+        install_check=InstallCheck(command=["true"], version_regex=r"(\d+)?"),
         login_flows=[
             # api_key is FIRST so the wizard's auto-pick lands on the path
             # that actually works for everyone. cli_browser delegates to
@@ -344,10 +334,6 @@ class AntigravityBackend(CliBackendBase):
         supports_multi_account=True,
         isolation_env_var="ANTIGRAVITY_HOME",
     )
-
-    def __init__(self) -> None:
-        super().__init__()
-        _migrate_legacy_config_dir()
 
     def begin_login(
         self,
@@ -500,7 +486,10 @@ class AntigravityBackend(CliBackendBase):
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
                     continue
-                data = json.loads(line[6:])
+                try:
+                    data = json.loads(line[6:])
+                except (json.JSONDecodeError, ValueError):
+                    continue
                 candidates = data.get("candidates", [])
                 if not candidates:
                     continue

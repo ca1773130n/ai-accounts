@@ -393,7 +393,10 @@ class OpenAiCompatBackend(CliBackendBase):
                 payload = line[6:].strip()
                 if payload == "[DONE]":
                     break
-                data = json.loads(payload)
+                try:
+                    data = json.loads(payload)
+                except (json.JSONDecodeError, ValueError):
+                    continue
                 choice = data.get("choices", [{}])[0]
                 delta = choice.get("delta", {})
                 text = delta.get("content")

@@ -151,10 +151,7 @@ _STATIC: dict[str, tuple[Model, ...]] = {
     "openrouter": (),
     "openai_compat": (),
     "kimi": (),
-    "deepseek": (
-        Model(id="deepseek-v4-flash", display_name="DeepSeek V4 Flash"),
-        Model(id="deepseek-v4-pro", display_name="DeepSeek V4 Pro"),
-    ),
+    "deepseek": (),
     "goose": (),
     "aider": (),
     "crush": (),

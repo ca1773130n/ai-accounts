@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fcntl
 import os
 import signal
@@ -28,6 +29,7 @@ class AsyncPtyHandle:
         cols: int = 80,
         rows: int = 24,
         env: dict[str, str] | None = None,
+        cwd: str | None = None,
     ) -> AsyncPtyHandle:
         merged_env = {**os.environ, **(env or {})}
         merged_env["TERM"] = merged_env.get("TERM", "xterm-256color")
@@ -47,6 +49,9 @@ class AsyncPtyHandle:
                 pass
             os.close(master_fd)
             os.setsid()
+            if cwd:
+                with contextlib.suppress(OSError):
+                    os.chdir(cwd)
             os.dup2(slave_fd, 0)
             os.dup2(slave_fd, 1)
             os.dup2(slave_fd, 2)

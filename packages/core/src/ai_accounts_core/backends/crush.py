@@ -93,6 +93,7 @@ def _write_crush_config(isolation_dir: Path, provider_id: str, api_key: str, mod
     iso = resolved_iso(isolation_dir)
     config_path = iso / "crush.json"
     config_path.write_text(json.dumps(_build_crush_config(provider_id, api_key, model), indent=2))
+    config_path.chmod(0o600)
     return config_path
 
 
@@ -322,6 +323,7 @@ class CrushBackend(CliBackendBase):
             cols=request.cols,
             rows=request.rows,
             env=env,
+            cwd=str(resolved_iso(isolation_dir)),
         )
 
     def _env(self, credential: bytes, isolation_dir: Path) -> dict[str, str]:
