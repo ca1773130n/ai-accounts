@@ -24,10 +24,12 @@ from ai_accounts_core.backends import (
     ClaudeBackend,
     CodexBackend,
     AntigravityBackend,
+    DeepSeekBackend,
     KimiBackend,
     OpenAiCompatBackend,
     OpenCodeBackend,
     OpenRouterBackend,
+    QwenBackend,
 )
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
@@ -46,6 +48,8 @@ app = create_app(
             OpenRouterBackend(),
             OpenAiCompatBackend(),
             KimiBackend(),
+            DeepSeekBackend(),
+            QwenBackend(),
         ),
         backend_dirs_path=Path("./backend_dirs"),
     )

@@ -1,15 +1,13 @@
-"""Generic OpenAI-compatible backend (base_url + api_key).
+"""Qwen (Alibaba DashScope) backend — OpenAI-compatible api-key.
 
-One backend that covers any OpenAI-shaped endpoint — Qwen, iFlow, Together,
-Groq, DeepSeek, Mistral, etc. — by storing both the API key and the provider's
-``base_url`` in the credential. There is no CLI to install: login is a two-step
-api_key flow (base_url prompt, then key prompt) and the credential is JSON bytes
-``{"api_key": ..., "base_url": ...}``.
-
-``validate``/``list_models``/``chat`` decode that JSON, read ``base_url``, and
-hit ``{base_url}/models`` and ``{base_url}/chat/completions`` (OpenAI shape —
-same parsing as opencode). An empty/invalid base_url or a non-200 response fails
-gracefully rather than raising.
+Thin named-provider wrapper modelled on ``openrouter.py`` but with a region
+selector. Qwen Code's public surface is the DashScope / ModelStudio
+OpenAI-compatible endpoint, which differs only by region host. Login first
+emits a :class:`MenuPrompt` (China / International / Custom), resolves the
+``base_url``, then prompts for the DashScope API key. The credential is JSON
+bytes ``{"api_key": ..., "base_url": ...}`` (same shape as ``openai_compat``)
+so ``validate``/``list_models``/``chat`` decode it via
+``openai_compat._decode_credential``.
 """
 
 from __future__ import annotations
@@ -26,6 +24,7 @@ from typing import ClassVar
 import httpx
 
 from ai_accounts_core.backends._base import CliBackendBase
+from ai_accounts_core.backends.openai_compat import _decode_credential
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.login import (
     LoginComplete,
@@ -51,48 +50,19 @@ from ai_accounts_core.protocols.backend import (
     PtyRequest,
 )
 
-# (key, label, base_url) — base_url "" means Custom (ask the user for it).
-# All five local servers are OpenAI-shaped; the key is optional/ignored on
-# localhost. Order is presentation order; the 1-based menu number maps to it.
-_PRESETS: tuple[tuple[str, str, str], ...] = (
-    ("ollama", "Ollama (:11434)", "http://localhost:11434/v1"),
-    ("lmstudio", "LM Studio (:1234)", "http://localhost:1234/v1"),
-    ("vllm", "vLLM (:8000)", "http://localhost:8000/v1"),
-    ("llamacpp", "llama.cpp (:8080)", "http://localhost:8080/v1"),
-    ("oobabooga", "oobabooga (:5000)", "http://localhost:5000/v1"),
-    ("custom", "Custom base URL", ""),
-)
+# DashScope OpenAI-compatible bases per region (compatible-mode/v1).
+_QWEN_CN_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+_QWEN_INTL_BASE = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+_QWEN_BASE = _QWEN_CN_BASE  # default when a credential omits base_url
 
 
-def _decode_credential(credential: bytes) -> tuple[str, str]:
-    """Return ``(base_url, api_key)`` from JSON credential bytes.
+class _QwenApiKeySession(LoginSession):
+    """Region menu → (optional custom base_url) → api_key → JSON credential.
 
-    Tolerant of empty/garbage input — returns empty strings so callers can
-    fail gracefully (validate False, fallback models, chat error event).
-    The base_url has any trailing slash stripped so callers can append
-    ``/models`` / ``/chat/completions`` without double slashes.
-    """
-    if not credential:
-        return "", ""
-    try:
-        raw = json.loads(credential.decode("utf-8", errors="replace"))
-    except (json.JSONDecodeError, ValueError):
-        return "", ""
-    if not isinstance(raw, dict):
-        return "", ""
-    base_url = str(raw.get("base_url") or "").strip().rstrip("/")
-    api_key = str(raw.get("api_key") or "").strip()
-    return base_url, api_key
-
-
-class _OpenAiCompatApiKeySession(LoginSession):
-    """Two-step api_key flow: prompt for base_url, then for the API key.
-
-    Sequential TextPrompts are driven the same way antigravity's
-    ``_AntigravityCliProxySession`` drives UrlPrompt → TextPrompt: each prompt is
-    yielded, then the session blocks on the answer queue for the client's
-    reply before yielding the next. The resulting credential is JSON bytes
-    ``{"api_key": ..., "base_url": ...}``.
+    Prompts are driven the same way ``openai_compat``'s session drives its
+    sequential TextPrompts: each prompt is yielded, then the session blocks on
+    the answer queue before yielding the next. The region MenuPrompt's answer
+    is the option ``number`` (1=China, 2=International, 3=Custom).
     """
 
     def __init__(self) -> None:
@@ -111,7 +81,7 @@ class _OpenAiCompatApiKeySession(LoginSession):
 
     @property
     def backend_kind(self) -> str:
-        return "openai_compat"
+        return "qwen"
 
     @property
     def flow_kind(self) -> str:
@@ -124,22 +94,20 @@ class _OpenAiCompatApiKeySession(LoginSession):
     async def _next_answer(self) -> PromptAnswer | None:
         """Await the next client answer; None signals the flow already ended."""
         try:
-            ans = await asyncio.wait_for(self._answers.get(), timeout=300)
+            return await asyncio.wait_for(self._answers.get(), timeout=300)
         except TimeoutError:
             self._done = True
             return None
-        return ans
 
     async def events(self) -> AsyncIterator[LoginEvent]:
-        # Step 0 — preset menu. Picking a local-server preset fills base_url and
-        # skips the base_url prompt; "Custom" (last) falls through to it. The
-        # client returns the 1-based option number as a string.
+        # Step 1 — region menu. The answer is the option number (1/2/3).
         yield MenuPrompt(
-            prompt_id="preset",
-            prompt="Local server (or Custom)",
-            options=tuple(
-                MenuOption(number=i + 1, label=label)
-                for i, (_key, label, _url) in enumerate(_PRESETS)
+            prompt_id="region",
+            prompt="DashScope region",
+            options=(
+                MenuOption(number=1, label="China (dashscope.aliyuncs.com)"),
+                MenuOption(number=2, label="International (dashscope-intl)"),
+                MenuOption(number=3, label="Custom base URL"),
             ),
         )
         ans = await self._next_answer()
@@ -150,18 +118,16 @@ class _OpenAiCompatApiKeySession(LoginSession):
             self._done = True
             yield LoginFailed(code="cancelled", message="Login cancelled")
             return
-        choice = (ans.answer or "").strip()
-        idx = (
-            int(choice) - 1
-            if choice.isdigit() and 1 <= int(choice) <= len(_PRESETS)
-            else len(_PRESETS) - 1  # default to Custom on anything unexpected
-        )
-        base_url = _PRESETS[idx][2]  # "" for Custom
+        try:
+            choice = int((ans.answer or "").strip())
+        except ValueError:
+            choice = 1
 
-        # Step 1 — base URL (only when no preset was chosen). The TextPrompt's
-        # `prompt` is the input label rendered by LoginStream; point at the
-        # OpenAI /v1 convention.
-        if not base_url:
+        base_url = ""
+        if choice == 2:
+            base_url = _QWEN_INTL_BASE
+        elif choice == 3:
+            # Step 2 (custom only) — follow-up base_url prompt.
             yield TextPrompt(
                 prompt_id="base_url",
                 prompt="Base URL of the OpenAI-compatible endpoint (e.g. https://.../v1)",
@@ -180,14 +146,11 @@ class _OpenAiCompatApiKeySession(LoginSession):
                 self._done = True
                 yield LoginFailed(code="invalid_base_url", message="Base URL cannot be empty")
                 return
+        else:
+            base_url = _QWEN_CN_BASE
 
-        # Step 2 — API key (OPTIONAL for local/keyless servers like Ollama or
-        # LM Studio). An empty answer is allowed — do NOT fail on a blank key.
-        yield TextPrompt(
-            prompt_id="api_key",
-            prompt="API key (optional — leave blank for local servers like Ollama / LM Studio)",
-            hidden=True,
-        )
+        # Step 3 — API key.
+        yield TextPrompt(prompt_id="api_key", prompt="DashScope API key", hidden=True)
         ans = await self._next_answer()
         if ans is None:
             yield LoginFailed(code="response_timeout", message="No response within 5 minutes")
@@ -196,7 +159,11 @@ class _OpenAiCompatApiKeySession(LoginSession):
             self._done = True
             yield LoginFailed(code="cancelled", message="Login cancelled")
             return
-        api_key = (ans.answer or "").strip()  # empty is allowed for keyless servers
+        api_key = (ans.answer or "").strip()
+        if not api_key:
+            self._done = True
+            yield LoginFailed(code="invalid_key", message="API key cannot be empty")
+            return
 
         self._credential = json.dumps({"api_key": api_key, "base_url": base_url}).encode("utf-8")
         self._done = True
@@ -213,31 +180,26 @@ class _OpenAiCompatApiKeySession(LoginSession):
             self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
-class OpenAiCompatBackend(CliBackendBase):
-    kind: ClassVar[str] = "openai_compat"
+class QwenBackend(CliBackendBase):
+    kind: ClassVar[str] = "qwen"
     supported_login_flows: ClassVar[frozenset[str]] = frozenset({"api_key"})
 
     metadata: ClassVar[BackendMetadata] = BackendMetadata(
-        kind="openai_compat",
-        display_name="OpenAI-compatible (Custom)",
+        kind="qwen",
+        display_name="Qwen (Alibaba DashScope)",
         icon_url=None,
-        # Keyless: no binary to probe. `true` exits 0 with no output; the
-        # permissive regex lets the optional version parse no-op succeed.
-        install_check=InstallCheck(command=["true"], version_regex=r"(\d+)?"),
+        # Keyless backend — no CLI binary to probe. `true` always exits 0;
+        # the optional-int regex matches its empty output without error.
+        install_check=InstallCheck(
+            command=["true"],
+            version_regex=r"(\d+)?",
+        ),
         login_flows=[
             LoginFlowSpec(
                 kind="api_key",
                 display_name="API key",
-                description="Paste a base URL and API key for any OpenAI-compatible endpoint",
-                requires_inputs=[
-                    InputSpec(
-                        name="base_url",
-                        label="Base URL",
-                        kind="text",
-                        placeholder="https://.../v1",
-                    ),
-                    InputSpec(name="api_key", label="API key", kind="secret"),
-                ],
+                description="Pick a DashScope region and paste an API key",
+                requires_inputs=[InputSpec(name="api_key", label="API key", kind="secret")],
             ),
         ],
         plan_options=None,
@@ -257,57 +219,36 @@ class OpenAiCompatBackend(CliBackendBase):
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "api_key":
-            return _OpenAiCompatApiKeySession()
+            return _QwenApiKeySession()
         raise ValueError(f"unsupported flow_kind: {flow_kind}")
 
     async def detect(self) -> DetectResult:
-        # Keyless backend — nothing to install, always available.
+        # Keyless: nothing to install, so report available without shelling a
+        # binary (CliBackendBase.detect would `shutil.which` an absent CLI).
         return DetectResult(installed=True)
 
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
-        # API key is OPTIONAL: keyless local servers (Ollama, LM Studio,
-        # llama.cpp, oobabooga, vLLM-no-auth) are valid with an empty key. Only
-        # base_url is required; the Authorization header is sent when a key
-        # exists. /models may be missing on old llama.cpp / oobabooga-without
-        # --api, so fall back to a /chat/completions reachability probe.
         base_url, api_key = _decode_credential(credential)
-        if not base_url:
+        base_url = base_url or _QWEN_BASE
+        if not api_key:
             return False
-        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         try:
             async with httpx.AsyncClient(timeout=10.0) as http:
-                resp = await http.get(f"{base_url}/models", headers=headers)
-                if resp.status_code == 200:
-                    return True  # reachable, even when the model list is empty
-                if resp.status_code in (401, 403):
-                    return False  # reachable but the key was rejected
-                # /models absent (404) or unimplemented — probe chat instead.
-                probe = await http.post(
-                    f"{base_url}/chat/completions",
-                    headers={**headers, "Content-Type": "application/json"},
-                    json={
-                        "model": "",
-                        "messages": [{"role": "user", "content": "ping"}],
-                        "max_tokens": 1,
-                        "stream": False,
-                    },
+                resp = await http.get(
+                    f"{base_url}/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
                 )
         except (httpx.HTTPError, OSError):
             return False
-        if probe.status_code in (401, 403):
-            return False
-        # 400/422 = the route exists and speaks OpenAI; the throwaway body was
-        # rejected, which still proves a reachable, compatible server.
-        return probe.status_code in (200, 400, 422)
+        return resp.status_code == 200
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
-        # Live discovery from the configured endpoint's /models — same
-        # OpenAI {data: [{id, name, context_length, ...}]} shape as opencode.
+        # Live discovery from DashScope's /models — same OpenAI
+        # {data: [{id, name, context_length, ...}]} shape as openai_compat.
         from ai_accounts_core.backends._models_fallback import fallback
 
         base_url, api_key = _decode_credential(credential)
-        if not base_url:
-            return fallback("openai_compat")
+        base_url = base_url or _QWEN_BASE
         try:
             async with httpx.AsyncClient(timeout=10.0) as http:
                 resp = await http.get(
@@ -329,10 +270,10 @@ class OpenAiCompatBackend(CliBackendBase):
                     ]
         except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError):
             pass
-        return fallback("openai_compat")
+        return fallback("qwen")
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
-        return []  # OpenAI-compatible endpoints have no standard usage API
+        return []  # DashScope's OpenAI-compatible surface has no usage API
 
     async def chat(
         self,
@@ -342,9 +283,7 @@ class OpenAiCompatBackend(CliBackendBase):
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
         base_url, api_key = _decode_credential(credential)
-        if not base_url:
-            yield ChatStreamEvent(kind="error", payload="No base URL configured")
-            return
+        base_url = base_url or _QWEN_BASE
         messages_payload = [{"role": m.role.value, "content": m.content} for m in request.messages]
         body: dict[str, object] = {
             "model": request.model,
@@ -416,7 +355,7 @@ class OpenAiCompatBackend(CliBackendBase):
         base_url, api_key = _decode_credential(credential)
         env = {**os.environ}
         if api_key:
-            env["OPENAI_API_KEY"] = api_key
+            env["DASHSCOPE_API_KEY"] = api_key
         if base_url:
             env["OPENAI_BASE_URL"] = base_url
         return env
