@@ -41,6 +41,6 @@ class BackendMetadata(msgspec.Struct):
     install_check: InstallCheck
     login_flows: list[LoginFlowSpec]
     plan_options: list[PlanOption] | None
-    config_schema: dict
+    config_schema: dict[str, object]
     supports_multi_account: bool
     isolation_env_var: str | None

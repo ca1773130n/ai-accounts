@@ -14,6 +14,7 @@ SSE route handler can safely race with /respond and /cancel.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import dataclass
@@ -92,10 +93,8 @@ class LoginSessionRegistry:
         async with self._lock:
             for entry in list(self._entries.values()):
                 if not entry.session.done:
-                    try:
+                    with contextlib.suppress(Exception):
                         await entry.session.cancel()
-                    except Exception:
-                        pass
             self._entries.clear()
         if self._pending_cancels:
             await asyncio.gather(*self._pending_cancels, return_exceptions=True)

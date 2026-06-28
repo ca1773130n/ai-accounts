@@ -1,4 +1,3 @@
-
 import pytest
 from ai_accounts_core.domain.usage import FallbackChainEntry
 from ai_accounts_core.services.accounts import AccountService

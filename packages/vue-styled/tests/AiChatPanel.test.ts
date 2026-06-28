@@ -224,10 +224,11 @@ describe('ChatControls', () => {
   const defaultProps = {
     chatMode: 'single' as const,
     selectedBackend: null,
+    selectedAccount: null,
     selectedModel: null,
     backends: [
-      { kind: 'claude', displayName: 'Claude', accounts: ['a@b.com'], models: ['opus'] },
-      { kind: 'antigravity', displayName: 'Antigravity', accounts: ['g@g.com'], models: ['pro'] },
+      { kind: 'claude', displayName: 'Claude', accounts: [{ id: 'a@b.com', label: 'a@b.com' }], models: ['opus'] },
+      { kind: 'antigravity', displayName: 'Antigravity', accounts: [{ id: 'g@g.com', label: 'g@g.com' }], models: ['pro'] },
     ],
   };
 
@@ -246,7 +247,7 @@ describe('ChatControls', () => {
 
   it('emits update:chatMode on mode click', async () => {
     const w = mount(ChatControls, { props: defaultProps });
-    await w.findAll('.aia-controls__mode-btn')[2].trigger('click');
+    await w.findAll('.aia-controls__mode-btn')[2]!.trigger('click');
     expect(w.emitted('update:chatMode')?.[0]).toEqual(['compound']);
   });
 
@@ -260,8 +261,8 @@ describe('ChatControls', () => {
     const w = mount(ChatControls, { props: defaultProps });
     const selects = w.findAll('.aia-controls__select');
     // second and third selects (account, model) should be disabled
-    expect(selects[1].attributes('disabled')).toBeDefined();
-    expect(selects[2].attributes('disabled')).toBeDefined();
+    expect(selects[1]!.attributes('disabled')).toBeDefined();
+    expect(selects[2]!.attributes('disabled')).toBeDefined();
   });
 });
 

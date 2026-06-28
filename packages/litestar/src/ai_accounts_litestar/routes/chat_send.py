@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
 import msgspec
@@ -54,10 +55,13 @@ class ChatSendController(Controller):
         orchestrator: ChatOrchestrator,
         chat_state: ChatStateService,
         data: _SendRequest,
-        request: Request,
+        request: Request[Any, Any, Any],
     ) -> Stream:
         last_event_id = _parse_last_event_id(request.headers.get("last-event-id"))
 
+        # gen is one of three differently-typed async iterators depending on
+        # mode; widen to a common type so the branch assignments unify.
+        gen: AsyncIterator[Any]
         if data.mode == "all":
             gen = orchestrator.send_all(session_id=data.session_id, content=data.content)
         elif data.mode == "compound":
@@ -75,7 +79,7 @@ class ChatSendController(Controller):
                 model=data.model,
             )
 
-        async def sse():
+        async def sse() -> AsyncIterator[str]:
             session_id = data.session_id
             # Reconnect: replay retained events first, then ensure session
             # exists for new events. If the session was evicted server-side

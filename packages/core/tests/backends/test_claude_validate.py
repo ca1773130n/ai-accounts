@@ -18,10 +18,21 @@ def _no_keychain():
     return patch("ai_accounts_core.backends.claude.subprocess.run", return_value=fake)
 
 
+def _claude_on_path():
+    """Pretend the `claude` CLI is installed.
+
+    validate() short-circuits to False when ``shutil.which("claude")`` is None,
+    so without this the CLI's absence (e.g. in CI) masks the credential logic
+    these tests exercise — the True cases fail and the False cases pass for the
+    wrong reason.
+    """
+    return patch("ai_accounts_core.backends.claude.shutil.which", return_value="/usr/bin/claude")
+
+
 @pytest.mark.asyncio
 async def test_validate_returns_false_when_isolation_dir_empty(tmp_path):
     backend = ClaudeBackend()
-    with _no_keychain():
+    with _no_keychain(), _claude_on_path():
         ok = await backend.validate(b"", isolation_dir=tmp_path)
     assert ok is False
 
@@ -31,7 +42,7 @@ async def test_validate_returns_true_when_credentials_present(tmp_path):
     creds = tmp_path / ".credentials.json"
     creds.write_text(json.dumps({"oauth_token": "sk-ant-..."}))
     backend = ClaudeBackend()
-    with _no_keychain():
+    with _no_keychain(), _claude_on_path():
         ok = await backend.validate(b"", isolation_dir=tmp_path)
     assert ok is True
 
@@ -41,7 +52,7 @@ async def test_validate_returns_false_when_credentials_corrupt(tmp_path):
     creds = tmp_path / ".credentials.json"
     creds.write_text("not valid json{{{")
     backend = ClaudeBackend()
-    with _no_keychain():
+    with _no_keychain(), _claude_on_path():
         ok = await backend.validate(b"", isolation_dir=tmp_path)
     assert ok is False
 
@@ -52,6 +63,7 @@ async def test_validate_returns_true_when_macos_keychain_has_entry(tmp_path):
     fake_ok = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
     backend = ClaudeBackend()
     with (
+        _claude_on_path(),
         patch("ai_accounts_core.backends.claude.sys.platform", "darwin"),
         patch("ai_accounts_core.backends.claude.subprocess.run", return_value=fake_ok),
     ):

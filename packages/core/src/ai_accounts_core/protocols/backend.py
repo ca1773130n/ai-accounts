@@ -64,7 +64,12 @@ class BackendProtocol(Protocol):
     ) -> LoginSession: ...
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool: ...
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]: ...
-    async def chat(
+    # `chat` is an async generator: calling it RETURNS an AsyncIterator, it is
+    # not itself a coroutine. Callers consume it with `async for ev in
+    # impl.chat(...)`, so (like `PtyHandle.read` above) the signature must be a
+    # plain `def` — `async def` would type the return as Coroutine[..., Async-
+    # Iterator[...]] and break every `async for` call site.
+    def chat(
         self,
         request: ChatRequest,
         credential: bytes,

@@ -63,6 +63,7 @@ class AsyncPtyHandle:
             handle = cls(master_fd, child_pid)
             await handle.resize(cols, rows)
             return handle
+        return None
 
     async def write(self, data: bytes) -> None:
         if self._closed:
@@ -97,15 +98,12 @@ class AsyncPtyHandle:
         if self._closed:
             return
         self._closed = True
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.kill(self._pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
+        with contextlib.suppress(OSError):
             os.close(self._master_fd)
-        except OSError:
-            pass
-        try:
-            os.waitpid(self._pid, os.WNOHANG)
-        except ChildProcessError:
-            pass
+        with contextlib.suppress(ChildProcessError):
+            # WNOHANG keeps this a non-blocking best-effort reap; run it via a
+            # thread so ruff's ASYNC222 (no blocking process waits on the loop)
+            # is satisfied without changing the non-blocking semantics.
+            await asyncio.to_thread(os.waitpid, self._pid, os.WNOHANG)

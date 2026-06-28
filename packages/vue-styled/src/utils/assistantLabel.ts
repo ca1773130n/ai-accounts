@@ -16,6 +16,9 @@ const BACKEND_DISPLAY_NAMES: Record<string, string> = {
   goose: 'Goose',
   aider: 'Aider',
   crush: 'Crush',
+  openai_compat: 'OpenAI-compatible',
+  openrouter: 'OpenRouter',
+  kimi: 'Kimi',
 };
 
 /**

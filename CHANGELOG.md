@@ -4,7 +4,7 @@ All notable changes to ai-accounts packages in this monorepo.
 
 ## Unreleased
 
-Completes the Gemini → **Antigravity** migration (the kind is now genuinely `antigravity`, not an alias), and adds five backends plus keyless local-LLM support.
+Completes the Gemini → **Antigravity** migration (the kind is now genuinely `antigravity`, not an alias), and adds five backends plus keyless local-LLM support. Also brings CI to green and lands the deferred code-review follow-ups.
 
 ### Added
 
@@ -20,6 +20,21 @@ Completes the Gemini → **Antigravity** migration (the kind is now genuinely `a
 
 - **Gemini backend fully renamed to Antigravity** (`ai-accounts-core`, `backends/gemini.py` → `backends/antigravity.py`). `GeminiBackend` → `AntigravityBackend`, kind `"gemini"` → `"antigravity"`, isolation env `GEMINI_HOME` → `ANTIGRAVITY_HOME`, with a best-effort one-time config-dir move `~/.gemini` → `~/.antigravity`. The rename propagates through `BackendKind`, the cliproxy flag/compat maps, the static model fallbacks, the playground server registry, and all `@ai-accounts/vue-styled` kind maps (labels, colours, CSS vars, wizard config-dir/api-key maps).
 - **Frontend backend maps extended** (`@ai-accounts/vue-styled`) for `deepseek`, `goose`, `aider`, `crush` — display names, selector labels, response colours, onboarding list, and wizard config-dir / api-key-env / no-CLI maps.
+
+### Fixed
+
+- **CI is green** (`.github/workflows/ci.yml`). Fixed pre-existing pipeline bugs: removed the pnpm `packageManager` / `setup-node` version clash, switched the Python install to `uv sync --all-extras --all-packages`, run the package build before type-checking, and install `just` (`extractions/setup-just`) in the runner. Added a flat-config `eslint.config.mjs` so the lint job resolves.
+
+### Review follow-ups
+
+These land the deferred items from the backend-roster code review:
+
+- **Antigravity passes the API key as an `x-goog-api-key` header** (`ai-accounts-core`, `backends/antigravity.py`) across `validate()`, `list_models()`, and `chat()`, matching Google's Generative Language API.
+- **CLIProxyAPI log/config files use `tempfile.mkstemp`** (`ai-accounts-core`, `cliproxy/manager.py`) — atomic creation with no TOCTOU window, replacing the predictable temp path.
+- **Goose installer pinned** (`ai-accounts-core`, `install/backend_cli.py`) to a known-good release (`v1.39.0`) instead of tracking the latest install script.
+- **OpenAI-compatible login skips the API-key prompt for keyless presets** and surfaces a placeholder model when `/models` is absent (`ai-accounts-core`, `backends/openai_compat.py`).
+- **Agent backends surface the configured model** (`ai-accounts-core`, `backends/{goose,aider,crush}.py`) from `list_models()` so the UI reflects the active model even without a live models endpoint.
+- **Frontend label maps** (`@ai-accounts/vue-styled`) rounded out for the new backend kinds.
 
 ## 0.3.17 — 2026-06-20
 

@@ -44,7 +44,7 @@ describe('BackendPicker', () => {
     await nextTick();
     await nextTick();
     const buttons = w.findAll('button');
-    await buttons[0].trigger('click');
+    await buttons[0]!.trigger('click');
     expect(w.emitted('pick')).toBeTruthy();
     expect(w.emitted('pick')![0]).toEqual(['claude']);
   });

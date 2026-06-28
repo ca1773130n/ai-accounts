@@ -19,7 +19,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install ${{ matrix.python }}
-      - run: uv sync --all-extras
+      - run: uv sync --all-extras --all-packages
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy packages/core/src packages/litestar/src
@@ -35,16 +35,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # build first: vue-* typecheck/test depend on @ai-accounts/ts-core's
+      # emitted d.ts, which don't exist until ts-core is built.
+      - run: pnpm -r build
       - run: pnpm -r typecheck
       - run: pnpm -r lint
-      - run: pnpm -r build
       - run: pnpm -r test
 
   codegen:
@@ -53,13 +53,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: pnpm
-      - run: uv sync
+      - uses: extractions/setup-just@v2
+      - run: uv sync --all-extras --all-packages
       - run: pnpm install --frozen-lockfile
       - run: just codegen
       - name: Fail if codegen produced a diff

@@ -17,6 +17,7 @@ import httpx
 from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
 from ai_accounts_core.backends._iso import resolved_iso
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -83,12 +84,10 @@ class _CodexOAuthDeviceSession(LoginSession):
     async def _cleanup(self) -> None:
         async with self._cleanup_lock:
             if self._orchestrator is not None:
-                try:
+                with contextlib.suppress(Exception):  # pragma: no cover - best-effort
                     await self._orchestrator.terminate()
-                except Exception:  # pragma: no cover - best-effort
-                    pass
                 try:
-                    exit_code = await asyncio.wait_for(self._orchestrator.wait(), timeout=10)
+                    await asyncio.wait_for(self._orchestrator.wait(), timeout=10)
                 except TimeoutError:
                     await self._orchestrator.kill()
                     await self._orchestrator.wait()
@@ -199,12 +198,10 @@ class _CodexCliBrowserSession(LoginSession):
     async def _cleanup(self) -> None:
         async with self._cleanup_lock:
             if self._orchestrator is not None:
-                try:
+                with contextlib.suppress(Exception):  # pragma: no cover - best-effort
                     await self._orchestrator.terminate()
-                except Exception:  # pragma: no cover - best-effort
-                    pass
                 try:
-                    exit_code = await asyncio.wait_for(self._orchestrator.wait(), timeout=10)
+                    await asyncio.wait_for(self._orchestrator.wait(), timeout=10)
                 except TimeoutError:
                     await self._orchestrator.kill()
                     await self._orchestrator.wait()
@@ -396,8 +393,8 @@ class CodexBackend(CliBackendBase):
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "oauth_device":
@@ -455,14 +452,17 @@ class CodexBackend(CliBackendBase):
 
         live = await cliproxy_list_models("codex")
         if live:
-            return [
-                Model(
-                    id=str(m["id"]),
-                    display_name=str(m.get("display_name") or m["id"]),
-                    context_window=m.get("context_window"),
+            out: list[Model] = []
+            for m in live:
+                cw = m.get("context_window")
+                out.append(
+                    Model(
+                        id=str(m["id"]),
+                        display_name=str(m.get("display_name") or m["id"]),
+                        context_window=cw if isinstance(cw, int) else None,
+                    )
                 )
-                for m in live
-            ]
+            return out
         from ai_accounts_core.backends._models_fallback import fallback
 
         return fallback("codex")
@@ -486,10 +486,8 @@ class CodexBackend(CliBackendBase):
         import os
 
         candidates: list[Path] = []
-        try:
+        with contextlib.suppress(Exception):
             candidates.append(resolved_iso(isolation_dir) / "models_cache.json")
-        except Exception:
-            pass
         codex_home = os.environ.get("CODEX_HOME")
         if codex_home:
             candidates.append(Path(codex_home) / "models_cache.json")
@@ -568,9 +566,7 @@ class CodexBackend(CliBackendBase):
             out.append(Model(id=str(model_id), display_name=str(model_id)))
         return out or None
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
-        from ai_accounts_core.domain.usage import UsageWindow
-
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         api_key = credential.decode("utf-8").strip()
         try:
             async with httpx.AsyncClient() as client:
@@ -624,16 +620,19 @@ class CodexBackend(CliBackendBase):
         }
         if "max_tokens" in request.params:
             body["max_tokens"] = request.params["max_tokens"]
-        async with httpx.AsyncClient() as client, client.stream(
-            "POST",
-            "https://api.openai.com/v1/chat/completions",
-            json=body,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=120.0,
-        ) as resp:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "POST",
+                "https://api.openai.com/v1/chat/completions",
+                json=body,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=120.0,
+            ) as resp,
+        ):
             if resp.status_code != 200:
                 yield ChatStreamEvent(
                     kind="error",

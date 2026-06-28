@@ -17,11 +17,10 @@ from typing import ClassVar
 
 import httpx
 
-logger = logging.getLogger(__name__)
-
 from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._iso import resolved_iso
 from ai_accounts_core.domain.chat import ChatRole
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -52,6 +51,8 @@ from ai_accounts_core.protocols.backend import (
     PtyHandle,
     PtyRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 _CLAUDE_CONSOLE_URL_RE = re.compile(
     r"https://(?:claude\.ai|claude\.com|console\.anthropic\.com|platform\.claude\.com)/\S+"
@@ -156,6 +157,7 @@ def _expected_claude_keychain_service(config_dir: Path) -> str:
     [:8] == 'd552d744' — both matched live items.
     """
     import hashlib
+
     resolved = str(Path(config_dir).expanduser().resolve())
     h = hashlib.sha256(resolved.encode()).hexdigest()[:8]
     return f"Claude Code-credentials-{h}"
@@ -215,6 +217,7 @@ async def _claude_keychain_walk(config_dir: Path | None) -> bool:
     overall ``asyncio.wait_for``.
     """
     import time as _time
+
     try:
         dump = await asyncio.to_thread(
             subprocess.run,
@@ -239,7 +242,11 @@ async def _claude_keychain_walk(config_dir: Path | None) -> bool:
     # Dedup (service, account) pairs so the same item isn't probed
     # twice (e.g. duplicate emit from the parser's fall-through).
     seen: set[tuple[str, str | None]] = set()
-    deduped = [it for it in items if not (it in seen or seen.add(it))]
+    deduped: list[tuple[str, str | None]] = []
+    for it in items:
+        if it not in seen:
+            seen.add(it)
+            deduped.append(it)
     # Claude Code writes expiresAt as epoch milliseconds — compare
     # against now-ms with a small skew tolerance so a token expiring
     # in the next 60s is also rejected (it would 401 by the time the
@@ -250,8 +257,13 @@ async def _claude_keychain_walk(config_dir: Path | None) -> bool:
         argv = ["security", "find-generic-password", "-s", service, "-w"]
         if account is not None:
             argv = [
-                "security", "find-generic-password",
-                "-s", service, "-a", account, "-w",
+                "security",
+                "find-generic-password",
+                "-s",
+                service,
+                "-a",
+                account,
+                "-w",
             ]
         try:
             proc = await asyncio.to_thread(
@@ -264,7 +276,9 @@ async def _claude_keychain_walk(config_dir: Path | None) -> bool:
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
             logger.debug(
                 "find-generic-password -s %s -a %s failed: %r",
-                service, account, exc,
+                service,
+                account,
+                exc,
             )
             continue
         if proc.returncode != 0 or not proc.stdout.strip():
@@ -280,14 +294,20 @@ async def _claude_keychain_walk(config_dir: Path | None) -> bool:
         if not isinstance(token, str) or not token:
             continue
         expires_at = inner.get("expiresAt")
-        if isinstance(expires_at, (int, float)) and expires_at > 0:
-            if expires_at - skew_ms <= now_ms:
-                logger.debug(
-                    "claude keychain item %s/%s has expired accessToken "
-                    "(expiresAt=%s, now=%s) — treating as not logged in",
-                    service, account, expires_at, now_ms,
-                )
-                continue
+        if (
+            isinstance(expires_at, (int, float))
+            and expires_at > 0
+            and expires_at - skew_ms <= now_ms
+        ):
+            logger.debug(
+                "claude keychain item %s/%s has expired accessToken "
+                "(expiresAt=%s, now=%s) — treating as not logged in",
+                service,
+                account,
+                expires_at,
+                now_ms,
+            )
+            continue
         return True
     return False
 
@@ -311,7 +331,7 @@ class _ClaudeCliBrowserSession(LoginSession):
 
     ACTION_COMMAND = "/login"
 
-    def __init__(self, isolation_dir: Path, config: dict | None = None) -> None:
+    def __init__(self, isolation_dir: Path, config: dict[str, object] | None = None) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
         self._isolation_dir = isolation_dir
         self._config = config or {}
@@ -349,14 +369,10 @@ class _ClaudeCliBrowserSession(LoginSession):
     async def _cleanup(self) -> None:
         async with self._cleanup_lock:
             if self._orchestrator is not None:
-                try:
+                with contextlib.suppress(Exception):  # pragma: no cover - best-effort
                     await self._orchestrator.terminate()
-                except Exception:  # pragma: no cover - best-effort
-                    pass
-                try:
+                with contextlib.suppress(Exception):  # pragma: no cover - best-effort
                     await self._orchestrator.wait()
-                except Exception:  # pragma: no cover - best-effort
-                    pass
 
     async def events(self) -> AsyncIterator[LoginEvent]:
         # claude is launched bare (no /login arg): the first-run TUI runs
@@ -599,8 +615,8 @@ class ClaudeBackend(CliBackendBase):
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "cli_browser":
@@ -695,14 +711,17 @@ class ClaudeBackend(CliBackendBase):
 
         live = await cliproxy_list_models("claude")
         if live:  # truthy iff non-empty list (None or [] both fall through)
-            return [
-                Model(
-                    id=str(m["id"]),
-                    display_name=str(m.get("display_name") or m["id"]),
-                    context_window=m.get("context_window"),
+            out: list[Model] = []
+            for m in live:
+                cw = m.get("context_window")
+                out.append(
+                    Model(
+                        id=str(m["id"]),
+                        display_name=str(m.get("display_name") or m["id"]),
+                        context_window=cw if isinstance(cw, int) else None,
+                    )
                 )
-                for m in live
-            ]
+            return out
         from ai_accounts_core.backends._models_fallback import fallback
 
         return fallback("claude")
@@ -744,13 +763,22 @@ class ClaudeBackend(CliBackendBase):
         # and making this sweep falsely report "no token".
         items = _parse_keychain_claude_items(dump.stdout)
         seen: set[tuple[str, str | None]] = set()
-        deduped = [it for it in items if not (it in seen or seen.add(it))]
+        deduped: list[tuple[str, str | None]] = []
+        for it in items:
+            if it not in seen:
+                seen.add(it)
+                deduped.append(it)
         for service, account in deduped:
             argv = ["security", "find-generic-password", "-s", service, "-w"]
             if account is not None:
                 argv = [
-                    "security", "find-generic-password",
-                    "-s", service, "-a", account, "-w",
+                    "security",
+                    "find-generic-password",
+                    "-s",
+                    service,
+                    "-a",
+                    account,
+                    "-w",
                 ]
             try:
                 proc = await asyncio.to_thread(
@@ -763,7 +791,9 @@ class ClaudeBackend(CliBackendBase):
             except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
                 logger.debug(
                     "find-generic-password -s %s -a %s failed: %r",
-                    service, account, exc,
+                    service,
+                    account,
+                    exc,
                 )
                 continue
             if proc.returncode != 0 or not proc.stdout.strip():
@@ -822,7 +852,7 @@ class ClaudeBackend(CliBackendBase):
           ``.credentials.json`` file under ``CLAUDE_CONFIG_DIR``. The CLI
           stores the OAuth token there, not in the credential vault.
         """
-        token = credential.decode("utf-8", errors="replace").strip()
+        token: str | None = credential.decode("utf-8", errors="replace").strip()
         if not token:
             # cli_browser auth: OAuth token lives in OS keychain or
             # .credentials.json, not in the credential vault. Try those
@@ -872,9 +902,7 @@ class ClaudeBackend(CliBackendBase):
             out.append(Model(id=str(model_id), display_name=str(display)))
         return out or None
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
-        from ai_accounts_core.domain.usage import UsageWindow
-
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         api_key = credential.decode("utf-8").strip()
         if api_key.startswith("sk-ant-"):
             return []  # API keys can't access usage endpoint
@@ -942,17 +970,20 @@ class ClaudeBackend(CliBackendBase):
         }
         if system_msgs:
             body["system"] = system_msgs[0]
-        async with httpx.AsyncClient() as client, client.stream(
-            "POST",
-            "https://api.anthropic.com/v1/messages",
-            json=body,
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            timeout=120.0,
-        ) as resp:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+                json=body,
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                timeout=120.0,
+            ) as resp,
+        ):
             if resp.status_code != 200:
                 yield ChatStreamEvent(
                     kind="error",
@@ -991,16 +1022,19 @@ class ClaudeBackend(CliBackendBase):
             return
         base_url, api_key = proxy
         messages = [{"role": m.role.value, "content": m.content} for m in request.messages]
-        async with httpx.AsyncClient() as client, client.stream(
-            "POST",
-            f"{base_url}/chat/completions",
-            json={"model": request.model, "messages": messages, "stream": True},
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=120.0,
-        ) as resp:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "POST",
+                f"{base_url}/chat/completions",
+                json={"model": request.model, "messages": messages, "stream": True},
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=120.0,
+            ) as resp,
+        ):
             if resp.status_code != 200:
                 yield ChatStreamEvent(kind="error", payload=f"Proxy error {resp.status_code}")
                 return

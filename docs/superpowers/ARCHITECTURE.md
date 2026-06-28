@@ -101,11 +101,18 @@ graph TD
 | `metadata/types.py` | `InstallCheck`, `InputSpec`, `LoginFlowSpec`, `PlanOption`, `BackendMetadata` structs |
 | `metadata/registry.py` | `BackendRegistry` — dict keyed by kind; `register()`, `get()`, `list()` |
 | **backends/** | |
-| `backends/__init__.py` | Re-exports `ClaudeBackend`, `CodexBackend`, `GeminiBackend`, `OpenCodeBackend` |
+| `backends/__init__.py` | Re-exports `ClaudeBackend`, `CodexBackend`, `AntigravityBackend`, `OpenCodeBackend`, `OpenRouterBackend`, `KimiBackend`, `OpenAiCompatBackend`, `DeepSeekBackend`, `GooseBackend`, `AiderBackend`, `CrushBackend` |
 | `backends/claude.py` | `ClaudeBackend` + `_ClaudeCliBrowserSession` + `_ClaudeApiKeySession` |
-| `backends/gemini.py` | `GeminiBackend` + `_GeminiOAuthDeviceSession` + `_GeminiDirectOAuthSession` + `_GeminiApiKeySession` |
+| `backends/antigravity.py` | `AntigravityBackend` + `_AntigravityApiKeySession` + `_AntigravityCliProxySession` |
 | `backends/opencode.py` | `OpenCodeBackend` + `_OpenCodeCliBrowserSession` + `_OpenCodeApiKeySession` |
 | `backends/codex.py` | `CodexBackend` + `_CodexOAuthDeviceSession` + `_CodexCliBrowserSession` + `_CodexApiKeySession` |
+| `backends/openrouter.py` | `OpenRouterBackend` + `_OpenRouterApiKeySession` (API-key, no CLI) |
+| `backends/kimi.py` | `KimiBackend` + `_KimiCliProxySession` (CLIProxyAPI OAuth) |
+| `backends/openai_compat.py` | `OpenAiCompatBackend` + `_OpenAiCompatApiKeySession` (base_url + optional api_key; keyless local presets) |
+| `backends/deepseek.py` | `DeepSeekBackend` + `_DeepSeekApiKeySession` (API-key, no CLI) |
+| `backends/goose.py` | `GooseBackend` + `_GooseApiKeySession` (PTY-primary CLI agent) |
+| `backends/aider.py` | `AiderBackend` + `_AiderApiKeySession` (PTY-primary CLI agent) |
+| `backends/crush.py` | `CrushBackend` + `_CrushApiKeySession` (PTY-only TUI agent) |
 | **services/** | |
 | `services/__init__.py` | Re-exports `AccountService`, `OnboardingService`, all error classes |
 | `services/accounts.py` | `AccountService` — orchestrates create/detect/begin_login/store_credential/validate/list_models |
@@ -233,12 +240,19 @@ class BackendProtocol(Protocol):
 | Class | `kind` | `supported_login_flows` | `isolation_env_var` |
 |-------|--------|------------------------|---------------------|
 | `ClaudeBackend` | `"claude"` | `{"api_key", "cli_browser"}` | `CLAUDE_CONFIG_DIR` |
-| `GeminiBackend` | `"gemini"` | `{"api_key", "oauth_device", "direct_oauth"}` | `GEMINI_CLI_HOME` |
+| `AntigravityBackend` | `"antigravity"` | `{"api_key", "cli_browser"}` | `ANTIGRAVITY_HOME` |
 | `OpenCodeBackend` | `"opencode"` | `{"api_key", "cli_browser"}` | `OPENCODE_HOME` |
 | `CodexBackend` | `"codex"` | `{"api_key", "oauth_device", "cli_browser"}` | `CODEX_HOME` |
+| `OpenRouterBackend` | `"openrouter"` | `{"api_key"}` | `None` |
+| `KimiBackend` | `"kimi"` | `{"cli_browser"}` | `None` |
+| `OpenAiCompatBackend` | `"openai_compat"` | `{"api_key"}` | `None` |
+| `DeepSeekBackend` | `"deepseek"` | `{"api_key"}` | `None` |
+| `GooseBackend` | `"goose"` | `{"api_key"}` | `GOOSE_PATH_ROOT` |
+| `AiderBackend` | `"aider"` | `{"api_key"}` | `None` (isolates via `HOME`) |
+| `CrushBackend` | `"crush"` | `{"api_key"}` | `CRUSH_GLOBAL_CONFIG` |
 | `FakeBackend` (testing) | `"fake"` | `{"api_key", "oauth_device"}` | `None` |
 
-**Note on chat/pty:** `chat()` and `pty()` raise `NotImplementedError("chat lands in Phase 3")` and `NotImplementedError("pty lands in Phase 4")` across all four production backends — these are planned for future milestones.
+**Note on chat/pty:** `chat()` and `pty()` are implemented across all production backends. `chat()` streams `ChatStreamEvent`s — over HTTP for the keyless API backends (OpenRouter, OpenAI-compatible, DeepSeek, Antigravity's AI Studio path) and over the CLI for the agent backends (Goose, Aider); `CrushBackend` is TUI-only and yields a single error event. `pty()` launches an interactive PTY session.
 
 ---
 
@@ -287,18 +301,13 @@ classDiagram
     class _ClaudeApiKeySession {
         +flow_kind = "api_key"
     }
-    class _GeminiOAuthDeviceSession {
-        +flow_kind = "oauth_device"
-    }
-    class _GeminiDirectOAuthSession {
-        +flow_kind = "direct_oauth"
-        -_CLIENT_ID: str
-        -_REDIRECT_URI: str
-        -_code_verifier: str
-        -_state: str
-    }
-    class _GeminiApiKeySession {
+    class _AntigravityApiKeySession {
         +flow_kind = "api_key"
+    }
+    class _AntigravityCliProxySession {
+        +flow_kind = "cli_browser"
+        -_proc: Process
+        -_fake_dir: Path
     }
     class _OpenCodeCliBrowserSession {
         +flow_kind = "cli_browser"
@@ -321,9 +330,8 @@ classDiagram
 
     LoginSession <|-- _ClaudeCliBrowserSession
     LoginSession <|-- _ClaudeApiKeySession
-    LoginSession <|-- _GeminiOAuthDeviceSession
-    LoginSession <|-- _GeminiDirectOAuthSession
-    LoginSession <|-- _GeminiApiKeySession
+    LoginSession <|-- _AntigravityApiKeySession
+    LoginSession <|-- _AntigravityCliProxySession
     LoginSession <|-- _OpenCodeCliBrowserSession
     LoginSession <|-- _OpenCodeApiKeySession
     LoginSession <|-- _CodexOAuthDeviceSession
@@ -446,7 +454,7 @@ The package `__init__.py` only exports `__version__`. All meaningful symbols are
 - `BackendMetadata`, `BackendRegistry`, `InputSpec`, `InstallCheck`, `LoginFlowSpec`, `PlanOption`
 
 **`ai_accounts_core.backends`** — re-exports:
-- `ClaudeBackend`, `CodexBackend`, `GeminiBackend`, `OpenCodeBackend`
+- `ClaudeBackend`, `CodexBackend`, `AntigravityBackend`, `OpenCodeBackend`, `OpenRouterBackend`, `KimiBackend`, `OpenAiCompatBackend`, `DeepSeekBackend`, `GooseBackend`, `AiderBackend`, `CrushBackend`
 
 **`ai_accounts_core.services`** — re-exports:
 - `AccountService`, `OnboardingService`, `OnboardingNotFound`, all `ServiceError` subclasses
@@ -560,10 +568,10 @@ CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY
 );
 
--- Registered AI backends (claude, gemini, etc.)
+-- Registered AI backends (claude, antigravity, etc.)
 CREATE TABLE IF NOT EXISTS backends (
     id           TEXT PRIMARY KEY,   -- e.g. "bkd-ab3fg9h1k2l0"
-    kind         TEXT NOT NULL,      -- "claude" | "gemini" | "opencode" | "codex"
+    kind         TEXT NOT NULL,      -- "claude" | "antigravity" | "opencode" | "codex" | "openrouter" | "kimi" | "openai_compat" | "deepseek" | "goose" | "aider" | "crush"
     display_name TEXT NOT NULL,
     config       TEXT NOT NULL,      -- JSON-encoded dict
     status       TEXT NOT NULL,      -- BackendStatus enum value
@@ -676,9 +684,16 @@ Each backend receives its credential and isolates state via an env var injected 
 | Backend | Credential env var | Isolation env var |
 |---------|--------------------|------------------|
 | `ClaudeBackend` | `ANTHROPIC_API_KEY` | `CLAUDE_CONFIG_DIR` |
-| `GeminiBackend` | `GEMINI_API_KEY` | `GEMINI_CLI_HOME` |
+| `AntigravityBackend` | `x-goog-api-key` header (Google AI Studio) | `ANTIGRAVITY_HOME` |
 | `OpenCodeBackend` | `OPENCODE_API_KEY` | `OPENCODE_HOME` |
 | `CodexBackend` | `OPENAI_API_KEY` | `CODEX_HOME` |
+| `OpenRouterBackend` | `Authorization: Bearer` (HTTP, no subprocess) | `None` |
+| `KimiBackend` | CLIProxyAPI OAuth (no key) | `None` |
+| `OpenAiCompatBackend` | `Authorization: Bearer` (HTTP; optional for keyless local servers) | `None` |
+| `DeepSeekBackend` | `Authorization: Bearer` (HTTP, no subprocess) | `None` |
+| `GooseBackend` | provider key env (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY`) + `GOOSE_DISABLE_KEYRING=true` | `GOOSE_PATH_ROOT` |
+| `AiderBackend` | `<PROVIDER>_API_KEY` (LiteLLM) | `None` (isolates via `HOME`) |
+| `CrushBackend` | `api_key` written into isolated `crush.json` | `CRUSH_GLOBAL_CONFIG` |
 
 ### ID Prefixes
 
@@ -767,11 +782,11 @@ store_credential(backend_id, plaintext_bytes):
 - `msgspec.Struct` is used instead of Pydantic; all structs are `frozen=True, kw_only=True` — enforces immutability throughout the domain.
 - The SSE login stream is the only stateful real-time path; all other routes are request-response. Sessions are held in-process memory (`LoginSessionRegistry`) with TTL sweep, not persisted.
 - Backend isolation uses filesystem directories (`backend_dirs_path / backend_id`) so each account's CLI configuration is sandboxed.
-- `_GeminiDirectOAuthSession` implements PKCE OAuth2 directly (bypassing the broken Gemini CLI TUI) — the only session that makes outbound HTTP calls during login.
+- The former native Gemini PKCE OAuth2 login client (the old `direct_oauth` session) was **removed** in the Gemini → Antigravity migration (safe-paths-only). Antigravity now logs in via either a Google AI Studio API key (`_AntigravityApiKeySession`) or CLIProxyAPI's browser OAuth (`_AntigravityCliProxySession`); the bundled CLIProxyAPI binary, not in-process code, performs the OAuth handshake.
 - `CliOrchestrator` uses `pty.fork()` (Unix-only) to drive TTY-requiring CLIs; reads via `loop.run_in_executor` to avoid blocking the event loop.
 - `canonicalize_vault_context` uses sorted canonical JSON to make AAD injection binding — designed to resist context-collision attacks between `{"a=b": "c"}` and `{"a": "b=c"}`.
 - `FakeVault` intentionally stores plaintext (clearly documented); conformance suites (`run_vault_conformance`, `run_storage_conformance`) ensure third-party adapters pass the same tests as built-in ones.
-- `chat()` and `pty()` raise `NotImplementedError` on all backends — these are Phase 3 and Phase 4 features not yet implemented.
+- `chat()` and `pty()` are implemented across all backends — `chat()` streams tokens (HTTP for the keyless API backends, CLI/PTY for the agent backends; `CrushBackend` is TUI-only and yields an error event) and `pty()` launches an interactive session.
 - `openapi-typescript` generates `client/generated.ts` from the running server; `AiAccountsClient` is hand-authored on top and imports `paths` purely for type-checking.
 - The TypeScript state machines (`createAccountWizard`, `createOnboardingFlow`) are framework-agnostic (no Vue imports); Vue composables (`useAccountWizard`, `useOnboarding`) wrap them in `ref`s via a `machine.subscribe()` callback.
 

@@ -243,6 +243,38 @@ async def test_list_models_falls_back_on_empty_base_url(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_list_models_returns_default_placeholder_on_404(tmp_path: Path, httpx_mock):
+    """When /models 404s but the endpoint is otherwise reachable (old llama.cpp /
+    oobabooga without --api), list_models surfaces a single 'default' placeholder
+    so the chat UI / all-mode still has a selectable model to start with."""
+    base = "http://localhost:8080/v1"
+    httpx_mock.add_response(url=f"{base}/models", method="GET", status_code=404)
+    backend = OpenAiCompatBackend()
+    cred = json.dumps({"api_key": "", "base_url": base}).encode()
+    models = await backend.list_models(cred, isolation_dir=tmp_path)
+    assert [m.id for m in models] == ["default"]
+
+
+@pytest.mark.asyncio
+async def test_keyless_preset_skips_api_key_prompt_and_stores_empty_key(tmp_path: Path):
+    """The Ollama (keyless) preset must NOT emit any TextPrompt — neither base_url
+    (filled by the preset) nor api_key (the bundled LoginStream can't submit a
+    blank secret field) — and must store an empty key in the credential."""
+    backend = OpenAiCompatBackend()
+    session = backend.begin_login(
+        flow_kind="api_key", config={}, vault_ctx={}, isolation_dir=tmp_path
+    )
+    events_task = asyncio.create_task(_drain(session))
+    await asyncio.sleep(0)
+    await session.respond(PromptAnswer(prompt_id="preset", answer="1"))  # Ollama
+    events = await events_task
+
+    assert not any(isinstance(e, TextPrompt) for e in events)
+    assert session.credential is not None
+    assert json.loads(session.credential.decode())["api_key"] == ""
+
+
+@pytest.mark.asyncio
 async def test_detect_keyless_available():
     backend = OpenAiCompatBackend()
     result = await backend.detect()

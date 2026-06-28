@@ -171,12 +171,8 @@ class AccountService:
             # is dead. Downgrading READY → ERROR on timeout knocked valid
             # backends out of scheduler.pick() until the next validate()
             # ("No ai-accounts backend available" downstream).
-            probe_timed_out = bool(c.error) and c.error.startswith("probe timed out")
-            if (
-                probe_timed_out
-                and not c.is_logged_in
-                and backend.status == BackendStatus.READY
-            ):
+            probe_timed_out = c.error is not None and c.error.startswith("probe timed out")
+            if probe_timed_out and not c.is_logged_in and backend.status == BackendStatus.READY:
                 logger.info(
                     "discovery: probe timed out for %s — keeping READY (inconclusive)",
                     backend.id,
@@ -402,14 +398,16 @@ class AccountService:
         if config is _SENTINEL:
             new_config = backend.config
         else:
-            new_config = config if config is not None else {}
-            if isinstance(new_config, dict):
-                self._validate_config(new_config)
+            # `config` is typed `object` only so the _SENTINEL default can sit
+            # alongside dict/None; narrow it back here. None (clear) and any
+            # non-dict misuse both collapse to an empty config, as before.
+            new_config = config if isinstance(config, dict) else {}
+            self._validate_config(new_config)
         updated = Backend(
             id=backend.id,
             kind=backend.kind,
             display_name=new_display,
-            config=new_config,  # type: ignore[arg-type]
+            config=new_config,
             status=backend.status,
             created_at=backend.created_at,
             updated_at=_now(),
@@ -538,9 +536,7 @@ class AccountService:
         if stored is None:
             logger.info("keep_alive: %s has no stored credential — skipping", backend_id)
             return False
-        plaintext = await self._vault.decrypt(
-            stored.ciphertext, context={"backend_id": backend_id}
-        )
+        plaintext = await self._vault.decrypt(stored.ciphertext, context={"backend_id": backend_id})
         config_dir = await self._resolve_config_dir(backend_id)
 
         probe = ChatMessage(
@@ -552,10 +548,8 @@ class AccountService:
         )
         # Use the cheapest model for the kind (Haiku for Claude Code) so the
         # 2-hourly keep-alive doesn't burn Sonnet/Opus quota.
-        keep_alive_model = (
-            _KEEP_ALIVE_MODELS.get(backend.kind)
-            or backend.config.get("model")
-            or "default"
+        keep_alive_model = str(
+            _KEEP_ALIVE_MODELS.get(backend.kind) or backend.config.get("model") or "default"
         )
         request = ChatRequest(
             messages=(probe,),

@@ -233,9 +233,7 @@ async def test_discover_timeout_does_not_downgrade_ready_backend(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr(
-        "ai_accounts_core.services.discovery.discover_all", fake_discover_all
-    )
+    monkeypatch.setattr("ai_accounts_core.services.discovery.discover_all", fake_discover_all)
     enriched = await service.discover_existing()
     refreshed = await service.get(b.id)
     assert refreshed.status == BackendStatus.READY, "timeout must not downgrade READY"
@@ -268,9 +266,7 @@ async def test_discover_definitive_failure_still_downgrades(tmp_path, monkeypatc
             )
         ]
 
-    monkeypatch.setattr(
-        "ai_accounts_core.services.discovery.discover_all", fake_discover_all
-    )
+    monkeypatch.setattr("ai_accounts_core.services.discovery.discover_all", fake_discover_all)
     await service.discover_existing()
     refreshed = await service.get(b.id)
     assert refreshed.status == BackendStatus.ERROR

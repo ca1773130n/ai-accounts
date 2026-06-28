@@ -370,7 +370,7 @@ class AntigravityBackend(CliBackendBase):
                 async with httpx.AsyncClient(timeout=10.0) as http:
                     resp = await http.get(
                         "https://generativelanguage.googleapis.com/v1beta/models",
-                        params={"key": api_key},
+                        headers={"x-goog-api-key": api_key},
                     )
                 if resp.status_code == 200:
                     return True
@@ -396,7 +396,7 @@ class AntigravityBackend(CliBackendBase):
                 async with httpx.AsyncClient(timeout=10.0) as http:
                     resp = await http.get(
                         "https://generativelanguage.googleapis.com/v1beta/models",
-                        params={"key": api_key},
+                        headers={"x-goog-api-key": api_key},
                     )
                 if resp.status_code == 200:
                     raw_data = resp.json()
@@ -465,7 +465,7 @@ class AntigravityBackend(CliBackendBase):
             body["system_instruction"] = {"parts": [{"text": system_msgs[0]}]}
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{request.model}:streamGenerateContent?alt=sse&key={api_key}"
+            f"{request.model}:streamGenerateContent?alt=sse"
         )
         async with (
             httpx.AsyncClient() as client,
@@ -473,7 +473,7 @@ class AntigravityBackend(CliBackendBase):
                 "POST",
                 url,
                 json=body,
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
                 timeout=120.0,
             ) as resp,
         ):

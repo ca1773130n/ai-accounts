@@ -73,16 +73,19 @@ async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEv
     messages = [{"role": m.role.value, "content": m.content} for m in request.messages]
 
     try:
-        async with httpx.AsyncClient() as client, client.stream(
-            "POST",
-            f"{base_url}/chat/completions",
-            json={"model": request.model, "messages": messages, "stream": True},
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=120.0,
-        ) as resp:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "POST",
+                f"{base_url}/chat/completions",
+                json={"model": request.model, "messages": messages, "stream": True},
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=120.0,
+            ) as resp,
+        ):
             if resp.status_code != 200:
                 body = await resp.aread()
                 encoding = ""

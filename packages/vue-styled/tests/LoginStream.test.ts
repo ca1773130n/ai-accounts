@@ -126,7 +126,7 @@ describe('LoginStream', () => {
       await btn.trigger('click');
       await nextTick();
       // clipboard.writeText was called with the effective URL
-      const writeText = (navigator.clipboard as { writeText: ReturnType<typeof vi.fn> }).writeText;
+      const writeText = (navigator.clipboard as unknown as { writeText: ReturnType<typeof vi.fn> }).writeText;
       expect(writeText).toHaveBeenCalledTimes(1);
       const copied = writeText.mock.calls[0]![0] as string;
       expect(copied).toContain('prompt=select_account+consent');

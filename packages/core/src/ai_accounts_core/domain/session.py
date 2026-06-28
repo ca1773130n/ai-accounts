@@ -1,15 +1,15 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 import msgspec
 
 
-class SessionKind(str, Enum):
+class SessionKind(StrEnum):
     CHAT = "chat"
     PTY = "pty"
 
 
-class SessionState(str, Enum):
+class SessionState(StrEnum):
     STARTING = "starting"
     ACTIVE = "active"
     DISCONNECTED = "disconnected"

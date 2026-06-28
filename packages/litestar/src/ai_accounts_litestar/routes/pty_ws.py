@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from ai_accounts_core.services.pty import PtyService
 from litestar import Controller, post, websocket
@@ -14,7 +15,7 @@ class PtyController(Controller):
     path = "/api/v1/pty"
 
     @post("/spawn", status_code=201)
-    async def spawn(self, pty_service: PtyService, data: dict) -> dict:
+    async def spawn(self, pty_service: PtyService, data: dict[str, Any]) -> dict[str, object]:
         session_id, _ = await pty_service.spawn(
             backend_id=data["backend_id"],
             command=tuple(data["command"]),
@@ -24,12 +25,14 @@ class PtyController(Controller):
         return {"session_id": session_id}
 
     @post("/{session_id:str}/kill", status_code=200)
-    async def kill(self, pty_service: PtyService, session_id: str) -> dict:
+    async def kill(self, pty_service: PtyService, session_id: str) -> dict[str, object]:
         await pty_service.kill(session_id)
         return {"status": "killed"}
 
     @post("/{session_id:str}/resize", status_code=200)
-    async def resize(self, pty_service: PtyService, session_id: str, data: dict) -> dict:
+    async def resize(
+        self, pty_service: PtyService, session_id: str, data: dict[str, Any]
+    ) -> dict[str, object]:
         handle = pty_service.attach(session_id)
         if handle is None:
             return {"status": "error", "message": "session not found"}
@@ -38,7 +41,9 @@ class PtyController(Controller):
 
 
 @websocket("/ws/pty/{session_id:str}")
-async def pty_websocket(socket: WebSocket, pty_service: PtyService, session_id: str) -> None:
+async def pty_websocket(
+    socket: WebSocket[Any, Any, Any], pty_service: PtyService, session_id: str
+) -> None:
     await socket.accept()
     handle = pty_service.attach(session_id)
     if handle is None:

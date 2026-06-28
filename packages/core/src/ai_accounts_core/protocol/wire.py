@@ -72,7 +72,15 @@ class ErrorEvent(msgspec.Struct, tag="error", tag_field="type", frozen=True, kw_
 
 
 WireEvent = Annotated[
-    SessionStartEvent | SessionEndEvent | ChatTokenEvent | ChatToolCallEvent | ChatDoneEvent | PtyOutputEvent | PtyResizeEvent | PtyExitEvent | ErrorEvent,
+    SessionStartEvent
+    | SessionEndEvent
+    | ChatTokenEvent
+    | ChatToolCallEvent
+    | ChatDoneEvent
+    | PtyOutputEvent
+    | PtyResizeEvent
+    | PtyExitEvent
+    | ErrorEvent,
     msgspec.Meta(description="Tagged union of all events flowing between server and client"),
 ]
 

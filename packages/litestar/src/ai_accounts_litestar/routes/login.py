@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 
 import msgspec
 from ai_accounts_core.login import LoginComplete, PromptAnswer
@@ -89,7 +90,7 @@ class LoginController(Controller):
 
         registry = account_service.login_registry
 
-        async def gen():
+        async def gen() -> AsyncIterator[dict[str, str]]:
             try:
                 # Replay the cached UrlPrompt to the subscriber FIRST, so
                 # reconnecting clients (refresh, network blip) immediately

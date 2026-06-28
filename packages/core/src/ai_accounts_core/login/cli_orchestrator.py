@@ -151,8 +151,7 @@ def strip_ansi(text: str) -> str:
     text = _CURSOR_ROW_RE.sub("\n", text)
     text = _CURSOR_COL_RE.sub(" ", text)
     text = _ERASE_SCREEN_RE.sub("\n", text)
-    text = _ANSI_RE.sub("", text)
-    return text
+    return _ANSI_RE.sub("", text)
 
 
 def strip_ansi_buffered(text: str) -> tuple[str, str]:
@@ -241,10 +240,8 @@ class CliOrchestrator:
 
             # Set wide terminal (500 cols) so OAuth URLs don't wrap
             winsize = struct.pack("HHHH", 50, 500, 0, 0)
-            try:
+            with contextlib.suppress(OSError):
                 fcntl.ioctl(1, termios.TIOCSWINSZ, winsize)
-            except OSError:
-                pass
 
             env = dict(os.environ)
             env.update(self._env)

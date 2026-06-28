@@ -22,6 +22,6 @@ def test_new_id_alphabet():
     import string
 
     alphabet = set(string.ascii_lowercase + string.digits)
-    id = new_id("xyz", length=100)
-    suffix = id[len("xyz-") :]
+    generated_id = new_id("xyz", length=100)
+    suffix = generated_id[len("xyz-") :]
     assert all(c in alphabet for c in suffix)

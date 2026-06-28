@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import msgspec
 from ai_accounts_core.domain.usage import FallbackChainEntry
 from ai_accounts_core.services.scheduler import AccountScheduler
@@ -30,17 +32,19 @@ class SchedulerController(Controller):
     tags = ["scheduler"]
 
     @get("/health")
-    async def get_all_health(self, scheduler: AccountScheduler) -> dict:
+    async def get_all_health(self, scheduler: AccountScheduler) -> dict[str, object]:
         health_list = await scheduler.get_all_health()
         return {"items": [_health_to_dict(h) for h in health_list]}
 
     @get("/health/{backend_id:str}")
-    async def get_health(self, scheduler: AccountScheduler, backend_id: str) -> dict:
+    async def get_health(self, scheduler: AccountScheduler, backend_id: str) -> dict[str, object]:
         health = await scheduler.get_health(backend_id)
         return _health_to_dict(health)
 
     @post("/pick", status_code=200)
-    async def pick(self, scheduler: AccountScheduler, data: _PickRequest) -> Response | dict:
+    async def pick(
+        self, scheduler: AccountScheduler, data: _PickRequest
+    ) -> Response[Any] | dict[str, object]:
         result = await scheduler.pick(kind=data.kind)
         if result is None:
             return Response(content=None, status_code=204)
@@ -52,12 +56,14 @@ class SchedulerController(Controller):
         }
 
     @get("/chain")
-    async def get_chain(self, scheduler: AccountScheduler) -> dict:
+    async def get_chain(self, scheduler: AccountScheduler) -> dict[str, object]:
         chain = await scheduler.get_chain()
         return {"entries": [{"backend_id": e.backend_id, "priority": e.priority} for e in chain]}
 
     @put("/chain", status_code=200)
-    async def set_chain(self, scheduler: AccountScheduler, data: _SetChainRequest) -> dict:
+    async def set_chain(
+        self, scheduler: AccountScheduler, data: _SetChainRequest
+    ) -> dict[str, object]:
         entries = [
             FallbackChainEntry(backend_id=e.backend_id, priority=e.priority) for e in data.entries
         ]
@@ -73,7 +79,7 @@ class SchedulerController(Controller):
         )
 
 
-def _health_to_dict(health) -> dict:
+def _health_to_dict(health: Any) -> dict[str, object]:
     return {
         "backend_id": health.backend_id,
         "kind": health.kind,

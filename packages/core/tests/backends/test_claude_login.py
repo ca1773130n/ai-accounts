@@ -51,7 +51,7 @@ async def test_claude_cli_browser_interactive_loop_drives_url_and_completion(tmp
         try:
             item = next(script_iter)
         except StopIteration:
-            raise StopAsyncIteration
+            raise StopAsyncIteration from None
         return item
 
     writes: list[bytes] = []

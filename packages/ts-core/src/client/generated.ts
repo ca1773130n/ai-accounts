@@ -22,6 +22,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/backends/_meta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListMetadata */
+        get: operations["ApiV1BackendsMetaListMetadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backends/{backend_id}": {
         parameters: {
             query?: never;
@@ -58,7 +75,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/backends/{backend_id}/login": {
+    "/api/v1/backends/{backend_id}/login/begin": {
         parameters: {
             query?: never;
             header?: never;
@@ -67,15 +84,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Login */
-        post: operations["ApiV1BackendsBackendIdLoginLogin"];
+        /** Begin */
+        post: operations["ApiV1BackendsBackendIdLoginBeginBegin"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/backends/{backend_id}/login/poll": {
+    "/api/v1/backends/{backend_id}/login/cancel": {
         parameters: {
             query?: never;
             header?: never;
@@ -84,8 +101,76 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** PollLogin */
-        post: operations["ApiV1BackendsBackendIdLoginPollPollLogin"];
+        /** Cancel */
+        post: operations["ApiV1BackendsBackendIdLoginCancelCancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backends/{backend_id}/login/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Respond */
+        post: operations["ApiV1BackendsBackendIdLoginRespondRespond"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backends/{backend_id}/login/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream */
+        get: operations["ApiV1BackendsBackendIdLoginStreamStream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backends/{backend_id}/login/write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** WriteEager */
+        post: operations["ApiV1BackendsBackendIdLoginWriteWriteEager"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backends/{backend_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListModels */
+        get: operations["ApiV1BackendsBackendIdModelsListModels"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -103,6 +188,262 @@ export interface paths {
         put?: never;
         /** Validate */
         post: operations["ApiV1BackendsBackendIdValidateValidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backends/{kind}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install */
+        post: operations["ApiV1BackendsKindInstallInstall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send */
+        post: operations["ApiV1ChatSendSend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cliproxy/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install */
+        post: operations["ApiV1CliproxyInstallInstall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cliproxy/login/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** LoginBegin */
+        post: operations["ApiV1CliproxyLoginBeginLoginBegin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cliproxy/login/callback-forward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** LoginCallbackForward */
+        post: operations["ApiV1CliproxyLoginCallbackForwardLoginCallbackForward"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cliproxy/login/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** LoginStatus */
+        get: operations["ApiV1CliproxyLoginStatusLoginStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cliproxy/server/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ServerStart */
+        post: operations["ApiV1CliproxyServerStartServerStart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cliproxy/server/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ServerStatus */
+        get: operations["ApiV1CliproxyServerStatusServerStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cliproxy/server/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ServerStop */
+        post: operations["ApiV1CliproxyServerStopServerStop"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cliproxy/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["ApiV1CliproxyStatusStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListSessions */
+        get: operations["ApiV1ConversationsListSessions"];
+        put?: never;
+        /** CreateSession */
+        post: operations["ApiV1ConversationsCreateSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GetSession */
+        get: operations["ApiV1ConversationsSessionIdGetSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** SendMessage */
+        post: operations["ApiV1ConversationsSessionIdMessagesSendMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListDiscovered */
+        get: operations["ApiV1DiscoveryListDiscovered"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/discovery/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ImportOne */
+        post: operations["ApiV1DiscoveryImportImportOne"];
         delete?: never;
         options?: never;
         head?: never;
@@ -186,25 +527,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Login */
-        post: operations["ApiV1OnboardingOnboardingIdLoginLogin"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/onboarding/{onboarding_id}/login/poll": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** PollLogin */
-        post: operations["ApiV1OnboardingOnboardingIdLoginPollPollLogin"];
+        /** BeginLogin */
+        post: operations["ApiV1OnboardingOnboardingIdLoginBeginLogin"];
         delete?: never;
         options?: never;
         head?: never;
@@ -222,6 +546,143 @@ export interface paths {
         put?: never;
         /** Pick */
         post: operations["ApiV1OnboardingOnboardingIdPickPick"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pty/spawn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Spawn */
+        post: operations["ApiV1PtySpawnSpawn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pty/{session_id}/kill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Kill */
+        post: operations["ApiV1PtySessionIdKillKill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pty/{session_id}/resize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resize */
+        post: operations["ApiV1PtySessionIdResizeResize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scheduler/chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GetChain */
+        get: operations["ApiV1SchedulerChainGetChain"];
+        /** SetChain */
+        put: operations["ApiV1SchedulerChainSetChain"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scheduler/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GetAllHealth */
+        get: operations["ApiV1SchedulerHealthGetAllHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scheduler/health/{backend_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GetHealth */
+        get: operations["ApiV1SchedulerHealthBackendIdGetHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scheduler/mark-limited": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** MarkLimited */
+        post: operations["ApiV1SchedulerMarkLimitedMarkLimited"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scheduler/pick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pick */
+        post: operations["ApiV1SchedulerPickPick"];
         delete?: never;
         options?: never;
         head?: never;
@@ -254,6 +715,7 @@ export interface components {
             config: {
                 [key: string]: unknown;
             };
+            config_dir?: string | null;
             display_name: string;
             id: string;
             kind: string;
@@ -263,6 +725,28 @@ export interface components {
         /** BackendListDTO */
         BackendListDTO: {
             items: components["schemas"]["BackendDTO"][];
+        };
+        /** BackendMetadata */
+        BackendMetadata: {
+            config_schema: {
+                [key: string]: unknown;
+            };
+            display_name: string;
+            icon_url?: string | null;
+            install_check: components["schemas"]["InstallCheck"];
+            isolation_env_var?: string | null;
+            kind: string;
+            login_flows: components["schemas"]["LoginFlowSpec"][];
+            plan_options?: components["schemas"]["PlanOption"][] | null;
+            supports_multi_account: boolean;
+        };
+        /** CliproxyInstallResult */
+        CliproxyInstallResult: {
+            binary_path?: string | null;
+            display: string;
+            stderr: string;
+            stdout: string;
+            success: boolean;
         };
         /** CreateBackendRequest */
         CreateBackendRequest: {
@@ -285,27 +769,35 @@ export interface components {
                 [key: string]: components["schemas"]["DetectResultDTO"];
             };
         };
-        /** LoginRequest */
-        LoginRequest: {
-            flow_kind: string;
-            inputs?: {
-                [key: string]: string;
-            };
+        /** InputSpec */
+        InputSpec: {
+            /** @default text */
+            kind: string;
+            label: string;
+            name: string;
+            placeholder?: string | null;
         };
-        /** LoginResponseDTO */
-        LoginResponseDTO: {
-            backend?: components["schemas"]["BackendDTO"] | null;
-            /** @enum {string} */
-            kind: "complete" | "pending";
-            oauth?: components["schemas"]["OAuthDeviceLoginDTO"] | null;
+        /** InstallCheck */
+        InstallCheck: {
+            command: string[];
+            version_regex: string;
         };
-        /** OAuthDeviceLoginDTO */
-        OAuthDeviceLoginDTO: {
-            /** Format: date-time */
-            expires_at: string;
-            handle: string;
-            user_code: string;
-            verification_uri: string;
+        /** InstallResult */
+        InstallResult: {
+            binary_path?: string | null;
+            display: string;
+            exit_code: number;
+            kind: string;
+            stderr: string;
+            stdout: string;
+            success: boolean;
+        };
+        /** LoginFlowSpec */
+        LoginFlowSpec: {
+            description: string;
+            display_name: string;
+            kind: string;
+            requires_inputs?: components["schemas"]["InputSpec"][];
         };
         /** OnboardingStateDTO */
         OnboardingStateDTO: {
@@ -320,9 +812,11 @@ export interface components {
             display_name: string;
             kind: string;
         };
-        /** PollLoginRequest */
-        PollLoginRequest: {
-            handle: string;
+        /** PlanOption */
+        PlanOption: {
+            description: string;
+            id: string;
+            label: string;
         };
         /** UpdateBackendRequest */
         UpdateBackendRequest: {
@@ -330,6 +824,146 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             display_name?: string | null;
+        };
+        /** _BeginLoginRequest */
+        _BeginLoginRequest: {
+            flow_kind: string;
+            inputs?: {
+                [key: string]: string;
+            };
+        };
+        /** _BeginLoginResponse */
+        _BeginLoginResponse: {
+            session_id: string;
+        };
+        /** _BeginRequest */
+        _BeginRequest: {
+            flow_kind: string;
+            inputs?: {
+                [key: string]: string;
+            };
+        };
+        /** _BeginResponse */
+        _BeginResponse: {
+            session_id: string;
+        };
+        /** _CallbackForwardRequest */
+        _CallbackForwardRequest: {
+            callback_url: string;
+        };
+        /** _CallbackForwardResponse */
+        _CallbackForwardResponse: {
+            message: string;
+            status: string;
+        };
+        /** _CancelRequest */
+        _CancelRequest: {
+            session_id: string;
+        };
+        /** _ChainEntryInput */
+        _ChainEntryInput: {
+            backend_id: string;
+            priority: number;
+        };
+        /** _CreateSessionRequest */
+        _CreateSessionRequest: {
+            backend_id: string;
+            model: string;
+            title?: string | null;
+        };
+        /** _DiscoverResponse */
+        _DiscoverResponse: {
+            items: components["schemas"]["_DiscoveredItem"][];
+        };
+        /** _DiscoveredItem */
+        _DiscoveredItem: {
+            backend_id?: string | null;
+            error?: string | null;
+            is_logged_in: boolean;
+            kind: string;
+            path: string;
+            suggested_name: string;
+        };
+        /** _ImportRequest */
+        _ImportRequest: {
+            display_name?: string | null;
+            kind: string;
+            path: string;
+        };
+        /** _LoginBeginRequest */
+        _LoginBeginRequest: {
+            backend_kind: string;
+            config_dir?: string | null;
+        };
+        /** _LoginBeginResponse */
+        _LoginBeginResponse: {
+            device_code?: string | null;
+            message: string;
+            oauth_url?: string | null;
+            session_id?: string | null;
+            status: string;
+        };
+        /** _LoginStatusResponse */
+        _LoginStatusResponse: {
+            message: string;
+            returncode?: number | null;
+            state: string;
+        };
+        /** _MarkLimitedRequest */
+        _MarkLimitedRequest: {
+            backend_id: string;
+            cooldown_seconds: number;
+            reason: string;
+        };
+        /** _MetaResponse */
+        _MetaResponse: {
+            items: components["schemas"]["BackendMetadata"][];
+        };
+        /** _PickRequest */
+        _PickRequest: {
+            kind?: string | null;
+        };
+        /** _RespondRequest */
+        _RespondRequest: {
+            answer: string;
+            prompt_id: string;
+            session_id: string;
+        };
+        /** _SendMessageRequest */
+        _SendMessageRequest: {
+            content: string;
+        };
+        /** _SendRequest */
+        _SendRequest: {
+            account_id?: string | null;
+            backend_kind?: string | null;
+            content: string;
+            /** @default single */
+            mode: string;
+            model?: string | null;
+            session_id: string;
+        };
+        /** _ServerStartRequest */
+        _ServerStartRequest: {
+            /** @default not-needed */
+            api_key: string;
+            /** @default 8317 */
+            port: number;
+        };
+        /** _SetChainRequest */
+        _SetChainRequest: {
+            entries: components["schemas"]["_ChainEntryInput"][];
+        };
+        /** _StatusResponse */
+        _StatusResponse: {
+            binary_path?: string | null;
+            installed: boolean;
+            version?: string | null;
+        };
+        /** _WriteEagerRequest */
+        _WriteEagerRequest: {
+            session_id: string;
+            text: string;
         };
     };
     responses: never;
@@ -395,6 +1029,26 @@ export interface operations {
                         } | unknown[];
                         status_code: number;
                     };
+                };
+            };
+        };
+    };
+    ApiV1BackendsMetaListMetadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_MetaResponse"];
                 };
             };
         };
@@ -549,7 +1203,7 @@ export interface operations {
             };
         };
     };
-    ApiV1BackendsBackendIdLoginLogin: {
+    ApiV1BackendsBackendIdLoginBeginBegin: {
         parameters: {
             query?: never;
             header?: never;
@@ -560,7 +1214,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LoginRequest"];
+                "application/json": components["schemas"]["_BeginRequest"];
             };
         };
         responses: {
@@ -570,7 +1224,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoginResponseDTO"];
+                    "application/json": components["schemas"]["_BeginResponse"];
                 };
             };
             /** @description Bad request syntax or unsupported method */
@@ -590,7 +1244,7 @@ export interface operations {
             };
         };
     };
-    ApiV1BackendsBackendIdLoginPollPollLogin: {
+    ApiV1BackendsBackendIdLoginCancelCancel: {
         parameters: {
             query?: never;
             header?: never;
@@ -601,17 +1255,171 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PollLoginRequest"];
+                "application/json": components["schemas"]["_CancelRequest"];
             };
         };
         responses: {
-            /** @description Document created, URL follows */
-            201: {
+            /** @description Request fulfilled, nothing follows */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoginResponseDTO"];
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1BackendsBackendIdLoginRespondRespond: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                backend_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_RespondRequest"];
+            };
+        };
+        responses: {
+            /** @description Request fulfilled, nothing follows */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1BackendsBackendIdLoginStreamStream: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path: {
+                backend_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1BackendsBackendIdLoginWriteWriteEager: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                backend_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_WriteEagerRequest"];
+            };
+        };
+        responses: {
+            /** @description Request fulfilled, nothing follows */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1BackendsBackendIdModelsListModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                backend_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Bad request syntax or unsupported method */
@@ -641,6 +1449,541 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Document created, URL follows */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackendDTO"];
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1BackendsKindInstallInstall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document created, URL follows */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallResult"];
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1ChatSendSend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SendRequest"];
+            };
+        };
+        responses: {
+            /** @description Stream Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1CliproxyInstallInstall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document created, URL follows */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CliproxyInstallResult"];
+                };
+            };
+        };
+    };
+    ApiV1CliproxyLoginBeginLoginBegin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_LoginBeginRequest"];
+            };
+        };
+        responses: {
+            /** @description Document created, URL follows */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_LoginBeginResponse"];
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1CliproxyLoginCallbackForwardLoginCallbackForward: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_CallbackForwardRequest"];
+            };
+        };
+        responses: {
+            /** @description Document created, URL follows */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_CallbackForwardResponse"];
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1CliproxyLoginStatusLoginStatus: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_LoginStatusResponse"];
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1CliproxyServerStartServerStart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_ServerStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1CliproxyServerStatusServerStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1CliproxyServerStopServerStop: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1CliproxyStatusStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_StatusResponse"];
+                };
+            };
+        };
+    };
+    ApiV1ConversationsListSessions: {
+        parameters: {
+            query?: {
+                backend_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1ConversationsCreateSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_CreateSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Document created, URL follows */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1ConversationsSessionIdGetSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1ConversationsSessionIdMessagesSendMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SendMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Stream Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1DiscoveryListDiscovered: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_DiscoverResponse"];
+                };
+            };
+        };
+    };
+    ApiV1DiscoveryImportImportOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_ImportRequest"];
+            };
+        };
         responses: {
             /** @description Document created, URL follows */
             201: {
@@ -799,7 +2142,7 @@ export interface operations {
             };
         };
     };
-    ApiV1OnboardingOnboardingIdLoginLogin: {
+    ApiV1OnboardingOnboardingIdLoginBeginLogin: {
         parameters: {
             query?: never;
             header?: never;
@@ -810,7 +2153,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LoginRequest"];
+                "application/json": components["schemas"]["_BeginLoginRequest"];
             };
         };
         responses: {
@@ -820,48 +2163,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoginResponseDTO"];
-                };
-            };
-            /** @description Bad request syntax or unsupported method */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        detail: string;
-                        extra?: null | {
-                            [key: string]: unknown;
-                        } | unknown[];
-                        status_code: number;
-                    };
-                };
-            };
-        };
-    };
-    ApiV1OnboardingOnboardingIdLoginPollPollLogin: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                onboarding_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PollLoginRequest"];
-            };
-        };
-        responses: {
-            /** @description Document created, URL follows */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoginResponseDTO"];
+                    "application/json": components["schemas"]["_BeginLoginResponse"];
                 };
             };
             /** @description Bad request syntax or unsupported method */
@@ -903,6 +2205,335 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BackendDTO"];
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1PtySpawnSpawn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Document created, URL follows */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1PtySessionIdKillKill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1PtySessionIdResizeResize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1SchedulerChainGetChain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1SchedulerChainSetChain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SetChainRequest"];
+            };
+        };
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1SchedulerHealthGetAllHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1SchedulerHealthBackendIdGetHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                backend_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1SchedulerMarkLimitedMarkLimited: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_MarkLimitedRequest"];
+            };
+        };
+        responses: {
+            /** @description Request fulfilled, nothing follows */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1SchedulerPickPick: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_PickRequest"];
+            };
+        };
+        responses: {
+            /** @description Request fulfilled, document follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown | {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Bad request syntax or unsupported method */

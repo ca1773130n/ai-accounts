@@ -43,8 +43,8 @@ describe('AccountEditForm', () => {
       global: { plugins: [[aiAccountsPlugin, { client: mkClient({}) }]] },
     });
     const inputs = w.findAll('input');
-    expect((inputs[0].element as HTMLInputElement).value).toBe('Old name');
-    expect((inputs[1].element as HTMLInputElement).value).toBe('old@x.y');
+    expect((inputs[0]!.element as HTMLInputElement).value).toBe('Old name');
+    expect((inputs[1]!.element as HTMLInputElement).value).toBe('old@x.y');
   });
 
   it('PATCHes updateBackend and emits saved on submit', async () => {
@@ -55,12 +55,12 @@ describe('AccountEditForm', () => {
       global: { plugins: [[aiAccountsPlugin, { client }]] },
     });
     const inputs = w.findAll('input');
-    await inputs[0].setValue('New name');
-    await inputs[1].setValue('new@x.y');
+    await inputs[0]!.setValue('New name');
+    await inputs[1]!.setValue('new@x.y');
     await w.find('form').trigger('submit');
     await new Promise((r) => setTimeout(r, 0));
     expect(w.emitted('saved')).toBeTruthy();
-    expect((w.emitted('saved')![0][0] as typeof updated).display_name).toBe('New name');
+    expect((w.emitted('saved')![0]![0] as typeof updated).display_name).toBe('New name');
   });
 
   it('emits cancel on cancel button click', async () => {

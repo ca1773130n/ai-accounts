@@ -11,6 +11,7 @@ from typing import Any, ClassVar
 from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
 from ai_accounts_core.domain.backend import DetectResult
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -210,8 +211,8 @@ class KimiBackend(CliBackendBase):
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "cli_browser":
@@ -237,19 +238,22 @@ class KimiBackend(CliBackendBase):
 
         live = await cliproxy_list_models("kimi")
         if live:
-            return [
-                Model(
-                    id=str(m["id"]),
-                    display_name=str(m.get("display_name") or m["id"]),
-                    context_window=m.get("context_window"),
+            out: list[Model] = []
+            for m in live:
+                cw = m.get("context_window")
+                out.append(
+                    Model(
+                        id=str(m["id"]),
+                        display_name=str(m.get("display_name") or m["id"]),
+                        context_window=cw if isinstance(cw, int) else None,
+                    )
                 )
-                for m in live
-            ]
+            return out
         from ai_accounts_core.backends._models_fallback import fallback
 
         return fallback("kimi")
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         # Moonshot exposes no quota endpoint we route through cliproxy.
         return []
 

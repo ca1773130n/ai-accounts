@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 import msgspec
@@ -42,7 +43,9 @@ class ConversationsController(Controller):
     tags = ["conversations"]
 
     @post("/", status_code=HTTP_201_CREATED)
-    async def create_session(self, chat_service: ChatService, data: _CreateSessionRequest) -> dict:
+    async def create_session(
+        self, chat_service: ChatService, data: _CreateSessionRequest
+    ) -> dict[str, object]:
         session = await chat_service.create_session(
             backend_id=data.backend_id,
             model=data.model,
@@ -57,7 +60,9 @@ class ConversationsController(Controller):
         }
 
     @get("/")
-    async def list_sessions(self, chat_service: ChatService, backend_id: str | None = None) -> dict:
+    async def list_sessions(
+        self, chat_service: ChatService, backend_id: str | None = None
+    ) -> dict[str, object]:
         sessions = await chat_service.list_sessions(backend_id=backend_id)
         return {
             "items": [
@@ -73,7 +78,7 @@ class ConversationsController(Controller):
         }
 
     @get("/{session_id:str}")
-    async def get_session(self, chat_service: ChatService, session_id: str) -> dict:
+    async def get_session(self, chat_service: ChatService, session_id: str) -> dict[str, object]:
         try:
             session = await chat_service.get_session(session_id)
         except KeyError:
@@ -116,7 +121,7 @@ class ConversationsController(Controller):
         except ServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        async def generate():
+        async def generate() -> AsyncIterator[str]:
             try:
                 async for delta in chat_service.send_message(
                     session_id=session_id, content=data.content
