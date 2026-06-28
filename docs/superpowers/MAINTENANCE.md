@@ -697,12 +697,13 @@ Module-level mutable dict tracking active cliproxy subprocess references.
 Not cleaned up on sidecar shutdown. `asyncio.create_task(_reap())` at line 110
 is fire-and-forget with no error handling on the task.
 
-### 7.10 Hardcoded Google OAuth client ID
+### 7.10 Hardcoded Google OAuth client ID (resolved)
 
-`packages/core/src/ai_accounts_core/backends/gemini.py` line 137:
-```python
-_CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
-```
-This is the Gemini CLI's public client ID used for direct OAuth PKCE. It is not
-a secret, but hardcoding it means a Gemini CLI update that changes the client ID
-requires a code change and release.
+The former `backends/gemini.py` hardcoded the Gemini CLI's *public* OAuth client
+ID and secret (embedded in the open-source Gemini CLI — not user secrets) for a
+native PKCE flow. The `gemini → antigravity` rename removed that native client
+entirely: Antigravity now authenticates via CLIProxyAPI's own OAuth
+(`--antigravity-login`) or a Google AI Studio API key, so **no OAuth client
+credentials live in this repo**. The literal values were dropped because they
+tripped GitHub secret scanning; they can't be rotated by us (they belong to
+Google's Gemini CLI), so the scanning alert is closed as "won't fix / public".
