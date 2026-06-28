@@ -139,6 +139,21 @@ describe('ChatBubble', () => {
     expect(qw.find('.aia-bubble__role').text()).toBe('Qwen');
   });
 
+  it('labels goose/aider/crush backends by their display names', () => {
+    const goose = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', backend: 'goose' },
+    });
+    expect(goose.find('.aia-bubble__role').text()).toBe('Goose');
+    const aider = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', backend: 'aider' },
+    });
+    expect(aider.find('.aia-bubble__role').text()).toBe('Aider');
+    const crush = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', backend: 'crush' },
+    });
+    expect(crush.find('.aia-bubble__role').text()).toBe('Crush');
+  });
+
   it('shows streaming cursor class', () => {
     const w = mount(ChatBubble, { props: { role: 'assistant', content: 'typing...', streaming: true } });
     expect(w.find('.aia-bubble--streaming').exists()).toBe(true);

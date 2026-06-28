@@ -217,4 +217,30 @@ describe('AccountWizard', () => {
     expect(vm.apiKeyEnv).toBe('DASHSCOPE_API_KEY_WORK');
     expect(vm.requiresNoCli).toBe(true);
   });
+
+  it('treats goose/aider/crush as CLI backends with a goose config dir', async () => {
+    const { client } = mkRoutingClient();
+    const w = mount(AccountWizard, {
+      props: { initialBackendKind: 'goose' },
+      global: { plugins: [[aiAccountsPlugin, { client }]] },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const vm = w.vm as unknown as {
+      backendKind: string;
+      configPath: string;
+      requiresNoCli: boolean;
+    };
+    await nextTick();
+    expect(vm.requiresNoCli).toBe(false);
+    expect(vm.configPath).toBe('~/.config/goose');
+
+    vm.backendKind = 'aider';
+    await nextTick();
+    expect(vm.requiresNoCli).toBe(false);
+
+    vm.backendKind = 'crush';
+    await nextTick();
+    expect(vm.requiresNoCli).toBe(false);
+  });
 });

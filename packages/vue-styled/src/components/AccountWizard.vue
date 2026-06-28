@@ -327,6 +327,9 @@ const DEFAULT_CONFIG_DIR_MAP: Record<string, string> = {
   openrouter: '.openrouter',
   openai_compat: '.openai_compat',
   kimi: '.kimi',
+  // Goose stores its config under ~/.config/goose (XDG). Aider/Crush fall back
+  // to the generic ~/.<kind> default — their isolation is via HOME / CRUSH_GLOBAL_*.
+  goose: '.config/goose',
 };
 
 /**

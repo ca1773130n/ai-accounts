@@ -39,6 +39,9 @@ const BACKEND_COLORS: Record<string, { bg: string; fg: string; label: string }> 
   opencode: { bg: 'rgba(251,191,36,0.15)', fg: '#fbbf24', label: 'OpenCode' },
   deepseek: { bg: 'rgba(59,130,246,0.15)', fg: '#3b82f6', label: 'DeepSeek' },
   qwen: { bg: 'rgba(236,72,153,0.15)', fg: '#ec4899', label: 'Qwen' },
+  goose: { bg: 'rgba(249,115,22,0.15)', fg: '#f97316', label: 'Goose' },
+  aider: { bg: 'rgba(20,184,166,0.15)', fg: '#14b8a6', label: 'Aider' },
+  crush: { bg: 'rgba(239,68,68,0.15)', fg: '#ef4444', label: 'Crush' },
 };
 
 function backendMeta(kind: string | undefined | null) {
