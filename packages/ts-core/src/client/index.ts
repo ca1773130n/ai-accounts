@@ -3,7 +3,7 @@ import { parseSseLoginEvents } from './login-stream';
 import { parseSseChatEvents } from './chat-stream';
 import { parseSseSmartChatEvents } from './smart-chat-stream';
 import type { LoginEvent, LoginFlowKind } from '../types/login';
-import type { SmartChatEvent, SendChatRequest, ChatMode } from '../types/smart-chat';
+import type { SmartChatEvent, SendChatRequest } from '../types/smart-chat';
 import type { BackendMetadata } from '../types/metadata';
 import type {
   InstallResult,

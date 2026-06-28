@@ -6,6 +6,7 @@ import asyncio
 import logging
 import shutil
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 
 import msgspec
@@ -206,7 +207,7 @@ class CliproxyController(Controller):
         )
 
     @post("/server/start", status_code=200)
-    async def server_start(self, data: _ServerStartRequest) -> dict:
+    async def server_start(self, data: _ServerStartRequest) -> dict[str, object]:
         """Start CLIProxyAPI server with given port and api-key."""
         import asyncio
         import re
@@ -226,19 +227,20 @@ class CliproxyController(Controller):
                 "message": "api_key contains invalid characters",
             }
         # Run in thread to avoid blocking the event loop (sync polling loop inside)
-        result = await asyncio.to_thread(
+        return await asyncio.to_thread(
             start_cliproxy_server,
             port=data.port,
             api_key=data.api_key,
         )
-        return result
 
     @post("/server/stop", status_code=200)
-    async def server_stop(self) -> dict:
+    async def server_stop(self) -> Mapping[str, object]:
         """Stop running CLIProxyAPI server."""
+        # Mapping (covariant) so the helper's narrower dict[str, str] return is
+        # accepted; litestar serialises a Mapping the same as a dict.
         return stop_cliproxy_server()
 
     @get("/server/status")
-    async def server_status(self) -> dict:
+    async def server_status(self) -> dict[str, object]:
         """Get CLIProxyAPI server status (installed, running, port)."""
         return cliproxy_server_status()

@@ -1,6 +1,5 @@
 import { ref, shallowRef, type Ref, type ShallowRef } from 'vue';
 import type {
-  ChatSessionDTO,
   ChatMessageDTO,
   SmartChatEvent,
   ChatMode,

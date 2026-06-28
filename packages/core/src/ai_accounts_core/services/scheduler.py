@@ -80,9 +80,12 @@ class AccountScheduler:
             max_usage = max((w.usage_percent for w in health.windows), default=0.0)
             if max_usage >= RATE_LIMIT_THRESHOLD:
                 for w in health.windows:
-                    if w.usage_percent >= RATE_LIMIT_THRESHOLD and w.resets_at:
-                        if earliest_reset is None or w.resets_at < earliest_reset:
-                            earliest_reset = w.resets_at
+                    if (
+                        w.usage_percent >= RATE_LIMIT_THRESHOLD
+                        and w.resets_at
+                        and (earliest_reset is None or w.resets_at < earliest_reset)
+                    ):
+                        earliest_reset = w.resets_at
                 logger.debug(
                     "pick: skipping %s (usage %.1f%% >= threshold)",
                     entry.backend_id,

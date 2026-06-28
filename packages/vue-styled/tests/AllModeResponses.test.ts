@@ -13,7 +13,7 @@ function makeResponses(...rows: Array<Partial<BackendResponseState> & { backend:
       content: r.content ?? '',
       status: r.status ?? 'streaming',
       error: r.error,
-    })
+    } as BackendResponseState)
   }
   return m
 }

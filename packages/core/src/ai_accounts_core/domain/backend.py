@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 import msgspec
 
@@ -17,7 +17,7 @@ class BackendKind:
     CODEX = "codex"
 
 
-class BackendStatus(str, Enum):
+class BackendStatus(StrEnum):
     UNCONFIGURED = "unconfigured"
     DETECTING = "detecting"
     NEEDS_LOGIN = "needs_login"

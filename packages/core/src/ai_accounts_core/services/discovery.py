@@ -112,6 +112,7 @@ async def _claude_keychain_quick_check(config_path: Path) -> bool | None:
     nothing and handles duplicates correctly.
     """
     import sys as _sys
+
     if _sys.platform != "darwin":
         return None
     try:
@@ -127,7 +128,7 @@ async def _claude_keychain_quick_check(config_path: Path) -> bool | None:
     except Exception as exc:  # noqa: BLE001
         logger.debug("claude keychain quick-check raised: %r", exc)
         return None
-    return True if ok else False
+    return bool(ok)
 
 
 async def _run_probe(

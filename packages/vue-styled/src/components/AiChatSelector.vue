@@ -73,6 +73,9 @@ function backendLabel(b: BackendDTO): string {
     goose: 'Goose',
     aider: 'Aider',
     crush: 'Crush',
+    openai_compat: 'OpenAI-compatible',
+    openrouter: 'OpenRouter',
+    kimi: 'Kimi',
   }
   return KIND_LABELS[b.kind] ?? b.kind
 }

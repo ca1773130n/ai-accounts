@@ -117,7 +117,8 @@ class EagerCodeState:
     at_monotonic: float = 0.0
 
 
-from ai_accounts_core.login.cli_orchestrator import (
+# Deferred below the module-level defs above to avoid a login-package import cycle.
+from ai_accounts_core.login.cli_orchestrator import (  # noqa: E402
     _LOGIN_SUCCESS_RE,
     _URL_IN_OUTPUT_RE,
     CliOrchestrator,
@@ -218,7 +219,8 @@ _OAUTH_ERROR_RE = re.compile(
     re.IGNORECASE,
 )
 
-from ai_accounts_core.login.events import (
+# Deferred below the module-level defs above to avoid a login-package import cycle.
+from ai_accounts_core.login.events import (  # noqa: E402
     LoginComplete,
     LoginEvent,
     LoginFailed,
@@ -230,7 +232,6 @@ from ai_accounts_core.login.events import (
     TextPrompt,
     UrlPrompt,
 )
-
 
 # Post-OAuth completion watchdog. Once the sign-in URL has been shown (the user
 # is authorizing in the browser + pasting the code), this much CONTINUOUS CLI
@@ -405,22 +406,23 @@ async def run_interactive_cli_login(
                     watchdog_anchor = last_output_time
                     continue
 
-            # Trigger action command once REPL looks idle.
+            # Trigger action command once REPL looks idle — and double-check no
+            # menu is currently on screen (parse_menu_options is only evaluated
+            # once the idle conditions hold, thanks to short-circuiting).
             if (
                 not action_sent
                 and not pending_menu
                 and recent_lines
                 and idle_since_last_output >= repl_idle_trigger_seconds
+                and not parse_menu_options(recent_lines)
             ):
-                # Double-check no menu is currently on screen.
-                if not parse_menu_options(recent_lines):
-                    assert action_command is not None
-                    await orchestrator.write((action_command + "\r").encode())
-                    action_sent = True
-                    yield ProgressUpdate(label=f"Sent {action_command}")
-                    last_output_time = now
-                    watchdog_anchor = now
-                    continue
+                assert action_command is not None
+                await orchestrator.write((action_command + "\r").encode())
+                action_sent = True
+                yield ProgressUpdate(label=f"Sent {action_command}")
+                last_output_time = now
+                watchdog_anchor = now
+                continue
 
             # Post-OAuth completion watchdog (see POST_URL_COMPLETION_TIMEOUT_
             # SECONDS): the code was submitted but the CLI went silent without
@@ -559,14 +561,12 @@ async def run_interactive_cli_login(
                     # this loop stays parked until prompt_timeout and never reads
                     # the CLI's response — the "login stream ended unexpectedly"
                     # hang. Poll both and resume the read loop on whichever fires.
-                    answer = None
+                    text_answer: PromptAnswer | None = None
                     deadline = time.monotonic() + menu_response_timeout
                     while True:
                         if eager_state is not None and eager_state.sent:
                             eager_state.sent = False
-                            logger.info(
-                                "text prompt satisfied by eager paste — resuming read loop"
-                            )
+                            logger.info("text prompt satisfied by eager paste — resuming read loop")
                             break
                         remaining = deadline - time.monotonic()
                         if remaining <= 0:
@@ -576,20 +576,20 @@ async def run_interactive_cli_login(
                             )
                             return
                         try:
-                            answer = await asyncio.wait_for(
+                            text_answer = await asyncio.wait_for(
                                 answers.get(), timeout=min(0.5, remaining)
                             )
                             break
                         except TimeoutError:
                             continue
 
-                    if answer is not None:
+                    if text_answer is not None:
                         # Structured respond() path: we write the code AND a
                         # follow-up Enter ourselves. The eager path's
                         # write_eager already wrote the code + its own Enter, so
                         # we add nothing there (double-submitting would corrupt
                         # the code / dismiss the wrong prompt).
-                        await orchestrator.write((answer.answer.strip() + "\r").encode())
+                        await orchestrator.write((text_answer.answer.strip() + "\r").encode())
 
                         # Claude v2 TUI buffers "Login successful. Press Enter to
                         # continue…" behind an internal redraw gate; a follow-up

@@ -7,6 +7,16 @@
             "additionalProperties": {},
             "type": "object"
           },
+          "config_dir": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "display_name": {
             "type": "string"
           },
@@ -53,6 +63,113 @@
           "items"
         ],
         "title": "BackendListDTO",
+        "type": "object"
+      },
+      "BackendMetadata": {
+        "properties": {
+          "config_schema": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "icon_url": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "install_check": {
+            "$ref": "#/components/schemas/InstallCheck"
+          },
+          "isolation_env_var": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "login_flows": {
+            "items": {
+              "$ref": "#/components/schemas/LoginFlowSpec"
+            },
+            "type": "array"
+          },
+          "plan_options": {
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PlanOption"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supports_multi_account": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "config_schema",
+          "display_name",
+          "icon_url",
+          "install_check",
+          "isolation_env_var",
+          "kind",
+          "login_flows",
+          "plan_options",
+          "supports_multi_account"
+        ],
+        "title": "BackendMetadata",
+        "type": "object"
+      },
+      "CliproxyInstallResult": {
+        "properties": {
+          "binary_path": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display": {
+            "type": "string"
+          },
+          "stderr": {
+            "type": "string"
+          },
+          "stdout": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "binary_path",
+          "display",
+          "stderr",
+          "stdout",
+          "success"
+        ],
+        "title": "CliproxyInstallResult",
         "type": "object"
       },
       "CreateBackendRequest": {
@@ -132,83 +249,122 @@
         "title": "DetectResultsDTO",
         "type": "object"
       },
-      "LoginRequest": {
+      "InputSpec": {
         "properties": {
-          "flow_kind": {
+          "kind": {
+            "default": "text",
             "type": "string"
           },
-          "inputs": {
-            "additionalProperties": {
+          "label": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "placeholder": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "name"
+        ],
+        "title": "InputSpec",
+        "type": "object"
+      },
+      "InstallCheck": {
+        "properties": {
+          "command": {
+            "items": {
               "type": "string"
             },
-            "type": "object"
+            "type": "array"
+          },
+          "version_regex": {
+            "type": "string"
           }
         },
         "required": [
-          "flow_kind"
+          "command",
+          "version_regex"
         ],
-        "title": "LoginRequest",
+        "title": "InstallCheck",
         "type": "object"
       },
-      "LoginResponseDTO": {
+      "InstallResult": {
         "properties": {
-          "backend": {
+          "binary_path": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/BackendDTO"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ]
+          },
+          "display": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
           },
           "kind": {
-            "enum": [
-              "complete",
-              "pending"
-            ],
             "type": "string"
           },
-          "oauth": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/OAuthDeviceLoginDTO"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "stderr": {
+            "type": "string"
+          },
+          "stdout": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
           }
         },
         "required": [
-          "kind"
+          "binary_path",
+          "display",
+          "exit_code",
+          "kind",
+          "stderr",
+          "stdout",
+          "success"
         ],
-        "title": "LoginResponseDTO",
+        "title": "InstallResult",
         "type": "object"
       },
-      "OAuthDeviceLoginDTO": {
+      "LoginFlowSpec": {
         "properties": {
-          "expires_at": {
-            "format": "date-time",
+          "description": {
             "type": "string"
           },
-          "handle": {
+          "display_name": {
             "type": "string"
           },
-          "user_code": {
+          "kind": {
             "type": "string"
           },
-          "verification_uri": {
-            "type": "string"
+          "requires_inputs": {
+            "items": {
+              "$ref": "#/components/schemas/InputSpec"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "expires_at",
-          "handle",
-          "user_code",
-          "verification_uri"
+          "description",
+          "display_name",
+          "kind"
         ],
-        "title": "OAuthDeviceLoginDTO",
+        "title": "LoginFlowSpec",
         "type": "object"
       },
       "OnboardingStateDTO": {
@@ -273,16 +429,24 @@
         "title": "PickKindRequest",
         "type": "object"
       },
-      "PollLoginRequest": {
+      "PlanOption": {
         "properties": {
-          "handle": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
             "type": "string"
           }
         },
         "required": [
-          "handle"
+          "description",
+          "id",
+          "label"
         ],
-        "title": "PollLoginRequest",
+        "title": "PlanOption",
         "type": "object"
       },
       "UpdateBackendRequest": {
@@ -311,6 +475,548 @@
         },
         "required": [],
         "title": "UpdateBackendRequest",
+        "type": "object"
+      },
+      "_BeginLoginRequest": {
+        "properties": {
+          "flow_kind": {
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "flow_kind"
+        ],
+        "title": "_BeginLoginRequest",
+        "type": "object"
+      },
+      "_BeginLoginResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "_BeginLoginResponse",
+        "type": "object"
+      },
+      "_BeginRequest": {
+        "properties": {
+          "flow_kind": {
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "flow_kind"
+        ],
+        "title": "_BeginRequest",
+        "type": "object"
+      },
+      "_BeginResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "_BeginResponse",
+        "type": "object"
+      },
+      "_CallbackForwardRequest": {
+        "properties": {
+          "callback_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "callback_url"
+        ],
+        "title": "_CallbackForwardRequest",
+        "type": "object"
+      },
+      "_CallbackForwardResponse": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "status"
+        ],
+        "title": "_CallbackForwardResponse",
+        "type": "object"
+      },
+      "_CancelRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "_CancelRequest",
+        "type": "object"
+      },
+      "_ChainEntryInput": {
+        "properties": {
+          "backend_id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backend_id",
+          "priority"
+        ],
+        "title": "_ChainEntryInput",
+        "type": "object"
+      },
+      "_CreateSessionRequest": {
+        "properties": {
+          "backend_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 256,
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "backend_id",
+          "model"
+        ],
+        "title": "_CreateSessionRequest",
+        "type": "object"
+      },
+      "_DiscoverResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/_DiscoveredItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "_DiscoverResponse",
+        "type": "object"
+      },
+      "_DiscoveredItem": {
+        "properties": {
+          "backend_id": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_logged_in": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "suggested_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_logged_in",
+          "kind",
+          "path",
+          "suggested_name"
+        ],
+        "title": "_DiscoveredItem",
+        "type": "object"
+      },
+      "_ImportRequest": {
+        "properties": {
+          "display_name": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "path"
+        ],
+        "title": "_ImportRequest",
+        "type": "object"
+      },
+      "_LoginBeginRequest": {
+        "properties": {
+          "backend_kind": {
+            "type": "string"
+          },
+          "config_dir": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "backend_kind"
+        ],
+        "title": "_LoginBeginRequest",
+        "type": "object"
+      },
+      "_LoginBeginResponse": {
+        "properties": {
+          "device_code": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "oauth_url": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "status"
+        ],
+        "title": "_LoginBeginResponse",
+        "type": "object"
+      },
+      "_LoginStatusResponse": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "returncode": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "state"
+        ],
+        "title": "_LoginStatusResponse",
+        "type": "object"
+      },
+      "_MarkLimitedRequest": {
+        "properties": {
+          "backend_id": {
+            "type": "string"
+          },
+          "cooldown_seconds": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend_id",
+          "cooldown_seconds",
+          "reason"
+        ],
+        "title": "_MarkLimitedRequest",
+        "type": "object"
+      },
+      "_MetaResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BackendMetadata"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "_MetaResponse",
+        "type": "object"
+      },
+      "_PickRequest": {
+        "properties": {
+          "kind": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [],
+        "title": "_PickRequest",
+        "type": "object"
+      },
+      "_RespondRequest": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "prompt_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer",
+          "prompt_id",
+          "session_id"
+        ],
+        "title": "_RespondRequest",
+        "type": "object"
+      },
+      "_SendMessageRequest": {
+        "properties": {
+          "content": {
+            "maxLength": 1000000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "_SendMessageRequest",
+        "type": "object"
+      },
+      "_SendRequest": {
+        "properties": {
+          "account_id": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "backend_kind": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "mode": {
+            "default": "single",
+            "type": "string"
+          },
+          "model": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "session_id"
+        ],
+        "title": "_SendRequest",
+        "type": "object"
+      },
+      "_ServerStartRequest": {
+        "properties": {
+          "api_key": {
+            "default": "not-needed",
+            "type": "string"
+          },
+          "port": {
+            "default": 8317,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "title": "_ServerStartRequest",
+        "type": "object"
+      },
+      "_SetChainRequest": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/_ChainEntryInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "title": "_SetChainRequest",
+        "type": "object"
+      },
+      "_StatusResponse": {
+        "properties": {
+          "binary_path": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "version": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "binary_path",
+          "installed",
+          "version"
+        ],
+        "title": "_StatusResponse",
+        "type": "object"
+      },
+      "_WriteEagerRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "text"
+        ],
+        "title": "_WriteEagerRequest",
         "type": "object"
       }
     }
@@ -410,6 +1116,29 @@
         "summary": "CreateBackend",
         "tags": [
           "backends"
+        ]
+      }
+    },
+    "/api/v1/backends/_meta": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1BackendsMetaListMetadata",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/_MetaResponse"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          }
+        },
+        "summary": "ListMetadata",
+        "tags": [
+          "metadata"
         ]
       }
     },
@@ -700,10 +1429,10 @@
         ]
       }
     },
-    "/api/v1/backends/{backend_id}/login": {
+    "/api/v1/backends/{backend_id}/login/begin": {
       "post": {
         "deprecated": false,
-        "operationId": "ApiV1BackendsBackendIdLoginLogin",
+        "operationId": "ApiV1BackendsBackendIdLoginBeginBegin",
         "parameters": [
           {
             "deprecated": false,
@@ -719,7 +1448,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LoginRequest"
+                "$ref": "#/components/schemas/_BeginRequest"
               }
             }
           },
@@ -730,7 +1459,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LoginResponseDTO"
+                  "$ref": "#/components/schemas/_BeginResponse"
                 }
               }
             },
@@ -776,16 +1505,16 @@
             "description": "Bad request syntax or unsupported method"
           }
         },
-        "summary": "Login",
+        "summary": "Begin",
         "tags": [
-          "backends"
+          "login"
         ]
       }
     },
-    "/api/v1/backends/{backend_id}/login/poll": {
+    "/api/v1/backends/{backend_id}/login/cancel": {
       "post": {
         "deprecated": false,
-        "operationId": "ApiV1BackendsBackendIdLoginPollPollLogin",
+        "operationId": "ApiV1BackendsBackendIdLoginCancelCancel",
         "parameters": [
           {
             "deprecated": false,
@@ -801,22 +1530,15 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PollLoginRequest"
+                "$ref": "#/components/schemas/_CancelRequest"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LoginResponseDTO"
-                }
-              }
-            },
-            "description": "Document created, URL follows",
+          "204": {
+            "description": "Request fulfilled, nothing follows",
             "headers": {}
           },
           "400": {
@@ -858,10 +1580,311 @@
             "description": "Bad request syntax or unsupported method"
           }
         },
-        "summary": "PollLogin",
+        "summary": "Cancel",
         "tags": [
-          "backends"
+          "login"
         ]
+      }
+    },
+    "/api/v1/backends/{backend_id}/login/respond": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1BackendsBackendIdLoginRespondRespond",
+        "parameters": [
+          {
+            "deprecated": false,
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_RespondRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Request fulfilled, nothing follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "Respond",
+        "tags": [
+          "login"
+        ]
+      }
+    },
+    "/api/v1/backends/{backend_id}/login/stream": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1BackendsBackendIdLoginStreamStream",
+        "parameters": [
+          {
+            "deprecated": false,
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "allowEmptyValue": false,
+            "allowReserved": false,
+            "deprecated": false,
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "Stream",
+        "tags": [
+          "login"
+        ]
+      }
+    },
+    "/api/v1/backends/{backend_id}/login/write": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1BackendsBackendIdLoginWriteWriteEager",
+        "parameters": [
+          {
+            "deprecated": false,
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_WriteEagerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Request fulfilled, nothing follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "WriteEager",
+        "tags": [
+          "login"
+        ]
+      }
+    },
+    "/api/v1/backends/{backend_id}/models": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1BackendsBackendIdModelsListModels",
+        "parameters": [
+          {
+            "deprecated": false,
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "ListModels"
       }
     },
     "/api/v1/backends/{backend_id}/validate": {
@@ -933,6 +1956,928 @@
         "summary": "Validate",
         "tags": [
           "backends"
+        ]
+      }
+    },
+    "/api/v1/backends/{kind}/install": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1BackendsKindInstallInstall",
+        "parameters": [
+          {
+            "deprecated": false,
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallResult"
+                }
+              }
+            },
+            "description": "Document created, URL follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "Install",
+        "tags": [
+          "install"
+        ]
+      }
+    },
+    "/api/v1/chat/send": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1ChatSendSend",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_SendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Stream Response",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "Send",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/cliproxy/install": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1CliproxyInstallInstall",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliproxyInstallResult"
+                }
+              }
+            },
+            "description": "Document created, URL follows",
+            "headers": {}
+          }
+        },
+        "summary": "Install",
+        "tags": [
+          "cliproxy"
+        ]
+      }
+    },
+    "/api/v1/cliproxy/login/begin": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1CliproxyLoginBeginLoginBegin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_LoginBeginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/_LoginBeginResponse"
+                }
+              }
+            },
+            "description": "Document created, URL follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "LoginBegin",
+        "tags": [
+          "cliproxy"
+        ]
+      }
+    },
+    "/api/v1/cliproxy/login/callback-forward": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1CliproxyLoginCallbackForwardLoginCallbackForward",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_CallbackForwardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/_CallbackForwardResponse"
+                }
+              }
+            },
+            "description": "Document created, URL follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "LoginCallbackForward",
+        "tags": [
+          "cliproxy"
+        ]
+      }
+    },
+    "/api/v1/cliproxy/login/status": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1CliproxyLoginStatusLoginStatus",
+        "parameters": [
+          {
+            "allowEmptyValue": false,
+            "allowReserved": false,
+            "deprecated": false,
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/_LoginStatusResponse"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "LoginStatus",
+        "tags": [
+          "cliproxy"
+        ]
+      }
+    },
+    "/api/v1/cliproxy/server/start": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1CliproxyServerStartServerStart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ServerStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "ServerStart",
+        "tags": [
+          "cliproxy"
+        ]
+      }
+    },
+    "/api/v1/cliproxy/server/status": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1CliproxyServerStatusServerStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          }
+        },
+        "summary": "ServerStatus",
+        "tags": [
+          "cliproxy"
+        ]
+      }
+    },
+    "/api/v1/cliproxy/server/stop": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1CliproxyServerStopServerStop",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          }
+        },
+        "summary": "ServerStop",
+        "tags": [
+          "cliproxy"
+        ]
+      }
+    },
+    "/api/v1/cliproxy/status": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1CliproxyStatusStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/_StatusResponse"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "cliproxy"
+        ]
+      }
+    },
+    "/api/v1/conversations": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1ConversationsListSessions",
+        "parameters": [
+          {
+            "allowEmptyValue": false,
+            "allowReserved": false,
+            "deprecated": false,
+            "in": "query",
+            "name": "backend_id",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "ListSessions",
+        "tags": [
+          "conversations"
+        ]
+      },
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1ConversationsCreateSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Document created, URL follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "CreateSession",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/conversations/{session_id}": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1ConversationsSessionIdGetSession",
+        "parameters": [
+          {
+            "deprecated": false,
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "GetSession",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/conversations/{session_id}/messages": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1ConversationsSessionIdMessagesSendMessage",
+        "parameters": [
+          {
+            "deprecated": false,
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_SendMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Stream Response",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "SendMessage",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/discovery": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1DiscoveryListDiscovered",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/_DiscoverResponse"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          }
+        },
+        "summary": "ListDiscovered",
+        "tags": [
+          "discovery"
+        ]
+      }
+    },
+    "/api/v1/discovery/import": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1DiscoveryImportImportOne",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendDTO"
+                }
+              }
+            },
+            "description": "Document created, URL follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "ImportOne",
+        "tags": [
+          "discovery"
         ]
       }
     },
@@ -1178,7 +3123,7 @@
     "/api/v1/onboarding/{onboarding_id}/login": {
       "post": {
         "deprecated": false,
-        "operationId": "ApiV1OnboardingOnboardingIdLoginLogin",
+        "operationId": "ApiV1OnboardingOnboardingIdLoginBeginLogin",
         "parameters": [
           {
             "deprecated": false,
@@ -1194,7 +3139,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LoginRequest"
+                "$ref": "#/components/schemas/_BeginLoginRequest"
               }
             }
           },
@@ -1205,7 +3150,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LoginResponseDTO"
+                  "$ref": "#/components/schemas/_BeginLoginResponse"
                 }
               }
             },
@@ -1251,89 +3196,7 @@
             "description": "Bad request syntax or unsupported method"
           }
         },
-        "summary": "Login",
-        "tags": [
-          "onboarding"
-        ]
-      }
-    },
-    "/api/v1/onboarding/{onboarding_id}/login/poll": {
-      "post": {
-        "deprecated": false,
-        "operationId": "ApiV1OnboardingOnboardingIdLoginPollPollLogin",
-        "parameters": [
-          {
-            "deprecated": false,
-            "in": "path",
-            "name": "onboarding_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PollLoginRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LoginResponseDTO"
-                }
-              }
-            },
-            "description": "Document created, URL follows",
-            "headers": {}
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "description": "Validation Exception",
-                  "examples": [
-                    {
-                      "detail": "Bad Request",
-                      "extra": {},
-                      "status_code": 400
-                    }
-                  ],
-                  "properties": {
-                    "detail": {
-                      "type": "string"
-                    },
-                    "extra": {
-                      "additionalProperties": {},
-                      "type": [
-                        "null",
-                        "object",
-                        "array"
-                      ]
-                    },
-                    "status_code": {
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "detail",
-                    "status_code"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Bad request syntax or unsupported method"
-          }
-        },
-        "summary": "PollLogin",
+        "summary": "BeginLogin",
         "tags": [
           "onboarding"
         ]
@@ -1418,6 +3281,559 @@
         "summary": "Pick",
         "tags": [
           "onboarding"
+        ]
+      }
+    },
+    "/api/v1/pty/spawn": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1PtySpawnSpawn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Document created, URL follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "Spawn"
+      }
+    },
+    "/api/v1/pty/{session_id}/kill": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1PtySessionIdKillKill",
+        "parameters": [
+          {
+            "deprecated": false,
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "Kill"
+      }
+    },
+    "/api/v1/pty/{session_id}/resize": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1PtySessionIdResizeResize",
+        "parameters": [
+          {
+            "deprecated": false,
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "Resize"
+      }
+    },
+    "/api/v1/scheduler/chain": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1SchedulerChainGetChain",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          }
+        },
+        "summary": "GetChain",
+        "tags": [
+          "scheduler"
+        ]
+      },
+      "put": {
+        "deprecated": false,
+        "operationId": "ApiV1SchedulerChainSetChain",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_SetChainRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "SetChain",
+        "tags": [
+          "scheduler"
+        ]
+      }
+    },
+    "/api/v1/scheduler/health": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1SchedulerHealthGetAllHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          }
+        },
+        "summary": "GetAllHealth",
+        "tags": [
+          "scheduler"
+        ]
+      }
+    },
+    "/api/v1/scheduler/health/{backend_id}": {
+      "get": {
+        "deprecated": false,
+        "operationId": "ApiV1SchedulerHealthBackendIdGetHealth",
+        "parameters": [
+          {
+            "deprecated": false,
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "GetHealth",
+        "tags": [
+          "scheduler"
+        ]
+      }
+    },
+    "/api/v1/scheduler/mark-limited": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1SchedulerMarkLimitedMarkLimited",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_MarkLimitedRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Request fulfilled, nothing follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "MarkLimited",
+        "tags": [
+          "scheduler"
+        ]
+      }
+    },
+    "/api/v1/scheduler/pick": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1SchedulerPickPick",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_PickRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {},
+                    {
+                      "additionalProperties": {},
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Request fulfilled, document follows",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "Pick",
+        "tags": [
+          "scheduler"
         ]
       }
     },

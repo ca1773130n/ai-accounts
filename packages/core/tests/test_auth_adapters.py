@@ -1,4 +1,3 @@
-
 import pytest
 from ai_accounts_core.adapters.auth_apikey import ApiKeyAuth
 from ai_accounts_core.adapters.auth_noauth import NoAuth

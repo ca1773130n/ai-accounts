@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ai_accounts_core.domain.chat import ChatDelta, ChatMessage, ChatRole
 from ai_accounts_core.domain.chat_events import AllModeEvent, CompoundEvent, ToolCallEvent
+from ai_accounts_core.domain.usage import AccountHealth
 from ai_accounts_core.ids import new_id
 from ai_accounts_core.protocols.backend import ChatRequest
 from ai_accounts_core.services.chat import ChatService
@@ -76,7 +77,7 @@ class ChatOrchestrator:
         queue: asyncio.Queue[AllModeEvent | None] = asyncio.Queue()
         tasks: list[asyncio.Task[None]] = []
 
-        async def _call_one(health) -> None:  # noqa: ANN001
+        async def _call_one(health: AccountHealth) -> None:
             # Use backend_id as key so multiple accounts of the same kind
             # produce distinct streams (not merged under one kind label).
             bid = health.backend_id
@@ -182,7 +183,7 @@ class ChatOrchestrator:
                     )
                 )
 
-        async def _call_one_with_timeout(health) -> None:  # noqa: ANN001
+        async def _call_one_with_timeout(health: AccountHealth) -> None:
             """Wrap _call_one with timeout — catch TimeoutError at the outer level."""
             try:
                 await asyncio.wait_for(_call_one(health), timeout=30.0)
@@ -309,13 +310,13 @@ class ChatOrchestrator:
             return
         synth_request = ChatRequest(messages=(synth_msg,), model=synth_models[0].id)
         try:
-            async for event in impl.chat(
+            async for synth_event in impl.chat(
                 synth_request,
                 result.credential,
                 isolation_dir=Path(result.isolation_dir),
             ):
-                if event.kind == "token" and isinstance(event.payload, str):
-                    yield CompoundEvent(kind="synthesis_delta", text=event.payload)
+                if synth_event.kind == "token" and isinstance(synth_event.payload, str):
+                    yield CompoundEvent(kind="synthesis_delta", text=synth_event.payload)
             yield CompoundEvent(kind="synthesis_complete")
         except Exception as exc:
             logger.error(

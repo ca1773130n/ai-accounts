@@ -26,6 +26,7 @@ import json
 from typing import Any
 
 from ai_accounts_core.protocols.auth import AuthProtocol, RequestContext
+from litestar.enums import ScopeType
 from litestar.middleware import ASGIMiddleware
 from litestar.types import ASGIApp, Receive, Scope, Send
 
@@ -77,7 +78,7 @@ async def _send_json_response(send: Send, *, status: int, body: dict[str, Any]) 
 
 
 class AuthMiddleware(ASGIMiddleware):
-    scopes = ("http", "websocket")
+    scopes = (ScopeType.HTTP, ScopeType.WEBSOCKET)
     # Liveness probes and spec fetches must stay reachable before auth is
     # known. The pattern is a regex matched against the request path.
     exclude_path_pattern = (r"^/health$", r"^/schema(/|$)")
@@ -93,7 +94,7 @@ class AuthMiddleware(ASGIMiddleware):
         next_app: ASGIApp,
     ) -> None:
         path: str = scope.get("path", "") or ""
-        method: str = scope.get("method", "GET") or "GET"
+        method: str = str(scope.get("method", "GET") or "GET")
         headers = _headers_from_scope(scope)
         query = _query_from_scope(scope)
 
@@ -106,9 +107,9 @@ class AuthMiddleware(ASGIMiddleware):
 
         principal = await self._auth.authenticate(ctx)
         if principal is None:
-            if scope["type"] == "websocket":
+            if scope["type"] == ScopeType.WEBSOCKET:
                 # WebSocket: close with 4401 (policy violation, app-level)
-                await send({"type": "websocket.close", "code": 4401})
+                await send({"type": "websocket.close", "code": 4401})  # type: ignore[arg-type]
                 return
             await _send_json_response(
                 send,

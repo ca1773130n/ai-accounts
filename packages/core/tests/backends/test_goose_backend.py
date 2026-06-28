@@ -200,3 +200,52 @@ async def test_goose_validate_ok_when_info_succeeds(tmp_path: Path):
         patch.object(backend, "_run", new=AsyncMock(return_value=(0, b"", b""))),
     ):
         assert await backend.validate(cred, isolation_dir=tmp_path) is True
+
+
+@pytest.mark.asyncio
+async def test_goose_chat_yields_only_assistant_text_from_stream_json(tmp_path: Path):
+    """A realistic ``goose run --output-format stream-json`` transcript mixes
+    assistant text frames with non-text frames (session metadata, tool request
+    / response, usage) plus stray partial lines. chat() must surface ONLY the
+    assistant text as token events and drop every non-text frame."""
+    backend = GooseBackend()
+    cred = json.dumps({"provider": "openai", "api_key": "k", "model": "gpt-x"}).encode()
+    transcript = [
+        # session-start metadata frame — no content/text key
+        b'{"type":"session","session_id":"abc123","working_dir":"/tmp/work"}\n',
+        # assistant text, streamed in two frames
+        b'{"type":"message","role":"assistant","content":"Let me "}\n',
+        b'{"type":"message","role":"assistant","content":"check that."}\n',
+        # tool request frame — structured args, no assistant text
+        b'{"type":"tool_request","id":"t1","tool":"developer__shell",'
+        b'"arguments":{"command":"ls -1"}}\n',
+        # tool response frame — result payload, no assistant text
+        b'{"type":"tool_response","id":"t1","result":{"stdout":"a.txt\\n","exit_code":0}}\n',
+        # stray non-JSON flush + blank line the parser must skip
+        b"goose: running developer__shell...\n",
+        b"\n",
+        # final assistant text, then a usage/accounting frame
+        b'{"type":"message","role":"assistant","content":" Done."}\n',
+        b'{"type":"usage","input_tokens":42,"output_tokens":7}\n',
+    ]
+    fake = _FakeProc(transcript)
+    with patch(
+        "ai_accounts_core.backends.goose.asyncio.create_subprocess_exec",
+        new=AsyncMock(return_value=fake),
+    ):
+        events: list[ChatStreamEvent] = []
+        async for e in backend.chat(
+            ChatRequest(messages=(_msg("user", "list files"),), model="gpt-x"),
+            cred,
+            isolation_dir=tmp_path,
+        ):
+            events.append(e)
+
+    tokens = [e.payload for e in events if e.kind == "token"]
+    assert tokens == ["Let me ", "check that.", " Done."]
+    # Exactly one terminal done event, carrying the requested model.
+    done = [e for e in events if e.kind == "done"]
+    assert len(done) == 1
+    assert done[0].payload["model"] == "gpt-x"
+    # No non-text frame leaked through as a token.
+    assert all(isinstance(p, str) and p for p in tokens)

@@ -1,9 +1,9 @@
-from enum import Enum
+from enum import StrEnum
 
 import msgspec
 
 
-class OnboardingStep(str, Enum):
+class OnboardingStep(StrEnum):
     WELCOME = "welcome"
     DETECT = "detect"
     PICK_BACKEND = "pick_backend"

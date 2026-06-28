@@ -307,15 +307,15 @@ class FakeBackend:
         isolation_env_var=None,
     )
 
-    def __init__(self, *, tool_call: dict | None = None) -> None:
+    def __init__(self, *, tool_call: dict[str, object] | None = None) -> None:
         self.calls: list[tuple[str, Any]] = []
         self._tool_call = tool_call
 
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         self.calls.append(("begin_login", flow_kind))
@@ -331,21 +331,17 @@ class FakeBackend:
             return True
         if credential.startswith(b"sk-fake") or credential.startswith(b"fake"):
             return True
-        if credential == b"" and (isolation_dir / "oauth_token.fake").exists():
-            return True
-        return False
+        return bool(credential == b"" and (isolation_dir / "oauth_token.fake").exists())
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
         self.calls.append(("list_models", credential))
         return [Model(id="fake-1", display_name="Fake Model 1")]
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
-        from ai_accounts_core.domain.usage import UsageWindow
-
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         self.calls.append(("get_usage", credential))
         return [UsageWindow(window_type="five_hour", usage_percent=25.0, resets_at=None)]
 
-    async def chat(  # type: ignore[override]
+    async def chat(
         self,
         request: Any,
         credential: bytes,
@@ -363,7 +359,7 @@ class FakeBackend:
             kind="done", payload={"tokens_in": 10, "tokens_out": 2, "model": "fake-1"}
         )
 
-    async def pty(  # type: ignore[override]
+    async def pty(
         self,
         request: Any,
         credential: bytes,

@@ -48,12 +48,16 @@ _INSTALL_STRATEGIES: dict[str, list[InstallCommand]] = {
     ],
     "goose": [
         InstallCommand(
+            # Pinned to a specific released tag (not the moving "stable" alias)
+            # so the install is reproducible and the piped script can't change
+            # under us. TODO(security): add SHA256 verification of the fetched
+            # download_cli.sh before piping it to bash — follow-up.
             argv=[
                 "bash",
                 "-c",
-                "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash",
+                "curl -fsSL https://github.com/block/goose/releases/download/v1.39.0/download_cli.sh | bash",
             ],
-            display="curl -fsSL https://github.com/block/goose/.../download_cli.sh | bash",
+            display="curl -fsSL https://github.com/block/goose/releases/download/v1.39.0/download_cli.sh | bash",
             check_binary="goose",
         ),
     ],

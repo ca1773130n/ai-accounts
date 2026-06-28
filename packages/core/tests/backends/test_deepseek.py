@@ -121,6 +121,29 @@ async def test_deepseek_chat_posts_with_bearer(tmp_path, httpx_mock):
 
 
 @pytest.mark.asyncio
+async def test_deepseek_chat_yields_single_error_on_non_200(tmp_path, httpx_mock):
+    """A non-200 from the chat endpoint must surface exactly one error event and
+    stop — no token/done frames after it."""
+    httpx_mock.add_response(
+        url="https://api.deepseek.com/v1/chat/completions",
+        method="POST",
+        status_code=429,
+        content=b"rate limited",
+    )
+    backend = DeepSeekBackend()
+    events: list[ChatStreamEvent] = []
+    async for e in backend.chat(
+        ChatRequest(messages=(_msg("user", "Hi"),), model="deepseek-v4-pro"),
+        b"sk-deepseek-test",
+        isolation_dir=tmp_path,
+    ):
+        events.append(e)
+    assert len(events) == 1
+    assert events[0].kind == "error"
+    assert "429" in str(events[0].payload)
+
+
+@pytest.mark.asyncio
 async def test_deepseek_detect_is_keyless():
     result = await DeepSeekBackend().detect()
     assert result.installed is True

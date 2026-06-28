@@ -25,7 +25,9 @@ _CLIPROXY_INSTALL_COMMANDS = [
     ["brew", "install", "cliproxyapi"],
 ]
 
-from ai_accounts_core.cliproxy._compat import COMPAT
+# Deferred below the module constants to avoid a cliproxy-package import cycle
+# (cliproxy/__init__ imports from this module).
+from ai_accounts_core.cliproxy._compat import COMPAT  # noqa: E402
 
 _OAUTH_URL_RE = re.compile(r"https?://[^\s\"'<>]+")
 # Device-code regex is version-coupled to cliproxyapi; loaded from
@@ -181,11 +183,7 @@ async def start_cliproxy_login(
     config_path = cfg_dir / "config.yaml"
     if not config_path.exists():
         config_path.write_text(
-            'host: "127.0.0.1"\n'
-            "port: 8317\n"
-            f'auth-dir: "{cfg_dir}"\n'
-            "api-keys: []\n"
-            "debug: false\n"
+            f'host: "127.0.0.1"\nport: 8317\nauth-dir: "{cfg_dir}"\napi-keys: []\ndebug: false\n'
         )
 
     argv = [_CLIPROXY_BINARY, "-config", str(config_path), "-no-browser", flag]
@@ -276,7 +274,7 @@ _CLIPROXY_ALLOWED_PATH_PREFIXES = COMPAT.allowed_path_prefixes
 _CLIPROXY_ALLOWED_HOSTS = COMPAT.allowed_hosts
 
 
-async def forward_cliproxy_callback(callback_url: str) -> dict:
+async def forward_cliproxy_callback(callback_url: str) -> dict[str, str]:
     """Forward an OAuth callback URL to cliproxyapi's local HTTP server."""
     from urllib.parse import parse_qs, urlparse
 
@@ -284,6 +282,10 @@ async def forward_cliproxy_callback(callback_url: str) -> dict:
     qs = parse_qs(parsed.query)
     code = qs.get("code", [""])[0]
     state = qs.get("state", [""])[0]
+    # Resolve the callback port ONCE so the value the SSRF allowlist validates
+    # is the exact value forwarded to below. Previously the guard validated the
+    # scheme default (80/443) while the request used 54545 — a portless URL
+    # could pass/fail the check on a different port than the one actually hit.
     port = parsed.port or 54545
 
     # SSRF guard: restrict scheme, host, port, and path
@@ -291,9 +293,8 @@ async def forward_cliproxy_callback(callback_url: str) -> dict:
         return {"status": "error", "message": "callback URL must use http or https"}
     if parsed.hostname not in _CLIPROXY_ALLOWED_HOSTS:
         return {"status": "error", "message": "callback URL must target localhost"}
-    effective_port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    if effective_port not in _CLIPROXY_ALLOWED_PORTS:
-        return {"status": "error", "message": f"callback port {effective_port} not allowed"}
+    if port not in _CLIPROXY_ALLOWED_PORTS:
+        return {"status": "error", "message": f"callback port {port} not allowed"}
     # Path allowlist: reject URL-encoded ".." traversal and non-allowed prefixes.
     # We check the RAW path (urlparse already URL-decodes %2F, but %2E.%2E
     # remains as ".." — explicit reject) and we also assert no segment is "..".
@@ -502,7 +503,7 @@ def write_cliproxy_config(port: int = 8317, api_key: str = "not-needed") -> Path
 def start_cliproxy_server(
     port: int = 8317,
     api_key: str = "not-needed",
-) -> dict:
+) -> dict[str, object]:
     """Start CLIProxyAPI as a background process.
 
     Writes config, checks if already running, starts the binary,
@@ -528,7 +529,11 @@ def start_cliproxy_server(
         return {"status": "ok", "port": port, "pid": None, "message": "already running"}
 
     config_path = str(_CLIPROXY_CONFIG)
-    stderr_path = Path(tempfile.mktemp(suffix="-cliproxy-stderr.log"))
+    # mkstemp atomically creates the file (no TOCTOU window like mktemp); we
+    # close the fd and reopen by path below since subprocess wants a file object.
+    _stderr_fd, _stderr_name = tempfile.mkstemp(suffix="-cliproxy-stderr.log")
+    os.close(_stderr_fd)
+    stderr_path = Path(_stderr_name)
     try:
         with open(stderr_path, "w") as stderr_file:
             proc = subprocess.Popen(
@@ -576,7 +581,7 @@ def start_cliproxy_server(
     return {"status": "error", "port": port, "pid": None, "message": msg}
 
 
-def stop_cliproxy_server() -> dict:
+def stop_cliproxy_server() -> dict[str, str]:
     """Stop any running CLIProxyAPI process.
 
     Returns {"status": "ok"|"error", "message": str}
@@ -588,7 +593,7 @@ def stop_cliproxy_server() -> dict:
         return {"status": "error", "message": str(exc)}
 
 
-def cliproxy_server_status() -> dict:
+def cliproxy_server_status() -> dict[str, object]:
     """Check CLIProxyAPI server status.
 
     Returns {"installed": bool, "running": bool, "port": int, "version": str|None}

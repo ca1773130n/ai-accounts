@@ -41,6 +41,9 @@ const BACKEND_COLORS: Record<string, { bg: string; fg: string; label: string }> 
   goose: { bg: 'rgba(249,115,22,0.15)', fg: '#f97316', label: 'Goose' },
   aider: { bg: 'rgba(20,184,166,0.15)', fg: '#14b8a6', label: 'Aider' },
   crush: { bg: 'rgba(239,68,68,0.15)', fg: '#ef4444', label: 'Crush' },
+  openai_compat: { bg: 'rgba(34,211,238,0.15)', fg: '#22d3ee', label: 'OpenAI-compatible' },
+  openrouter: { bg: 'rgba(129,140,248,0.15)', fg: '#818cf8', label: 'OpenRouter' },
+  kimi: { bg: 'rgba(232,121,249,0.15)', fg: '#e879f9', label: 'Kimi' },
 };
 
 function backendMeta(kind: string | undefined | null) {

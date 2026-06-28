@@ -83,9 +83,9 @@ async def test_validate_calls_google_api_with_key(tmp_path: Path):
         async def __aexit__(self, *a):
             return None
 
-        async def get(self, url, *, params=None, **_):
+        async def get(self, url, *, headers=None, **_):
             captured["url"] = url
-            captured["params"] = params or {}
+            captured["headers"] = headers or {}
             return _Resp()
 
     from ai_accounts_core.backends import antigravity as antigravity_mod
@@ -94,7 +94,7 @@ async def test_validate_calls_google_api_with_key(tmp_path: Path):
         ok = await backend.validate(b"AIzaSy-test", isolation_dir=tmp_path / "antigravity")
     assert ok is True
     assert captured["url"].endswith("/v1beta/models")
-    assert captured["params"].get("key") == "AIzaSy-test"
+    assert captured["headers"].get("x-goog-api-key") == "AIzaSy-test"
 
 
 @pytest.mark.asyncio

@@ -128,7 +128,7 @@ async def test_discover_for_kind_probes_each_candidate(tmp_path, monkeypatch):
     ):
         items = await discover_for_kind("claude", probe_timeout=1.0)
 
-    paths = sorted([(i.path.endswith(".claude"), i.is_logged_in, i.error) for i in items])
+    sorted([(i.path.endswith(".claude"), i.is_logged_in, i.error) for i in items])
     # Sorted by tuple — bool order doesn't matter, just confirm both surfaced.
     assert len(items) == 2
     ok_items = [i for i in items if i.is_logged_in]

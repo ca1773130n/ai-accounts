@@ -6,7 +6,9 @@ class ModelsController(Controller):
     path = "/api/v1/backends/{backend_id:str}/models"
 
     @get("/")
-    async def list_models(self, account_service: AccountService, backend_id: str) -> dict:
+    async def list_models(
+        self, account_service: AccountService, backend_id: str
+    ) -> dict[str, object]:
         models = await account_service.list_models(backend_id)
         return {
             "items": [
