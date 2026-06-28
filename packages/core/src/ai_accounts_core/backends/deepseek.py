@@ -13,6 +13,7 @@ import httpx
 
 from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.domain.backend import DetectResult
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -134,8 +135,8 @@ class DeepSeekBackend(CliBackendBase):
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "api_key":
@@ -192,7 +193,7 @@ class DeepSeekBackend(CliBackendBase):
 
         return fallback("deepseek")
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         return []  # DeepSeek has no usage API
 
     async def chat(

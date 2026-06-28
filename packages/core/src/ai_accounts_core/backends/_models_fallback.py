@@ -19,6 +19,7 @@ mapping change instead of four.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -103,10 +104,8 @@ def write_cache(provider: str, items: list[dict[str, Any]]) -> None:
         if isinstance(item, dict) and item.get("id")
     ]
     existing[provider] = serialized
-    try:
+    with contextlib.suppress(OSError):
         path.write_text(json.dumps(existing, separators=(",", ":")))
-    except OSError:
-        pass
 
 
 # ── Static fallbacks (last resort) ────────────────────────────────────────
@@ -155,10 +154,6 @@ _STATIC: dict[str, tuple[Model, ...]] = {
     "deepseek": (
         Model(id="deepseek-v4-flash", display_name="DeepSeek V4 Flash"),
         Model(id="deepseek-v4-pro", display_name="DeepSeek V4 Pro"),
-    ),
-    "qwen": (
-        Model(id="qwen3-coder-plus", display_name="Qwen3 Coder Plus"),
-        Model(id="qwen3-coder-flash", display_name="Qwen3 Coder Flash"),
     ),
     "goose": (),
     "aider": (),

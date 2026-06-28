@@ -128,15 +128,11 @@ describe('ChatBubble', () => {
     expect(w.find('.aia-bubble__model').text()).toBe('Opus');
   });
 
-  it('labels deepseek and qwen backends by their display names', () => {
+  it('labels the deepseek backend by its display name', () => {
     const ds = mount(ChatBubble, {
       props: { role: 'assistant', content: 'hi', backend: 'deepseek' },
     });
     expect(ds.find('.aia-bubble__role').text()).toBe('DeepSeek');
-    const qw = mount(ChatBubble, {
-      props: { role: 'assistant', content: 'hi', backend: 'qwen' },
-    });
-    expect(qw.find('.aia-bubble__role').text()).toBe('Qwen');
   });
 
   it('labels goose/aider/crush backends by their display names', () => {

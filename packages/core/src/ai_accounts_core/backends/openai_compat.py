@@ -3,8 +3,10 @@
 One backend that covers any OpenAI-shaped endpoint — Qwen, iFlow, Together,
 Groq, DeepSeek, Mistral, etc. — by storing both the API key and the provider's
 ``base_url`` in the credential. There is no CLI to install: login is a two-step
-api_key flow (base_url prompt, then key prompt) and the credential is JSON bytes
-``{"api_key": ..., "base_url": ...}``.
+api_key flow (a preset menu, then a base_url prompt when needed, then the key
+prompt) and the credential is JSON bytes ``{"api_key": ..., "base_url": ...}``.
+The preset menu mixes keyless local servers (Ollama, LM Studio, …) with cloud
+endpoints that DO require an API key (Qwen / DashScope), plus a Custom option.
 
 ``validate``/``list_models``/``chat`` decode that JSON, read ``base_url``, and
 hit ``{base_url}/models`` and ``{base_url}/chat/completions`` (OpenAI shape —
@@ -27,6 +29,7 @@ import httpx
 
 from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.domain.backend import DetectResult
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -52,14 +55,26 @@ from ai_accounts_core.protocols.backend import (
 )
 
 # (key, label, base_url) — base_url "" means Custom (ask the user for it).
-# All five local servers are OpenAI-shaped; the key is optional/ignored on
-# localhost. Order is presentation order; the 1-based menu number maps to it.
+# Presets mix keyless local servers (Ollama, LM Studio, …; the key is
+# optional/ignored on localhost) with cloud endpoints that DO need an API key
+# (Qwen / DashScope). Order is presentation order; the 1-based menu number maps
+# to it.
 _PRESETS: tuple[tuple[str, str, str], ...] = (
     ("ollama", "Ollama (:11434)", "http://localhost:11434/v1"),
     ("lmstudio", "LM Studio (:1234)", "http://localhost:1234/v1"),
     ("vllm", "vLLM (:8000)", "http://localhost:8000/v1"),
     ("llamacpp", "llama.cpp (:8080)", "http://localhost:8080/v1"),
     ("oobabooga", "oobabooga (:5000)", "http://localhost:5000/v1"),
+    (
+        "qwen-cn",
+        "Qwen / DashScope — China (API key)",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    ),
+    (
+        "qwen-intl",
+        "Qwen / DashScope — International (API key)",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    ),
     ("custom", "Custom base URL", ""),
 )
 
@@ -131,12 +146,12 @@ class _OpenAiCompatApiKeySession(LoginSession):
         return ans
 
     async def events(self) -> AsyncIterator[LoginEvent]:
-        # Step 0 — preset menu. Picking a local-server preset fills base_url and
-        # skips the base_url prompt; "Custom" (last) falls through to it. The
-        # client returns the 1-based option number as a string.
+        # Step 0 — preset menu. Picking a preset (local server or cloud) fills
+        # base_url and skips the base_url prompt; "Custom" (last) falls through
+        # to it. The client returns the 1-based option number as a string.
         yield MenuPrompt(
             prompt_id="preset",
-            prompt="Local server (or Custom)",
+            prompt="Preset endpoint (or Custom)",
             options=tuple(
                 MenuOption(number=i + 1, label=label)
                 for i, (_key, label, _url) in enumerate(_PRESETS)
@@ -252,8 +267,8 @@ class OpenAiCompatBackend(CliBackendBase):
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "api_key":
@@ -331,7 +346,7 @@ class OpenAiCompatBackend(CliBackendBase):
             pass
         return fallback("openai_compat")
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         return []  # OpenAI-compatible endpoints have no standard usage API
 
     async def chat(

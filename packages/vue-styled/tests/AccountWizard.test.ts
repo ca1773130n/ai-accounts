@@ -193,7 +193,7 @@ describe('AccountWizard', () => {
     expect(advanced.attributes('open')).toBeUndefined();
   });
 
-  it('maps deepseek/qwen to keyless API-key env prefixes', async () => {
+  it('maps deepseek to a keyless API-key env prefix', async () => {
     const { client } = mkRoutingClient();
     const w = mount(AccountWizard, {
       props: { initialBackendKind: 'deepseek' },
@@ -210,11 +210,6 @@ describe('AccountWizard', () => {
     vm.accountName = 'work';
     await nextTick();
     expect(vm.apiKeyEnv).toBe('DEEPSEEK_API_KEY_WORK');
-    expect(vm.requiresNoCli).toBe(true);
-
-    vm.backendKind = 'qwen';
-    await nextTick();
-    expect(vm.apiKeyEnv).toBe('DASHSCOPE_API_KEY_WORK');
     expect(vm.requiresNoCli).toBe(true);
   });
 

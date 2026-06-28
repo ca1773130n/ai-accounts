@@ -13,7 +13,6 @@ const BACKEND_DISPLAY_NAMES: Record<string, string> = {
   antigravity: 'Antigravity',
   opencode: 'OpenCode',
   deepseek: 'DeepSeek',
-  qwen: 'Qwen',
   goose: 'Goose',
   aider: 'Aider',
   crush: 'Crush',

@@ -9,7 +9,6 @@ from .kimi import KimiBackend
 from .openai_compat import OpenAiCompatBackend
 from .opencode import OpenCodeBackend
 from .openrouter import OpenRouterBackend
-from .qwen import QwenBackend
 
 __all__ = [
     "AiderBackend",
@@ -23,5 +22,4 @@ __all__ = [
     "OpenAiCompatBackend",
     "OpenCodeBackend",
     "OpenRouterBackend",
-    "QwenBackend",
 ]

@@ -17,6 +17,7 @@ from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -351,8 +352,8 @@ class AntigravityBackend(CliBackendBase):
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "api_key":
@@ -431,19 +432,22 @@ class AntigravityBackend(CliBackendBase):
 
         live = await cliproxy_list_models("antigravity")
         if live:
-            return [
-                Model(
-                    id=str(m["id"]),
-                    display_name=str(m.get("display_name") or m["id"]),
-                    context_window=m.get("context_window"),
+            models: list[Model] = []
+            for m in live:
+                cw = m.get("context_window")
+                models.append(
+                    Model(
+                        id=str(m["id"]),
+                        display_name=str(m.get("display_name") or m["id"]),
+                        context_window=cw if isinstance(cw, int) else None,
+                    )
                 )
-                for m in live
-            ]
+            return models
         from ai_accounts_core.backends._models_fallback import fallback
 
         return fallback("antigravity")
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         # Safe-paths-only: neither the Google AI Studio API key nor the
         # CLIProxyAPI OAuth flow exposes a sanctioned usage/quota API. The
         # former Gemini-Code-Assist path hit the unsanctioned cloudcode-pa

@@ -46,6 +46,36 @@ _INSTALL_STRATEGIES: dict[str, list[InstallCommand]] = {
             check_binary="opencode",
         ),
     ],
+    "goose": [
+        InstallCommand(
+            argv=[
+                "bash",
+                "-c",
+                "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash",
+            ],
+            display="curl -fsSL https://github.com/block/goose/.../download_cli.sh | bash",
+            check_binary="goose",
+        ),
+    ],
+    "aider": [
+        InstallCommand(
+            argv=["pipx", "install", "aider-chat"],
+            display="pipx install aider-chat",
+            check_binary="aider",
+        ),
+        InstallCommand(
+            argv=["uv", "tool", "install", "aider-chat"],
+            display="uv tool install aider-chat",
+            check_binary="aider",
+        ),
+    ],
+    "crush": [
+        InstallCommand(
+            argv=["npm", "install", "-g", "@charmland/crush"],
+            display="npm install -g @charmland/crush",
+            check_binary="crush",
+        ),
+    ],
 }
 
 

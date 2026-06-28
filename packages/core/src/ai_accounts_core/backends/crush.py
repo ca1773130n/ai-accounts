@@ -31,6 +31,7 @@ from typing import ClassVar
 
 from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._iso import resolved_iso
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -113,7 +114,7 @@ def _decode_credential(credential: bytes) -> tuple[str, str, str]:
 class _CrushApiKeySession(LoginSession):
     """Provider menu → api_key → (optional) model → isolated crush.json.
 
-    Prompts are driven the same way ``qwen``/``openai_compat`` drive sequential
+    Prompts are driven the same way ``openai_compat`` drives sequential
     prompts: each prompt is yielded, then the session blocks on the answer queue
     before yielding the next. The provider MenuPrompt's answer is the option
     number (1-based, indexing ``_CRUSH_PROVIDERS``).
@@ -266,8 +267,8 @@ class CrushBackend(CliBackendBase):
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "api_key":
@@ -289,7 +290,7 @@ class CrushBackend(CliBackendBase):
 
         return fallback("crush")
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         return []
 
     async def chat(

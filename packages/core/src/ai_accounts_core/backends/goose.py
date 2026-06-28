@@ -32,6 +32,7 @@ from typing import ClassVar
 
 from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._iso import resolved_iso
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -95,10 +96,10 @@ def _decode_goose_credential(credential: bytes) -> tuple[str, str, str]:
 class _GooseApiKeySession(LoginSession):
     """provider menu → api_key → model → JSON credential.
 
-    Prompts are driven the same way ``qwen``'s session drives its sequential
-    prompts: each prompt is yielded, then the session blocks on the answer
-    queue before yielding the next. The provider MenuPrompt's answer is the
-    option ``number`` (1=Anthropic, 2=OpenAI, 3=OpenRouter).
+    Prompts are driven the same way ``openai_compat``'s session drives its
+    sequential prompts: each prompt is yielded, then the session blocks on the
+    answer queue before yielding the next. The provider MenuPrompt's answer is
+    the option ``number`` (1=Anthropic, 2=OpenAI, 3=OpenRouter).
     """
 
     def __init__(self) -> None:
@@ -247,8 +248,8 @@ class GooseBackend(CliBackendBase):
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "api_key":
@@ -279,7 +280,7 @@ class GooseBackend(CliBackendBase):
 
         return fallback("goose")
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         return []  # Goose has no usage API
 
     async def chat(

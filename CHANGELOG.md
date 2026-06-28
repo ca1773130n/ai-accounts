@@ -9,7 +9,7 @@ Completes the Gemini → **Antigravity** migration (the kind is now genuinely `a
 ### Added
 
 - **DeepSeek backend** (`ai-accounts-core`, `backends/deepseek.py`). API-key backend over DeepSeek's OpenAI-compatible API (`https://api.deepseek.com/v1`). Keyless install (no CLI). Static fallback models: DeepSeek V4 Flash / Pro.
-- **Qwen (DashScope) backend** (`ai-accounts-core`, `backends/qwen.py`). API-key backend with a region menu (China / International / Custom base URL); credential stores `{api_key, base_url}` JSON and sets `DASHSCOPE_API_KEY`. Static fallback models: Qwen3 Coder Plus / Flash.
+- **Qwen / DashScope as an OpenAI-compatible preset** (`ai-accounts-core`, `backends/openai_compat.py`). Qwen is no longer a standalone backend — it is now selectable from the `openai_compat` preset menu (China / International), with the API-key prompt required for these cloud endpoints.
 - **Keyless local-LLM support in the OpenAI-compatible backend** (`ai-accounts-core`, `backends/openai_compat.py`). `validate()` now succeeds with an empty API key (no `Authorization` header sent) and falls back to probing `/chat/completions` when `/models` is absent. The login flow opens with a preset menu — **Ollama** (:11434), **LM Studio** (:1234), **vLLM** (:8000), **llama.cpp** (:8080), **oobabooga** (:5000), or Custom — and the API-key prompt is optional.
 - **Goose backend** (`ai-accounts-core`, `backends/goose.py`). PTY-primary CLI agent; `chat()` parses `goose run … --output-format stream-json`. Per-account isolation via `GOOSE_PATH_ROOT`, with `GOOSE_DISABLE_KEYRING=true` and provider key env (anthropic/openai/openrouter).
 - **Aider backend** (`ai-accounts-core`, `backends/aider.py`). PTY-primary CLI agent; isolates host config by pinning `HOME` to the per-account isolation dir. `chat()` is a best-effort one-shot via `aider --message`.
@@ -19,7 +19,7 @@ Completes the Gemini → **Antigravity** migration (the kind is now genuinely `a
 ### Changed
 
 - **Gemini backend fully renamed to Antigravity** (`ai-accounts-core`, `backends/gemini.py` → `backends/antigravity.py`). `GeminiBackend` → `AntigravityBackend`, kind `"gemini"` → `"antigravity"`, isolation env `GEMINI_HOME` → `ANTIGRAVITY_HOME`, with a best-effort one-time config-dir move `~/.gemini` → `~/.antigravity`. The rename propagates through `BackendKind`, the cliproxy flag/compat maps, the static model fallbacks, the playground server registry, and all `@ai-accounts/vue-styled` kind maps (labels, colours, CSS vars, wizard config-dir/api-key maps).
-- **Frontend backend maps extended** (`@ai-accounts/vue-styled`) for `deepseek`, `qwen`, `goose`, `aider`, `crush` — display names, selector labels, response colours, onboarding list, and wizard config-dir / api-key-env / no-CLI maps.
+- **Frontend backend maps extended** (`@ai-accounts/vue-styled`) for `deepseek`, `goose`, `aider`, `crush` — display names, selector labels, response colours, onboarding list, and wizard config-dir / api-key-env / no-CLI maps.
 
 ## 0.3.17 — 2026-06-20
 

@@ -32,7 +32,6 @@ from ai_accounts_core.backends import (
     OpenAiCompatBackend,
     OpenCodeBackend,
     OpenRouterBackend,
-    QwenBackend,
 )
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
@@ -52,7 +51,6 @@ app = create_app(
             OpenAiCompatBackend(),
             KimiBackend(),
             DeepSeekBackend(),
-            QwenBackend(),
             GooseBackend(),
             AiderBackend(),
             CrushBackend(),

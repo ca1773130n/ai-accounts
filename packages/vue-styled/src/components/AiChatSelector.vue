@@ -70,7 +70,6 @@ function backendLabel(b: BackendDTO): string {
     antigravity: 'Antigravity',
     opencode: 'OpenCode',
     deepseek: 'DeepSeek',
-    qwen: 'Qwen',
     goose: 'Goose',
     aider: 'Aider',
     crush: 'Crush',
