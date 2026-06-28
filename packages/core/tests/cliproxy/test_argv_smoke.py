@@ -37,7 +37,9 @@ def _flag_map_from_source() -> dict[str, str]:
         # Google deprecated the Antigravity CLI in favour of Antigravity; the
         # antigravity account now authenticates via cliproxyapi's
         # `-antigravity-login` instead of the bare Google `--login`.
-        "antigravity": "-antigravity-login" if '"antigravity": "-antigravity-login"' in src else None,
+        "antigravity": "-antigravity-login"
+        if '"antigravity": "-antigravity-login"' in src
+        else None,
         "kimi": "-kimi-login" if '"kimi": "-kimi-login"' in src else None,
     }
 

@@ -22,9 +22,9 @@ from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.adapters.vault_envkey import EnvKeyVault
 from ai_accounts_core.backends import (
     AiderBackend,
+    AntigravityBackend,
     ClaudeBackend,
     CodexBackend,
-    AntigravityBackend,
     CrushBackend,
     DeepSeekBackend,
     GooseBackend,

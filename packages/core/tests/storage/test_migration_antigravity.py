@@ -71,23 +71,17 @@ async def test_v2_db_renames_gemini_to_antigravity(tmp_path):
     conn = await storage._ensure_conn()  # type: ignore[attr-defined]
 
     # The gemini row is rewritten to antigravity.
-    async with conn.execute(
-        "SELECT kind FROM backends WHERE id = 'bkd-gem'"
-    ) as cur:
+    async with conn.execute("SELECT kind FROM backends WHERE id = 'bkd-gem'") as cur:
         (kind,) = await cur.fetchone()
     assert kind == "antigravity"
 
     # The unrelated row is untouched.
-    async with conn.execute(
-        "SELECT kind FROM backends WHERE id = 'bkd-cl'"
-    ) as cur:
+    async with conn.execute("SELECT kind FROM backends WHERE id = 'bkd-cl'") as cur:
         (other_kind,) = await cur.fetchone()
     assert other_kind == "claude"
 
     # No gemini rows remain.
-    async with conn.execute(
-        "SELECT COUNT(*) FROM backends WHERE kind = 'gemini'"
-    ) as cur:
+    async with conn.execute("SELECT COUNT(*) FROM backends WHERE kind = 'gemini'") as cur:
         (count,) = await cur.fetchone()
     assert count == 0
 

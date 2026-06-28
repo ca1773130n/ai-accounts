@@ -57,9 +57,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=3,
         description="rename backend kind 'gemini' to 'antigravity'",
-        statements=(
-            "UPDATE backends SET kind='antigravity' WHERE kind='gemini'",
-        ),
+        statements=("UPDATE backends SET kind='antigravity' WHERE kind='gemini'",),
     ),
 )
 

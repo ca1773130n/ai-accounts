@@ -172,9 +172,7 @@ async def test_validate_falls_back_to_chat_probe(tmp_path: Path, httpx_mock):
     reachability probe; a 200/400/422 there counts as a valid OpenAI server."""
     base = "http://localhost:8080/v1"
     httpx_mock.add_response(url=f"{base}/models", method="GET", status_code=404)
-    httpx_mock.add_response(
-        url=f"{base}/chat/completions", method="POST", status_code=400, json={}
-    )
+    httpx_mock.add_response(url=f"{base}/chat/completions", method="POST", status_code=400, json={})
     backend = OpenAiCompatBackend()
     cred = json.dumps({"api_key": "", "base_url": base}).encode()
     assert await backend.validate(cred, isolation_dir=tmp_path) is True
