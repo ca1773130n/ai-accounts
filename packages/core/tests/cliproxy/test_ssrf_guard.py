@@ -63,3 +63,16 @@ async def test_ssrf_guard_accepts_canonical_callback():
             f"guard wrongly rejected canonical URL: {result['message']!r}"
         )
         assert "traversal" not in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_ssrf_guard_accepts_antigravity_callback():
+    """The Antigravity OAuth callback (port 51121, /oauth-callback) must pass the
+    guard — otherwise `cliproxyapi -antigravity-login` can never complete."""
+    result = await forward_cliproxy_callback(
+        "http://localhost:51121/oauth-callback?code=fake&state=fake"
+    )
+    if result["status"] == "error":
+        assert "not allowed" not in result["message"], (
+            f"guard wrongly rejected the Antigravity callback: {result['message']!r}"
+        )
