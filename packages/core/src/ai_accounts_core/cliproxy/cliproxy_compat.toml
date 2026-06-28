@@ -27,7 +27,8 @@ flags_ignorecase = true
 # membership is a set.
 #   54545, 8085 — historical cliproxyapi defaults
 #   1455        — cliproxyapi 0.16+ shares Codex codex_cli_simplified_flow
-allowed_ports = [1455, 8085, 54545]
+#   51121       — cliproxyapi -antigravity-login callback (Antigravity OAuth)
+allowed_ports = [1455, 8085, 54545, 51121]
 
 # Path prefixes the callback URL may use. URL-encoded traversal (%2e%2e) and
 # "../" segments are rejected separately.
