@@ -2,7 +2,7 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
-## Unreleased
+## 0.4.0 — 2026-06-28
 
 Completes the Gemini → **Antigravity** migration (the kind is now genuinely `antigravity`, not an alias), and adds five backends plus keyless local-LLM support. Also brings CI to green and lands the deferred code-review follow-ups.
 

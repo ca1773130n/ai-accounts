@@ -10,7 +10,7 @@ cloud presets such as Qwen / DashScope).
 Python ([Litestar](https://litestar.dev)) sidecar API + TypeScript / Vue 3
 client packages. Apache-2.0.
 
-**Latest release: `0.3.17`** ([CHANGELOG](./CHANGELOG.md))
+**Latest release: `0.4.0`** ([CHANGELOG](./CHANGELOG.md))
 
 ---
 
