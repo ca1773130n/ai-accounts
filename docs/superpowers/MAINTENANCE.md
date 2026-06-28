@@ -190,8 +190,15 @@ Known pre-work on branch:
 | `services/onboarding.py` | `test_onboarding_service.py` + `test_onboarding_routes.py` | Covered. |
 | `backends/claude.py` | `test_claude_backend.py` + `backends/test_claude_login.py` | `chat()` and `pty()` implemented since 0.3.0-alpha.2/4; integration coverage via `test_accounts_begin_login.py` + end-to-end chat tests. Unit-level coverage of the `chat()` streaming path is still thin. |
 | `backends/codex.py` | `test_codex_backend.py` + `backends/test_codex_login.py` | Same as claude. |
-| `backends/gemini.py` | `test_gemini_backend.py` + `backends/test_gemini_login.py` + `backends/test_gemini_direct_oauth.py` | Same as claude. Direct OAuth session has dedicated tests. |
+| `backends/antigravity.py` | `test_antigravity_backend.py` + `test_antigravity_login.py` + `test_antigravity_{validate,chat,usage}.py` | Same as claude. Covers the AI Studio key + CLIProxyAPI OAuth sessions. |
 | `backends/opencode.py` | `test_opencode_backend.py` + `backends/test_opencode_login.py` | Same as claude. |
+| `backends/openrouter.py` | `test_openrouter.py` | Keyless API backend. |
+| `backends/kimi.py` | `test_kimi.py` | CLIProxyAPI OAuth backend. |
+| `backends/openai_compat.py` | `test_openai_compat.py` | base_url + optional api_key; keyless local presets. |
+| `backends/deepseek.py` | `test_deepseek.py` | Keyless API backend. |
+| `backends/goose.py` | `test_goose_backend.py` | PTY-primary CLI agent. |
+| `backends/aider.py` | `test_aider_backend.py` | PTY-primary CLI agent. |
+| `backends/crush.py` | `test_crush_backend.py` | PTY-only TUI agent. |
 | `adapters/auth_apikey.py` | `test_auth_adapters.py` | Covered. |
 | `adapters/auth_noauth.py` | `test_auth_adapters.py` | Covered. |
 
@@ -258,12 +265,13 @@ verification criteria listed in CLAUDE.md ("all three must pass").
 
 ### 3.4 Backends without login tests
 
-All four backends (claude, codex, gemini, opencode) have login tests in
+All backends have login/flow tests in
 `packages/core/tests/backends/`:
 - `test_claude_login.py`
 - `test_codex_login.py`
-- `test_gemini_login.py` + `test_gemini_direct_oauth.py`
+- `test_antigravity_login.py` (+ `test_antigravity_{validate,chat,usage}.py`)
 - `test_opencode_login.py`
+- `test_openrouter.py`, `test_kimi.py`, `test_openai_compat.py`, `test_deepseek.py`, `test_goose_backend.py`, `test_aider_backend.py`, `test_crush_backend.py`
 
 However, these test the `LoginSession` event sequence with mocked
 `CliOrchestrator` -- they do **not** test actual CLI invocation. The
@@ -527,7 +535,7 @@ these requires a 0.4.0 release.
 - `BackendStatus` enum (UNCONFIGURED, DETECTING, NEEDS_LOGIN, VALIDATING, READY, ERROR)
 - `BackendCredential` (fields: id, backend_id, ciphertext, key_id, created_at, expires_at)
 - `DetectResult` (fields: installed, version, path, notes)
-- `BackendKind` constants (CLAUDE, OPENCODE, GEMINI, CODEX)
+- `BackendKind` constants (CLAUDE, OPENCODE, ANTIGRAVITY, CODEX); the remaining kinds (`openrouter`, `kimi`, `openai_compat`, `deepseek`, `goose`, `aider`, `crush`) are declared on their backend classes
 - `OnboardingState` (fields: id, current_step, selected_backend_kind, created_backend_id, error)
 - `OnboardingStep` enum (WELCOME, DETECT, PICK_BACKEND, LOGIN, VALIDATE, DONE)
 - `LiveSession` (fields: id, kind, backend_id, state, started_at, last_seen_at)
@@ -640,7 +648,7 @@ these requires a 0.4.0 release.
 ### 7.1 `NotImplementedError` stubs
 
 **Resolved as of 0.3.0**: `chat()` and `pty()` are implemented across all
-four real backends (`claude`, `opencode`, `gemini`, `codex`) and their
+all real backends (`claude`, `opencode`, `antigravity`, `codex`, plus `openrouter`, `kimi`, `openai_compat`, `deepseek`, `goose`, `aider`, `crush`) and their
 `FakeBackend` counterpart. The "chat lands in Phase 3 / pty lands in
 Phase 4" stubs are gone — see `CHANGELOG.md` entries for 0.3.0-alpha.2
 (chat) and 0.3.0-alpha.4 (PTY).

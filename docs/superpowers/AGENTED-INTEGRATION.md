@@ -9,8 +9,10 @@ The script creates and starts a standalone Litestar ASGI app that runs on `127.0
 **Registered backends** (line 19-25):
 - `ClaudeBackend()` — Anthropic Claude via the `claude` CLI
 - `OpenCodeBackend()` — OpenCode open-source router
-- `GeminiBackend()` — Google Gemini via `gemini` CLI
+- `AntigravityBackend()` — Antigravity (Google AI Studio API key / CLIProxyAPI OAuth)
 - `CodexBackend()` — OpenAI Codex via the `codex` CLI
+
+> The `ai-accounts-core` package now ships **eleven** backends — in addition to the four above, `OpenRouterBackend`, `KimiBackend`, `OpenAiCompatBackend`, `DeepSeekBackend`, `GooseBackend`, `AiderBackend`, and `CrushBackend` are exported and can be registered the same way.
 
 **Config passed to `AiAccountsConfig`:**
 - `env="development"` — enables dev-mode relaxed checks
@@ -73,7 +75,7 @@ This is sourced entirely from the upstream package — there is no local `Accoun
 ```
 
 **Props:**
-- `:initial-backend-kind` — passes `backend.type` (e.g., `"claude"`, `"gemini"`) to pre-select the backend in the wizard
+- `:initial-backend-kind` — passes `backend.type` (e.g., `"claude"`, `"antigravity"`) to pre-select the backend in the wizard
 - `:backend-name` — display name shown in the wizard header
 
 **Event handlers:**
@@ -210,7 +212,7 @@ This was Agented's own 1947-line implementation of the account add wizard, resto
 
 **What remains in Agented that has NOT migrated:**
 - `AccountLoginModal.vue` — still uses the Flask `/admin/backends/{id}/connect` SSE path (explicitly tagged `TODO(T29+)` in `backend-management.ts` lines 92-94)
-- Rate limit checks, auth status polling, model discovery, test prompts, Gemini direct OAuth — all still on Flask `/admin/backends/*`
+- Rate limit checks, auth status polling, model discovery, test prompts, Antigravity OAuth — all still on Flask `/admin/backends/*`
 - CLIProxyAPI status/listing — the `proxyStatus()` and `listProxyAccounts()` methods still hit Flask (lines 137-141 of `backend-management.ts`)
 
 ---
