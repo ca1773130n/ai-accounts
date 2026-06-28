@@ -3,7 +3,7 @@
  * IdP is forced to show its account picker / re-auth screen, even when
  * the user's default browser is already signed into a different account.
  *
- * Ported from Agented commit f52c55a — used by Gemini (Google OAuth) and
+ * Ported from Agented commit f52c55a — used by Antigravity (Google OAuth) and
  * Claude (Anthropic OAuth) login flows to support multi-account setups.
  *
  * @param url       Raw OAuth URL emitted by the backend CLI

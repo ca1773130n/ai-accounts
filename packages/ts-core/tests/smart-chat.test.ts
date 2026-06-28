@@ -46,7 +46,7 @@ describe('SmartChatEvent variants', () => {
   });
 
   it('backend_timeout carries backend', () => {
-    const e: SmartChatEvent = { kind: 'backend_timeout', backend: 'gemini' };
+    const e: SmartChatEvent = { kind: 'backend_timeout', backend: 'antigravity' };
     expect(e.kind).toBe('backend_timeout');
   });
 

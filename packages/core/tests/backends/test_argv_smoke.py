@@ -3,8 +3,8 @@
 For every CLI argv the backend wrappers invoke at runtime, verify that the
 subcommand actually exists in the installed CLI version. This catches the
 class of bug that hit `codex auth status` (didn't exist), `codex auth
---browser` (didn't exist), `gemini auth login --device` (didn't exist),
-`gemini models list --json` (didn't exist), `opencode auth check` (didn't
+--browser` (didn't exist), `antigravity auth login --device` (didn't exist),
+`antigravity models list --json` (didn't exist), `opencode auth check` (didn't
 exist), and `claude auth status` (didn't exist).
 
 Tests are SKIPPED (not failed) if the CLI is not on PATH, so CI machines
@@ -28,8 +28,8 @@ ARGV_CASES = [
     # codex — login flow + status check (codex 0.121+).
     ("codex", ["login", "--help"]),
     ("codex", ["login", "status", "--help"]),
-    # gemini — version smoke (api_key flow doesn't shell out).
-    ("gemini", ["--version"]),
+    # antigravity — version smoke (api_key flow doesn't shell out).
+    ("antigravity", ["--version"]),
     # opencode — providers list + login (opencode 0.x).
     ("opencode", ["providers", "list", "--help"]),
     ("opencode", ["providers", "login", "--help"]),

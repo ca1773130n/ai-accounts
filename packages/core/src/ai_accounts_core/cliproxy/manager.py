@@ -148,13 +148,13 @@ async def start_cliproxy_login(
     # Codex uses the device-code flow (URL + code) rather than the
     # browser-callback flow — device-code works even when the playground
     # is reached over a remote URL.
-    # Gemini now uses Antigravity OAuth (`-antigravity-login`) instead of the
-    # plain Google account flow — Google deprecated the Gemini CLI in favour of
+    # Antigravity now uses Antigravity OAuth (`-antigravity-login`) instead of the
+    # plain Google account flow — Google deprecated the Antigravity CLI in favour of
     # Antigravity, and cliproxyapi ships a native Antigravity login.
     flag_map = {
         "claude": "--claude-login",
         "codex": "--codex-device-login",
-        "gemini": "-antigravity-login",
+        "antigravity": "-antigravity-login",
         "kimi": "-kimi-login",
     }
     flag = flag_map.get(backend_kind)
@@ -319,7 +319,11 @@ async def forward_cliproxy_callback(callback_url: str) -> dict:
     # the first reachable host wins.
     last_error: str | None = None
     last_status: int | None = None
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as http:
+    # follow_redirects=False: the SSRF allowlist is checked only on the original
+    # URL, so a redirect from a permitted local endpoint to an arbitrary Location
+    # would bypass it. cliproxyapi's callback server returns 2xx/3xx-to-success in
+    # place, which still counts as success below (status_code < 400).
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as http:
         for host in ("[::1]", "127.0.0.1", "localhost"):
             try:
                 resp = await http.get(

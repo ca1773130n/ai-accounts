@@ -6,10 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from ai_accounts_core.backends.openai_compat import OpenAiCompatBackend
+from ai_accounts_core.backends.openai_compat import _PRESETS, OpenAiCompatBackend
 from ai_accounts_core.domain.chat import ChatMessage, ChatRole
 from ai_accounts_core.login.events import (
     LoginComplete,
+    MenuPrompt,
     PromptAnswer,
     TextPrompt,
 )
@@ -53,6 +54,9 @@ async def test_login_round_trips_base_url(tmp_path: Path):
     )
 
     events_task = asyncio.create_task(_drain(session))
+    await asyncio.sleep(0)
+    # Choose "Custom" (last preset) to fall through to the base_url prompt.
+    await session.respond(PromptAnswer(prompt_id="preset", answer=str(len(_PRESETS))))
     await asyncio.sleep(0)
     await session.respond(PromptAnswer(prompt_id="base_url", answer=_BASE_URL))
     await asyncio.sleep(0)
@@ -147,6 +151,81 @@ async def test_validate_hits_configured_base_url(tmp_path: Path, httpx_mock):
     assert ok is True
     req = httpx_mock.get_requests()[0]
     assert str(req.url) == f"{_BASE_URL}/models"
+
+
+@pytest.mark.asyncio
+async def test_validate_keyless_empty_models_ok(tmp_path: Path, httpx_mock):
+    """A keyless local server (empty api_key) that returns 200 with an empty
+    model list is still reachable/valid, and no Authorization header is sent."""
+    base = "http://localhost:11434/v1"
+    httpx_mock.add_response(url=f"{base}/models", method="GET", json={"data": []})
+    backend = OpenAiCompatBackend()
+    cred = json.dumps({"api_key": "", "base_url": base}).encode()
+    assert await backend.validate(cred, isolation_dir=tmp_path) is True
+    req = httpx_mock.get_requests()[0]
+    assert "authorization" not in {k.lower() for k in req.headers}
+
+
+@pytest.mark.asyncio
+async def test_validate_falls_back_to_chat_probe(tmp_path: Path, httpx_mock):
+    """Old llama.cpp builds lack /models (404) — fall back to a /chat/completions
+    reachability probe; a 200/400/422 there counts as a valid OpenAI server."""
+    base = "http://localhost:8080/v1"
+    httpx_mock.add_response(url=f"{base}/models", method="GET", status_code=404)
+    httpx_mock.add_response(url=f"{base}/chat/completions", method="POST", status_code=400, json={})
+    backend = OpenAiCompatBackend()
+    cred = json.dumps({"api_key": "", "base_url": base}).encode()
+    assert await backend.validate(cred, isolation_dir=tmp_path) is True
+
+
+@pytest.mark.asyncio
+async def test_validate_key_rejected_false(tmp_path: Path, httpx_mock):
+    """A reachable server that rejects the key (401) is not valid."""
+    base = "http://localhost:8000/v1"
+    httpx_mock.add_response(url=f"{base}/models", method="GET", status_code=401)
+    backend = OpenAiCompatBackend()
+    cred = json.dumps({"api_key": "bad", "base_url": base}).encode()
+    assert await backend.validate(cred, isolation_dir=tmp_path) is False
+
+
+@pytest.mark.asyncio
+async def test_login_emits_preset_menu_first(tmp_path: Path):
+    """The session opens with a preset MenuPrompt covering the local servers."""
+    backend = OpenAiCompatBackend()
+    session = backend.begin_login(
+        flow_kind="api_key", config={}, vault_ctx={}, isolation_dir=tmp_path
+    )
+    agen = session.events()
+    first = await agen.__anext__()
+    assert isinstance(first, MenuPrompt)
+    assert first.prompt_id == "preset"
+    keys = {k for k, _label, _url in _PRESETS}
+    assert {"ollama", "lmstudio", "vllm", "llamacpp", "oobabooga", "custom"} <= keys
+    assert len(first.options) == len(_PRESETS)
+    await agen.aclose()
+
+
+@pytest.mark.asyncio
+async def test_login_preset_keyless_round_trips(tmp_path: Path):
+    """A keyless local preset (Ollama) fills base_url AND skips the api_key
+    prompt entirely: the bundled LoginStream can't submit a blank field, so
+    login must complete with NO text prompts and an empty-key credential."""
+    backend = OpenAiCompatBackend()
+    session = backend.begin_login(
+        flow_kind="api_key", config={}, vault_ctx={}, isolation_dir=tmp_path
+    )
+    events_task = asyncio.create_task(_drain(session))
+    await asyncio.sleep(0)
+    await session.respond(PromptAnswer(prompt_id="preset", answer="1"))  # Ollama (keyless)
+    events = await events_task
+
+    text_prompts = [e for e in events if isinstance(e, TextPrompt)]
+    completes = [e for e in events if isinstance(e, LoginComplete)]
+    assert text_prompts == []  # base_url AND api_key prompts both skipped
+    assert len(completes) == 1
+    assert session.credential is not None
+    decoded = json.loads(session.credential.decode())
+    assert decoded == {"api_key": "", "base_url": "http://localhost:11434/v1"}
 
 
 @pytest.mark.asyncio

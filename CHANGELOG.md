@@ -2,6 +2,25 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## Unreleased
+
+Completes the Gemini → **Antigravity** migration (the kind is now genuinely `antigravity`, not an alias), and adds five backends plus keyless local-LLM support.
+
+### Added
+
+- **DeepSeek backend** (`ai-accounts-core`, `backends/deepseek.py`). API-key backend over DeepSeek's OpenAI-compatible API (`https://api.deepseek.com/v1`). Keyless install (no CLI). Static fallback models: DeepSeek V4 Flash / Pro.
+- **Qwen / DashScope as an OpenAI-compatible preset** (`ai-accounts-core`, `backends/openai_compat.py`). Qwen is no longer a standalone backend — it is now selectable from the `openai_compat` preset menu (China / International), with the API-key prompt required for these cloud endpoints.
+- **Keyless local-LLM support in the OpenAI-compatible backend** (`ai-accounts-core`, `backends/openai_compat.py`). `validate()` now succeeds with an empty API key (no `Authorization` header sent) and falls back to probing `/chat/completions` when `/models` is absent. The login flow opens with a preset menu — **Ollama** (:11434), **LM Studio** (:1234), **vLLM** (:8000), **llama.cpp** (:8080), **oobabooga** (:5000), or Custom — and the API-key prompt is optional.
+- **Goose backend** (`ai-accounts-core`, `backends/goose.py`). PTY-primary CLI agent; `chat()` parses `goose run … --output-format stream-json`. Per-account isolation via `GOOSE_PATH_ROOT`, with `GOOSE_DISABLE_KEYRING=true` and provider key env (anthropic/openai/openrouter).
+- **Aider backend** (`ai-accounts-core`, `backends/aider.py`). PTY-primary CLI agent; isolates host config by pinning `HOME` to the per-account isolation dir. `chat()` is a best-effort one-shot via `aider --message`.
+- **Crush backend** (`ai-accounts-core`, `backends/crush.py`). PTY-only CLI agent; login writes an isolated `crush.json`, `_env` sets `CRUSH_GLOBAL_CONFIG`/`CRUSH_GLOBAL_DATA`. `chat()` returns an error event (TUI-only, no headless).
+- **SQLite schema v3 data migration** (`ai-accounts-core`, `adapters/storage_sqlite/migrations.py`). Rewrites existing `backends` rows from `kind='gemini'` to `kind='antigravity'` so accounts created before this release keep working.
+
+### Changed
+
+- **Gemini backend fully renamed to Antigravity** (`ai-accounts-core`, `backends/gemini.py` → `backends/antigravity.py`). `GeminiBackend` → `AntigravityBackend`, kind `"gemini"` → `"antigravity"`, isolation env `GEMINI_HOME` → `ANTIGRAVITY_HOME`, with a best-effort one-time config-dir move `~/.gemini` → `~/.antigravity`. The rename propagates through `BackendKind`, the cliproxy flag/compat maps, the static model fallbacks, the playground server registry, and all `@ai-accounts/vue-styled` kind maps (labels, colours, CSS vars, wizard config-dir/api-key maps).
+- **Frontend backend maps extended** (`@ai-accounts/vue-styled`) for `deepseek`, `goose`, `aider`, `crush` — display names, selector labels, response colours, onboarding list, and wizard config-dir / api-key-env / no-CLI maps.
+
 ## 0.3.17 — 2026-06-20
 
 Google deprecated the Gemini CLI in favour of **Antigravity**; the Gemini account now authenticates through Antigravity. The add-account wizard collapses to three mobile-friendly steps, and three new provider backends ship.

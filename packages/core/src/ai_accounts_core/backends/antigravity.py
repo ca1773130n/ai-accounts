@@ -17,6 +17,7 @@ from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
 from ai_accounts_core.domain.backend import DetectResult
 from ai_accounts_core.domain.chat import ChatRole
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
@@ -42,31 +43,31 @@ from ai_accounts_core.protocols.backend import (
 
 
 def _validate_config_path(config_path: str | None, isolation_dir: Path) -> Path:
-    """Validate config_path is safe. Returns the resolved gemini config dir."""
+    """Validate config_path is safe. Returns the resolved antigravity config dir."""
     if not config_path:
-        return Path.home() / ".gemini"
+        return Path.home() / ".antigravity"
     expanded = Path(os.path.expanduser(str(config_path)))
     resolved = expanded.resolve()
     # Must not escape outside home or isolation directory
     allowed_roots = (Path.home().resolve(), isolation_dir.resolve())
     if not any(resolved.is_relative_to(root) for root in allowed_roots):
         raise ValueError(f"config_path '{config_path}' resolves outside allowed directories")
-    return resolved / ".gemini"
+    return resolved / ".antigravity"
 
 
-_GEMINI_URL_RE = re.compile(r"https://accounts\.google\.com/o/oauth2/device/\S+")
-_GEMINI_USER_CODE_RE = re.compile(r"([A-Z0-9]{4}-[A-Z0-9]{4})")
-_GEMINI_SUCCESS_MARKERS = ("Login successful", "Authenticated")
-_GEMINI_FAILURE_MARKERS = ("error:", "failed")
+_ANTIGRAVITY_URL_RE = re.compile(r"https://accounts\.google\.com/o/oauth2/device/\S+")
+_ANTIGRAVITY_USER_CODE_RE = re.compile(r"([A-Z0-9]{4}-[A-Z0-9]{4})")
+_ANTIGRAVITY_SUCCESS_MARKERS = ("Login successful", "Authenticated")
+_ANTIGRAVITY_FAILURE_MARKERS = ("error:", "failed")
 
 
-class _GeminiCliProxySession(LoginSession):
+class _AntigravityCliProxySession(LoginSession):
     """OAuth login that delegates to ``cliproxyapi --login``.
 
-    Gemini CLI 0.35+ has no scriptable OAuth subcommand we can drive
+    Antigravity CLI 0.35+ has no scriptable OAuth subcommand we can drive
     from a wizard subprocess. Sidesteps by spawning cliproxyapi which
     handles the Google OAuth handshake (subscription / Google AI Pro)
-    and writes a ``gemini-<email>.json`` to its auth directory. The
+    and writes a ``antigravity-<email>.json`` to its auth directory. The
     user pastes the localhost callback URL the browser is redirected
     to — same UX as the existing optional cliproxy registration step.
 
@@ -76,7 +77,7 @@ class _GeminiCliProxySession(LoginSession):
         LoginComplete on success / LoginFailed on error.
 
     The session's credential is empty bytes — cliproxyapi owns the
-    auth file. ``GeminiBackend.validate`` falls back to a cliproxy
+    auth file. ``AntigravityBackend.validate`` falls back to a cliproxy
     /v1/models probe filtered by ``owned_by=google`` to confirm.
     """
 
@@ -93,7 +94,7 @@ class _GeminiCliProxySession(LoginSession):
 
     @property
     def backend_kind(self) -> str:
-        return "gemini"
+        return "antigravity"
 
     @property
     def flow_kind(self) -> str:
@@ -109,7 +110,7 @@ class _GeminiCliProxySession(LoginSession):
             start_cliproxy_login,
         )
 
-        proc, info = await start_cliproxy_login("gemini")
+        proc, info = await start_cliproxy_login("antigravity")
         self._proc = proc
         if info.fake_dir:
             self._fake_dir = Path(info.fake_dir)
@@ -129,10 +130,10 @@ class _GeminiCliProxySession(LoginSession):
                 message="cliproxyapi did not produce an OAuth URL",
             )
             return
-        yield UrlPrompt(prompt_id="gemini_oauth", url=info.oauth_url)
+        yield UrlPrompt(prompt_id="antigravity_oauth", url=info.oauth_url)
         # Same paste-callback shape as the cliproxy registration step in
         # the wizard (Step 3.5). After signing in, Google redirects the
-        # browser to http://localhost:8085/oauth2callback?code=…&state=…;
+        # browser to http://localhost:51121/oauth2callback?code=…&state=…;
         # when the user is on a remote machine that localhost is THEIR
         # machine, not the playground host, so the redirect appears to
         # hang ("this site can't be reached" / spinner). The URL itself
@@ -142,7 +143,7 @@ class _GeminiCliProxySession(LoginSession):
             prompt_id="callback",
             prompt=(
                 "After signing in, your browser will try to load "
-                "http://localhost:8085/oauth2callback?... and likely "
+                "http://localhost:51121/oauth2callback?... and likely "
                 "show 'this site can't be reached' or just keep loading. "
                 "That's expected — the URL itself contains your auth "
                 "code. Copy the FULL URL from the address bar and paste "
@@ -198,7 +199,7 @@ class _GeminiCliProxySession(LoginSession):
             shutil.rmtree(self._fake_dir, ignore_errors=True)
 
 
-class _GeminiApiKeySession(LoginSession):
+class _AntigravityApiKeySession(LoginSession):
     def __init__(self) -> None:
         self._sid = f"sess-{uuid.uuid4().hex[:10]}"
         self._answers: asyncio.Queue[PromptAnswer] = asyncio.Queue(maxsize=1)
@@ -215,7 +216,7 @@ class _GeminiApiKeySession(LoginSession):
 
     @property
     def backend_kind(self) -> str:
-        return "gemini"
+        return "antigravity"
 
     @property
     def flow_kind(self) -> str:
@@ -268,16 +269,16 @@ class _GeminiApiKeySession(LoginSession):
             self._answers.put_nowait(PromptAnswer(prompt_id="__cancel__", answer=""))
 
 
-class GeminiBackend(CliBackendBase):
-    kind: ClassVar[str] = "gemini"
-    _CLI_NAME: ClassVar[str] = "gemini"
-    _ISOLATION_ENV_VAR: ClassVar[str] = "GEMINI_CLI_HOME"
-    _API_KEY_ENV_VAR: ClassVar[str] = "GEMINI_API_KEY"
-    # Gemini CLI 0.35.3 has NO `auth` subcommand — `gemini auth login --device`
+class AntigravityBackend(CliBackendBase):
+    kind: ClassVar[str] = "antigravity"
+    _CLI_NAME: ClassVar[str] = "antigravity"
+    _ISOLATION_ENV_VAR: ClassVar[str] = "ANTIGRAVITY_HOME"
+    _API_KEY_ENV_VAR: ClassVar[str] = "ANTIGRAVITY_API_KEY"
+    # Antigravity CLI 0.35.3 has NO `auth` subcommand — `antigravity auth login --device`
     # does not exist. Two viable auth paths in this codebase:
     #
     #   * cli_browser: delegates to `cliproxyapi --login` for the Google
-    #     OAuth handshake (subscription / Gemini Code Assist / Pro).
+    #     OAuth handshake (subscription / Antigravity Code Assist / Pro).
     #     cliproxyapi writes the credential to its auth dir; chat() then
     #     routes through cliproxyapi's OpenAI-compatible endpoint.
     #   * api_key: paste a Google AI Studio key — direct API access, no
@@ -285,13 +286,13 @@ class GeminiBackend(CliBackendBase):
     supported_login_flows: ClassVar[frozenset[str]] = frozenset({"cli_browser", "api_key"})
 
     metadata: ClassVar[BackendMetadata] = BackendMetadata(
-        kind="gemini",
+        kind="antigravity",
         display_name="Antigravity",
         icon_url=None,
-        install_check=InstallCheck(
-            command=["gemini", "--version"],
-            version_regex=r"(\d+\.\d+\.\d+)",
-        ),
+        # Keyless: Antigravity has no terminal CLI to probe (detect() returns
+        # installed=True). `true` exits 0; the permissive regex no-ops the
+        # optional version parse.
+        install_check=InstallCheck(command=["true"], version_regex=r"(\d+)?"),
         login_flows=[
             # api_key is FIRST so the wizard's auto-pick lands on the path
             # that actually works for everyone. cli_browser delegates to
@@ -299,10 +300,10 @@ class GeminiBackend(CliBackendBase):
             # frequently hangs on Google's consent screen (unverified app
             # gate, Workspace policy blocks, browser extension issues).
             # cli_browser stays available via the wizard's flow switcher
-            # for users where it does work (Gemini Code Assist / Pro).
+            # for users where it does work (Antigravity Code Assist / Pro).
             LoginFlowSpec(
                 kind="api_key",
-                display_name="Gemini API key (Google AI Studio)",
+                display_name="Antigravity API key (Google AI Studio)",
                 description=(
                     "Paste a Google AI Studio API key — direct, no OAuth. "
                     "Get one at https://aistudio.google.com/apikey "
@@ -315,10 +316,10 @@ class GeminiBackend(CliBackendBase):
                 display_name="Sign in with Antigravity (subscription)",
                 description=(
                     "Sign in to your Google Antigravity subscription via "
-                    "CLIProxyAPI. Works with Gemini Code Assist / Pro / Ultra "
+                    "CLIProxyAPI. Works with Antigravity Code Assist / Pro / Ultra "
                     "plans. NOTE: Google's OAuth consent gate can be "
                     "unreliable for this client; if it hangs, switch back "
-                    "to the Gemini API key."
+                    "to the Antigravity API key."
                 ),
                 requires_inputs=[],
             ),
@@ -331,36 +332,36 @@ class GeminiBackend(CliBackendBase):
             },
         },
         supports_multi_account=True,
-        isolation_env_var="GEMINI_CLI_HOME",
+        isolation_env_var="ANTIGRAVITY_HOME",
     )
 
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "api_key":
-            return _GeminiApiKeySession()
+            return _AntigravityApiKeySession()
         if flow_kind == "cli_browser":
-            return _GeminiCliProxySession()
+            return _AntigravityCliProxySession()
         raise ValueError(f"unsupported flow_kind: {flow_kind}")
 
     async def detect(self) -> DetectResult:
         # Antigravity needs no terminal CLI — OAuth runs through cliproxyapi's
-        # `-antigravity-login`. The legacy `gemini` binary is no longer
+        # `-antigravity-login`. The legacy `antigravity` binary is no longer
         # installed, so report available to keep the wizard's CLI step a
         # non-blocking "No CLI required" note rather than probing for it.
         return DetectResult(installed=True, notes="No CLI required")
 
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
-        # Gemini CLI 0.35+ has no `auth status` subcommand. Two paths:
+        # Antigravity CLI 0.35+ has no `auth status` subcommand. Two paths:
         #
         #   * api_key flow — credential bytes hold the key. Validate by
         #     hitting Google AI Studio's `models` endpoint; 200 = ready.
         #   * cli_browser flow — credential is empty (cliproxyapi owns
-        #     the auth file at ~/.cli-proxy-api/gemini-<email>.json).
+        #     the auth file at ~/.cli-proxy-api/antigravity-<email>.json).
         #     Validate by asking cliproxy if it lists any google-owned
         #     models; non-empty list = ready.
         api_key = credential.decode("utf-8", errors="replace").strip() if credential else ""
@@ -379,11 +380,11 @@ class GeminiBackend(CliBackendBase):
         # credential is the normal case after the cli_browser flow.
         from ai_accounts_core.cliproxy import cliproxy_list_models
 
-        live = await cliproxy_list_models("gemini")
+        live = await cliproxy_list_models("antigravity")
         return bool(live)
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
-        # Gemini CLI 0.35+ has no `models list` subcommand. Two live sources:
+        # Antigravity CLI 0.35+ has no `models list` subcommand. Two live sources:
         #   1. Google AI Studio's models endpoint with the API key — primary
         #      for api_key flows.
         #   2. CLIProxyAPI's /v1/models filtered by owned_by="google" — used
@@ -415,53 +416,30 @@ class GeminiBackend(CliBackendBase):
         # No api_key, or Google API didn't respond — try cliproxy.
         from ai_accounts_core.cliproxy import cliproxy_list_models
 
-        live = await cliproxy_list_models("gemini")
+        live = await cliproxy_list_models("antigravity")
         if live:
-            return [
-                Model(
-                    id=str(m["id"]),
-                    display_name=str(m.get("display_name") or m["id"]),
-                    context_window=m.get("context_window"),
+            models: list[Model] = []
+            for m in live:
+                cw = m.get("context_window")
+                models.append(
+                    Model(
+                        id=str(m["id"]),
+                        display_name=str(m.get("display_name") or m["id"]),
+                        context_window=cw if isinstance(cw, int) else None,
+                    )
                 )
-                for m in live
-            ]
+            return models
         from ai_accounts_core.backends._models_fallback import fallback
 
-        return fallback("gemini")
+        return fallback("antigravity")
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
-        from ai_accounts_core.domain.usage import UsageWindow
-
-        api_key = credential.decode("utf-8").strip()
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
-                    json={"project": "cloud-code-assist"},
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    timeout=15.0,
-                )
-                if resp.status_code != 200:
-                    return []
-                data = resp.json()
-                windows = []
-                for bucket in data.get("buckets", []):
-                    remaining = bucket.get("remainingFraction", 1.0)
-                    resets_at = None
-                    if bucket.get("resetTime"):
-                        from datetime import datetime
-
-                        resets_at = datetime.fromisoformat(bucket["resetTime"])
-                    windows.append(
-                        UsageWindow(
-                            window_type=bucket.get("modelId", "unknown"),
-                            usage_percent=(1.0 - remaining) * 100.0,
-                            resets_at=resets_at,
-                        )
-                    )
-                return windows
-        except (httpx.HTTPError, ValueError, KeyError, OSError):
-            return []
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
+        # Safe-paths-only: neither the Google AI Studio API key nor the
+        # CLIProxyAPI OAuth flow exposes a sanctioned usage/quota API. The
+        # former Gemini-Code-Assist path hit the unsanctioned cloudcode-pa
+        # `/v1internal` gateway (account-ban risk) — removed by design.
+        # ponytail: no usage API on the safe paths; revisit if cliproxy adds one.
+        return []
 
     async def chat(
         self,
@@ -508,7 +486,10 @@ class GeminiBackend(CliBackendBase):
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
                     continue
-                data = json.loads(line[6:])
+                try:
+                    data = json.loads(line[6:])
+                except (json.JSONDecodeError, ValueError):
+                    continue
                 candidates = data.get("candidates", [])
                 if not candidates:
                     continue

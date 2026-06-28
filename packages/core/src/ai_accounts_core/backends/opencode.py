@@ -286,7 +286,7 @@ class OpenCodeBackend(CliBackendBase):
         return True
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
-        # Live discovery from OpenRouter — same pattern as gemini's Google AI
+        # Live discovery from OpenRouter — same pattern as antigravity's Google AI
         # Studio probe. /v1/models is publicly readable; the api_key is sent
         # for parity with chat() and to satisfy any future auth requirement.
         # Returns OpenAI-style {data: [{id, name, context_length, ...}]}.

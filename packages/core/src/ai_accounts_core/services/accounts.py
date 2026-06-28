@@ -513,7 +513,7 @@ class AccountService:
 
         ``validate()`` only probes for credential *presence* — it never
         makes an authenticated call, so it cannot refresh an OAuth access
-        token. CLI/cliproxy-backed kinds (Claude, Codex, Gemini, OpenCode)
+        token. CLI/cliproxy-backed kinds (Claude, Codex, Antigravity, OpenCode)
         refresh their short-lived access token **only when they actually
         invoke the provider**, using the long-lived refresh token. A
         long-idle account's access token therefore expires silently and the

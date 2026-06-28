@@ -40,7 +40,11 @@ class ChatStreamEvent(msgspec.Struct, frozen=True, kw_only=True):
 class PtyHandle(Protocol):
     async def write(self, data: bytes) -> None: ...
     async def resize(self, cols: int, rows: int) -> None: ...
-    async def read(self) -> AsyncIterator[bytes]: ...
+    # `read` is an async generator: it RETURNS an AsyncIterator[bytes], it is not
+    # a coroutine. The sole caller (routes/pty_ws.py) consumes it with
+    # `async for chunk in handle.read()`, so the signature must not be `async def`
+    # (which would type the return as Coroutine[..., AsyncIterator[bytes]]).
+    def read(self) -> AsyncIterator[bytes]: ...
     async def close(self) -> None: ...
 
 
@@ -54,8 +58,8 @@ class BackendProtocol(Protocol):
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession: ...
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool: ...

@@ -3,8 +3,10 @@
 One backend that covers any OpenAI-shaped endpoint — Qwen, iFlow, Together,
 Groq, DeepSeek, Mistral, etc. — by storing both the API key and the provider's
 ``base_url`` in the credential. There is no CLI to install: login is a two-step
-api_key flow (base_url prompt, then key prompt) and the credential is JSON bytes
-``{"api_key": ..., "base_url": ...}``.
+api_key flow (a preset menu, then a base_url prompt when needed, then the key
+prompt) and the credential is JSON bytes ``{"api_key": ..., "base_url": ...}``.
+The preset menu mixes keyless local servers (Ollama, LM Studio, …) with cloud
+endpoints that DO require an API key (Qwen / DashScope), plus a Custom option.
 
 ``validate``/``list_models``/``chat`` decode that JSON, read ``base_url``, and
 hit ``{base_url}/models`` and ``{base_url}/chat/completions`` (OpenAI shape —
@@ -27,11 +29,14 @@ import httpx
 
 from ai_accounts_core.backends._base import CliBackendBase
 from ai_accounts_core.domain.backend import DetectResult
+from ai_accounts_core.domain.usage import UsageWindow
 from ai_accounts_core.login import (
     LoginComplete,
     LoginEvent,
     LoginFailed,
     LoginSession,
+    MenuOption,
+    MenuPrompt,
     PromptAnswer,
     TextPrompt,
 )
@@ -47,6 +52,37 @@ from ai_accounts_core.protocols.backend import (
     Model,
     PtyHandle,
     PtyRequest,
+)
+
+# (key, label, base_url) — base_url "" means Custom (ask the user for it).
+# Presets mix keyless local servers (Ollama, LM Studio, …; the key is
+# optional/ignored on localhost) with cloud endpoints that DO need an API key
+# (Qwen / DashScope). Order is presentation order; the 1-based menu number maps
+# to it.
+_PRESETS: tuple[tuple[str, str, str], ...] = (
+    ("ollama", "Ollama (:11434)", "http://localhost:11434/v1"),
+    ("lmstudio", "LM Studio (:1234)", "http://localhost:1234/v1"),
+    ("vllm", "vLLM (:8000)", "http://localhost:8000/v1"),
+    ("llamacpp", "llama.cpp (:8080)", "http://localhost:8080/v1"),
+    ("oobabooga", "oobabooga (:5000)", "http://localhost:5000/v1"),
+    (
+        "qwen-cn",
+        "Qwen / DashScope — China (API key)",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    ),
+    (
+        "qwen-intl",
+        "Qwen / DashScope — International (API key)",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    ),
+    ("custom", "Custom base URL", ""),
+)
+
+# Localhost presets that need no API key. The bundled LoginStream can't submit a
+# blank field, so for these we skip the key prompt entirely and store an empty
+# key — otherwise keyless setup (Ollama/LM Studio/…) is impossible from the UI.
+_KEYLESS_PRESETS: frozenset[str] = frozenset(
+    {"ollama", "lmstudio", "vllm", "llamacpp", "oobabooga"}
 )
 
 
@@ -74,8 +110,8 @@ def _decode_credential(credential: bytes) -> tuple[str, str]:
 class _OpenAiCompatApiKeySession(LoginSession):
     """Two-step api_key flow: prompt for base_url, then for the API key.
 
-    Sequential TextPrompts are driven the same way gemini's
-    ``_GeminiCliProxySession`` drives UrlPrompt → TextPrompt: each prompt is
+    Sequential TextPrompts are driven the same way antigravity's
+    ``_AntigravityCliProxySession`` drives UrlPrompt → TextPrompt: each prompt is
     yielded, then the session blocks on the answer queue for the client's
     reply before yielding the next. The resulting credential is JSON bytes
     ``{"api_key": ..., "base_url": ...}``.
@@ -117,12 +153,16 @@ class _OpenAiCompatApiKeySession(LoginSession):
         return ans
 
     async def events(self) -> AsyncIterator[LoginEvent]:
-        # Step 1 — base URL. The TextPrompt's `prompt` is the input label
-        # rendered by LoginStream; point at the OpenAI /v1 convention.
-        yield TextPrompt(
-            prompt_id="base_url",
-            prompt="Base URL of the OpenAI-compatible endpoint (e.g. https://.../v1)",
-            hidden=False,
+        # Step 0 — preset menu. Picking a preset (local server or cloud) fills
+        # base_url and skips the base_url prompt; "Custom" (last) falls through
+        # to it. The client returns the 1-based option number as a string.
+        yield MenuPrompt(
+            prompt_id="preset",
+            prompt="Preset endpoint (or Custom)",
+            options=tuple(
+                MenuOption(number=i + 1, label=label)
+                for i, (_key, label, _url) in enumerate(_PRESETS)
+            ),
         )
         ans = await self._next_answer()
         if ans is None:
@@ -132,27 +172,59 @@ class _OpenAiCompatApiKeySession(LoginSession):
             self._done = True
             yield LoginFailed(code="cancelled", message="Login cancelled")
             return
-        base_url = (ans.answer or "").strip()
-        if not base_url:
-            self._done = True
-            yield LoginFailed(code="invalid_base_url", message="Base URL cannot be empty")
-            return
+        choice = (ans.answer or "").strip()
+        idx = (
+            int(choice) - 1
+            if choice.isdigit() and 1 <= int(choice) <= len(_PRESETS)
+            else len(_PRESETS) - 1  # default to Custom on anything unexpected
+        )
+        preset_key = _PRESETS[idx][0]
+        base_url = _PRESETS[idx][2]  # "" for Custom
 
-        # Step 2 — API key.
-        yield TextPrompt(prompt_id="api_key", prompt="API key", hidden=True)
-        ans = await self._next_answer()
-        if ans is None:
-            yield LoginFailed(code="response_timeout", message="No response within 5 minutes")
-            return
-        if ans.prompt_id == "__cancel__":
-            self._done = True
-            yield LoginFailed(code="cancelled", message="Login cancelled")
-            return
-        api_key = (ans.answer or "").strip()
-        if not api_key:
-            self._done = True
-            yield LoginFailed(code="invalid_key", message="API key cannot be empty")
-            return
+        # Step 1 — base URL (only when no preset was chosen). The TextPrompt's
+        # `prompt` is the input label rendered by LoginStream; point at the
+        # OpenAI /v1 convention.
+        if not base_url:
+            yield TextPrompt(
+                prompt_id="base_url",
+                prompt="Base URL of the OpenAI-compatible endpoint (e.g. https://.../v1)",
+                hidden=False,
+            )
+            ans = await self._next_answer()
+            if ans is None:
+                yield LoginFailed(code="response_timeout", message="No response within 5 minutes")
+                return
+            if ans.prompt_id == "__cancel__":
+                self._done = True
+                yield LoginFailed(code="cancelled", message="Login cancelled")
+                return
+            base_url = (ans.answer or "").strip()
+            if not base_url:
+                self._done = True
+                yield LoginFailed(code="invalid_base_url", message="Base URL cannot be empty")
+                return
+
+        # Step 2 — API key. Keyless localhost presets (Ollama/LM Studio/vLLM/
+        # llama.cpp/oobabooga) need none, and the bundled LoginStream can't
+        # submit a blank field — so skip the prompt entirely for those and store
+        # an empty key. Cloud presets (Qwen) and Custom still prompt.
+        if preset_key in _KEYLESS_PRESETS:
+            api_key = ""
+        else:
+            yield TextPrompt(
+                prompt_id="api_key",
+                prompt="API key (leave blank only if your endpoint needs none)",
+                hidden=True,
+            )
+            ans = await self._next_answer()
+            if ans is None:
+                yield LoginFailed(code="response_timeout", message="No response within 5 minutes")
+                return
+            if ans.prompt_id == "__cancel__":
+                self._done = True
+                yield LoginFailed(code="cancelled", message="Login cancelled")
+                return
+            api_key = (ans.answer or "").strip()  # empty allowed for keyless servers
 
         self._credential = json.dumps({"api_key": api_key, "base_url": base_url}).encode("utf-8")
         self._done = True
@@ -208,8 +280,8 @@ class OpenAiCompatBackend(CliBackendBase):
     def begin_login(
         self,
         flow_kind: str,
-        config: dict,
-        vault_ctx: dict,
+        config: dict[str, object],
+        vault_ctx: dict[str, object],
         isolation_dir: Path,
     ) -> LoginSession:
         if flow_kind == "api_key":
@@ -221,18 +293,40 @@ class OpenAiCompatBackend(CliBackendBase):
         return DetectResult(installed=True)
 
     async def validate(self, credential: bytes, *, isolation_dir: Path) -> bool:
+        # API key is OPTIONAL: keyless local servers (Ollama, LM Studio,
+        # llama.cpp, oobabooga, vLLM-no-auth) are valid with an empty key. Only
+        # base_url is required; the Authorization header is sent when a key
+        # exists. /models may be missing on old llama.cpp / oobabooga-without
+        # --api, so fall back to a /chat/completions reachability probe.
         base_url, api_key = _decode_credential(credential)
-        if not base_url or not api_key:
+        if not base_url:
             return False
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         try:
             async with httpx.AsyncClient(timeout=10.0) as http:
-                resp = await http.get(
-                    f"{base_url}/models",
-                    headers={"Authorization": f"Bearer {api_key}"},
+                resp = await http.get(f"{base_url}/models", headers=headers)
+                if resp.status_code == 200:
+                    return True  # reachable, even when the model list is empty
+                if resp.status_code in (401, 403):
+                    return False  # reachable but the key was rejected
+                # /models absent (404) or unimplemented — probe chat instead.
+                probe = await http.post(
+                    f"{base_url}/chat/completions",
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={
+                        "model": "",
+                        "messages": [{"role": "user", "content": "ping"}],
+                        "max_tokens": 1,
+                        "stream": False,
+                    },
                 )
         except (httpx.HTTPError, OSError):
             return False
-        return resp.status_code == 200
+        if probe.status_code in (401, 403):
+            return False
+        # 400/422 = the route exists and speaks OpenAI; the throwaway body was
+        # rejected, which still proves a reachable, compatible server.
+        return probe.status_code in (200, 400, 422)
 
     async def list_models(self, credential: bytes, *, isolation_dir: Path) -> list[Model]:
         # Live discovery from the configured endpoint's /models — same
@@ -261,11 +355,18 @@ class OpenAiCompatBackend(CliBackendBase):
                         for m in items
                         if isinstance(m, dict) and m.get("id")
                     ]
+                # 200 but empty data → no model loaded; an empty dropdown is
+                # the correct signal (e.g. Ollama with nothing pulled).
+                return fallback("openai_compat")
         except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError):
             pass
-        return fallback("openai_compat")
+        # /models is absent (404 on old llama.cpp / oobabooga-without-api) or
+        # unreachable, yet the endpoint already validated — surface one
+        # placeholder so the chat UI/all-mode can start. Such single-model
+        # servers ignore the model id and serve their one loaded model.
+        return [Model(id="default", display_name="default (server model)")]
 
-    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list:
+    async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         return []  # OpenAI-compatible endpoints have no standard usage API
 
     async def chat(
@@ -312,7 +413,10 @@ class OpenAiCompatBackend(CliBackendBase):
                 payload = line[6:].strip()
                 if payload == "[DONE]":
                     break
-                data = json.loads(payload)
+                try:
+                    data = json.loads(payload)
+                except (json.JSONDecodeError, ValueError):
+                    continue
                 choice = data.get("choices", [{}])[0]
                 delta = choice.get("delta", {})
                 text = delta.get("content")

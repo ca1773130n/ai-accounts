@@ -40,7 +40,7 @@ class Migration:
     statements: tuple[str, ...]
 
 
-CURRENT_VERSION = 2
+CURRENT_VERSION = 3
 
 
 MIGRATIONS: tuple[Migration, ...] = (
@@ -53,6 +53,16 @@ MIGRATIONS: tuple[Migration, ...] = (
             "ALTER TABLE backends ADD COLUMN last_used_at TEXT",
             "ALTER TABLE backends ADD COLUMN last_polled_at TEXT",
         ),
+    ),
+    Migration(
+        version=3,
+        description="rename backend kind 'gemini' to 'antigravity'",
+        # Only the backends table is rewritten: the migration must tolerate
+        # pre-v3 DBs that predate other kind-keyed tables (e.g. onboarding) —
+        # a failing statement wedges the aiosqlite write lock. onboarding's
+        # selected_backend_kind is ephemeral UI state that self-heals on the
+        # next onboarding pass, so it's intentionally left alone.
+        statements=("UPDATE backends SET kind='antigravity' WHERE kind='gemini'",),
     ),
 )
 

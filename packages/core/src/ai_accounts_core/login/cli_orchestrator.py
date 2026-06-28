@@ -2,7 +2,7 @@
 
 Ported from Agented's backend/app/services/pty_service.py +
 backend_cli_service.py. Runs a child CLI inside a pseudo-terminal so tools
-that require TTY (claude, codex, interactive gemini) launch correctly.
+that require TTY (claude, codex, interactive antigravity) launch correctly.
 Streams ANSI-stripped output as async str chunks, accepts stdin writes,
 supports graceful terminate + wait.
 """

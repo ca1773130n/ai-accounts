@@ -41,7 +41,7 @@ class _KimiCliProxySession(LoginSession):
     from a wizard subprocess. Sidesteps by spawning cliproxyapi which
     handles the Moonshot OAuth handshake and writes a credential to its
     auth directory. The user pastes the localhost callback URL the
-    browser is redirected to — same UX as the gemini cliproxy flow.
+    browser is redirected to — same UX as the antigravity cliproxy flow.
 
     Yields:
         UrlPrompt   — Moonshot OAuth URL (open in browser)
@@ -103,7 +103,7 @@ class _KimiCliProxySession(LoginSession):
             )
             return
         yield UrlPrompt(prompt_id="kimi_oauth", url=info.oauth_url)
-        # Same paste-callback shape as the gemini cliproxy flow. After
+        # Same paste-callback shape as the antigravity cliproxy flow. After
         # signing in, Moonshot redirects the browser to a localhost
         # callback; when the user is on a remote machine that localhost
         # is THEIR machine, not the playground host, so the redirect

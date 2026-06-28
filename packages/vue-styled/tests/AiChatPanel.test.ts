@@ -128,6 +128,28 @@ describe('ChatBubble', () => {
     expect(w.find('.aia-bubble__model').text()).toBe('Opus');
   });
 
+  it('labels the deepseek backend by its display name', () => {
+    const ds = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', backend: 'deepseek' },
+    });
+    expect(ds.find('.aia-bubble__role').text()).toBe('DeepSeek');
+  });
+
+  it('labels goose/aider/crush backends by their display names', () => {
+    const goose = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', backend: 'goose' },
+    });
+    expect(goose.find('.aia-bubble__role').text()).toBe('Goose');
+    const aider = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', backend: 'aider' },
+    });
+    expect(aider.find('.aia-bubble__role').text()).toBe('Aider');
+    const crush = mount(ChatBubble, {
+      props: { role: 'assistant', content: 'hi', backend: 'crush' },
+    });
+    expect(crush.find('.aia-bubble__role').text()).toBe('Crush');
+  });
+
   it('shows streaming cursor class', () => {
     const w = mount(ChatBubble, { props: { role: 'assistant', content: 'typing...', streaming: true } });
     expect(w.find('.aia-bubble--streaming').exists()).toBe(true);
@@ -205,7 +227,7 @@ describe('ChatControls', () => {
     selectedModel: null,
     backends: [
       { kind: 'claude', displayName: 'Claude', accounts: ['a@b.com'], models: ['opus'] },
-      { kind: 'gemini', displayName: 'Gemini', accounts: ['g@g.com'], models: ['pro'] },
+      { kind: 'antigravity', displayName: 'Antigravity', accounts: ['g@g.com'], models: ['pro'] },
     ],
   };
 
@@ -250,7 +272,7 @@ describe('AllModeResponses', () => {
   function makeResponses() {
     const map = new Map();
     map.set('claude', { backend: 'claude', content: 'Claude says hi', status: 'complete' });
-    map.set('gemini', { backend: 'gemini', content: 'Gemini says hello', status: 'streaming' });
+    map.set('antigravity', { backend: 'antigravity', content: 'Antigravity says hello', status: 'streaming' });
     return map;
   }
 
@@ -263,7 +285,7 @@ describe('AllModeResponses', () => {
   it('shows backend names', () => {
     const w = mount(AllModeResponses, { props: { responses: makeResponses() } });
     expect(w.text()).toContain('Claude');
-    expect(w.text()).toContain('Gemini');
+    expect(w.text()).toContain('Antigravity');
   });
 
   it('shows status badges', () => {
@@ -295,7 +317,7 @@ describe('CompoundSynthesis', () => {
     status: 'complete' as const,
     content: 'Synthesized result here',
     primaryBackend: 'claude',
-    backendsCollected: ['claude', 'gemini'],
+    backendsCollected: ['claude', 'antigravity'],
   };
 
   it('shows Compound Synthesis label', () => {
@@ -310,7 +332,7 @@ describe('CompoundSynthesis', () => {
 
   it('lists source backends', () => {
     const w = mount(CompoundSynthesis, { props: { state: baseState } });
-    expect(w.text()).toContain('claude, gemini');
+    expect(w.text()).toContain('claude, antigravity');
   });
 
   it('renders markdown content', () => {

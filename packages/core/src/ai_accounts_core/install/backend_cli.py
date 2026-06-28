@@ -36,7 +36,7 @@ _INSTALL_STRATEGIES: dict[str, list[InstallCommand]] = {
             check_binary="codex",
         ),
     ],
-    # Antigravity (internal kind "gemini") needs no terminal CLI — login is
+    # Antigravity (internal kind "antigravity") needs no terminal CLI — login is
     # handled via cliproxyapi's native Antigravity OAuth, so there's no
     # install strategy to register.
     "opencode": [
@@ -44,6 +44,36 @@ _INSTALL_STRATEGIES: dict[str, list[InstallCommand]] = {
             argv=["npm", "install", "-g", "opencode-ai"],
             display="npm install -g opencode-ai",
             check_binary="opencode",
+        ),
+    ],
+    "goose": [
+        InstallCommand(
+            argv=[
+                "bash",
+                "-c",
+                "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash",
+            ],
+            display="curl -fsSL https://github.com/block/goose/.../download_cli.sh | bash",
+            check_binary="goose",
+        ),
+    ],
+    "aider": [
+        InstallCommand(
+            argv=["pipx", "install", "aider-chat"],
+            display="pipx install aider-chat",
+            check_binary="aider",
+        ),
+        InstallCommand(
+            argv=["uv", "tool", "install", "aider-chat"],
+            display="uv tool install aider-chat",
+            check_binary="aider",
+        ),
+    ],
+    "crush": [
+        InstallCommand(
+            argv=["npm", "install", "-g", "@charmland/crush"],
+            display="npm install -g @charmland/crush",
+            check_binary="crush",
         ),
     ],
 }
@@ -71,13 +101,28 @@ async def install_backend_cli(kind: str) -> InstallResult:
 
     last_result: InstallResult | None = None
     for strategy in strategies:
-        proc = await asyncio.create_subprocess_exec(
-            *strategy.argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        exit_code = proc.returncode or 0
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *strategy.argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            exit_code = proc.returncode or 0
+        except (FileNotFoundError, OSError) as exc:
+            # The installer command itself isn't available (e.g. pipx missing
+            # while uv is present) — record the failure and try the next
+            # strategy instead of raising before the fallback runs.
+            last_result = InstallResult(
+                kind=kind,
+                success=False,
+                display=strategy.display,
+                stdout="",
+                stderr=f"{type(exc).__name__}: {exc}",
+                exit_code=127,
+                binary_path=None,
+            )
+            continue
         binary_path = shutil.which(strategy.check_binary)
         success = exit_code == 0 and binary_path is not None
 

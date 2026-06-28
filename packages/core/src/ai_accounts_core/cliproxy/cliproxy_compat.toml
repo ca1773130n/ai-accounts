@@ -27,7 +27,8 @@ flags_ignorecase = true
 # membership is a set.
 #   54545, 8085 — historical cliproxyapi defaults
 #   1455        — cliproxyapi 0.16+ shares Codex codex_cli_simplified_flow
-allowed_ports = [1455, 8085, 54545]
+#   51121       — cliproxyapi -antigravity-login callback (Antigravity OAuth)
+allowed_ports = [1455, 8085, 54545, 51121]
 
 # Path prefixes the callback URL may use. URL-encoded traversal (%2e%2e) and
 # "../" segments are rejected separately.
@@ -42,7 +43,7 @@ allowed_hosts = ["localhost", "127.0.0.1"]
 # Backends without an entry (e.g. opencode) skip the cliproxy live path.
 claude = "anthropic"
 codex = "openai"
-gemini = "google"
+antigravity = "google"
 # Kimi (Moonshot AI) via cliproxy `-kimi-login`. Verify the owned_by string
 # against a live cliproxy /v1/models if model listing comes back empty.
 kimi = "moonshot"

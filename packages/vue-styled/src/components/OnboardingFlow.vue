@@ -21,15 +21,23 @@ const loginTab = ref<'api_key' | 'oauth_device'>('api_key');
 const DEFAULT_KINDS = [
   { id: 'claude', display: 'Claude' },
   { id: 'opencode', display: 'OpenCode' },
-  { id: 'gemini', display: 'Gemini' },
+  { id: 'antigravity', display: 'Antigravity' },
   { id: 'codex', display: 'Codex' },
+  { id: 'deepseek', display: 'DeepSeek' },
+  { id: 'goose', display: 'Goose' },
+  { id: 'aider', display: 'Aider' },
+  { id: 'crush', display: 'Crush' },
 ];
 
 const DEFAULT_SUPPORTED_FLOWS: Record<string, string[]> = {
   claude: ['api_key'],
   opencode: ['api_key'],
-  gemini: ['api_key', 'oauth_device'],
+  antigravity: ['api_key', 'oauth_device'],
   codex: ['api_key', 'oauth_device'],
+  deepseek: ['api_key'],
+  goose: ['api_key'],
+  aider: ['api_key'],
+  crush: ['api_key'],
 };
 
 const displayKinds = computed(() => props.kinds ?? DEFAULT_KINDS);

@@ -192,4 +192,50 @@ describe('AccountWizard', () => {
     // Collapsed <details> means the override input is not open for editing.
     expect(advanced.attributes('open')).toBeUndefined();
   });
+
+  it('maps deepseek to a keyless API-key env prefix', async () => {
+    const { client } = mkRoutingClient();
+    const w = mount(AccountWizard, {
+      props: { initialBackendKind: 'deepseek' },
+      global: { plugins: [[aiAccountsPlugin, { client }]] },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const vm = w.vm as unknown as {
+      backendKind: string;
+      accountName: string;
+      apiKeyEnv: string;
+      requiresNoCli: boolean;
+    };
+    vm.accountName = 'work';
+    await nextTick();
+    expect(vm.apiKeyEnv).toBe('DEEPSEEK_API_KEY_WORK');
+    expect(vm.requiresNoCli).toBe(true);
+  });
+
+  it('treats goose/aider/crush as CLI backends with a goose config dir', async () => {
+    const { client } = mkRoutingClient();
+    const w = mount(AccountWizard, {
+      props: { initialBackendKind: 'goose' },
+      global: { plugins: [[aiAccountsPlugin, { client }]] },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const vm = w.vm as unknown as {
+      backendKind: string;
+      configPath: string;
+      requiresNoCli: boolean;
+    };
+    await nextTick();
+    expect(vm.requiresNoCli).toBe(false);
+    expect(vm.configPath).toBe('~/.config/goose');
+
+    vm.backendKind = 'aider';
+    await nextTick();
+    expect(vm.requiresNoCli).toBe(false);
+
+    vm.backendKind = 'crush';
+    await nextTick();
+    expect(vm.requiresNoCli).toBe(false);
+  });
 });

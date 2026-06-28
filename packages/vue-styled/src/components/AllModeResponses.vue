@@ -35,8 +35,12 @@ const props = withDefaults(defineProps<Props>(), {
 const BACKEND_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
   claude: { bg: 'rgba(139,92,246,0.15)', fg: '#a78bfa', label: 'Claude' },
   codex: { bg: 'rgba(16,185,129,0.15)', fg: '#34d399', label: 'Codex' },
-  gemini: { bg: 'rgba(96,165,250,0.15)', fg: '#60a5fa', label: 'Gemini' },
+  antigravity: { bg: 'rgba(96,165,250,0.15)', fg: '#60a5fa', label: 'Antigravity' },
   opencode: { bg: 'rgba(251,191,36,0.15)', fg: '#fbbf24', label: 'OpenCode' },
+  deepseek: { bg: 'rgba(59,130,246,0.15)', fg: '#3b82f6', label: 'DeepSeek' },
+  goose: { bg: 'rgba(249,115,22,0.15)', fg: '#f97316', label: 'Goose' },
+  aider: { bg: 'rgba(20,184,166,0.15)', fg: '#14b8a6', label: 'Aider' },
+  crush: { bg: 'rgba(239,68,68,0.15)', fg: '#ef4444', label: 'Crush' },
 };
 
 function backendMeta(kind: string | undefined | null) {

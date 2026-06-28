@@ -14,7 +14,7 @@ _TOML_PATH = Path(__file__).parent / "cliproxy_compat.toml"
 
 
 _DEFAULT_DEVICE_CODE_PATTERN = r"code[:\s]+([A-Z0-9]{4}-?[A-Z0-9]{4,8})"
-_DEFAULT_ALLOWED_PORTS = frozenset({1455, 8085, 54545})
+_DEFAULT_ALLOWED_PORTS = frozenset({1455, 8085, 54545, 51121})
 _DEFAULT_ALLOWED_PATH_PREFIXES: tuple[str, ...] = (
     "/auth/callback",
     "/callback",
@@ -25,7 +25,7 @@ _DEFAULT_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1"})
 _DEFAULT_OWNED_BY: dict[str, str] = {
     "claude": "anthropic",
     "codex": "openai",
-    "gemini": "google",
+    "antigravity": "google",
     "kimi": "moonshot",
 }
 

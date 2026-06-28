@@ -2,7 +2,10 @@
 
 Reusable account management, login orchestration, chat, and PTY session package
 for AI backends — **Claude**, **Codex**, **Antigravity** (Google), **OpenCode**,
-**OpenRouter**, **Kimi** (Moonshot), and any **OpenAI-compatible** endpoint.
+**OpenRouter**, **Kimi** (Moonshot), **DeepSeek**,
+**Goose**, **Aider**, **Crush**, and any **OpenAI-compatible** endpoint
+(including keyless local LLM servers — Ollama, LM Studio, vLLM, llama.cpp — and
+cloud presets such as Qwen / DashScope).
 
 Python ([Litestar](https://litestar.dev)) sidecar API + TypeScript / Vue 3
 client packages. Apache-2.0.
@@ -43,7 +46,7 @@ chat/PTY traffic through a unified API gets fiddly fast.
 
 | Package                              | Kind | npm / PyPI                                                              |
 | ------------------------------------ | ---- | ----------------------------------------------------------------------- |
-| `ai-accounts-core`                   | Py   | workspace (depends from `ai-accounts-litestar`); ships `ClaudeBackend`, `CodexBackend`, `GeminiBackend` (Antigravity), `OpenCodeBackend`, `OpenRouterBackend`, `OpenAiCompatBackend`, `KimiBackend` |
+| `ai-accounts-core`                   | Py   | workspace (depends from `ai-accounts-litestar`); ships `ClaudeBackend`, `CodexBackend`, `AntigravityBackend`, `OpenCodeBackend`, `OpenRouterBackend`, `OpenAiCompatBackend`, `KimiBackend`, `DeepSeekBackend`, `GooseBackend`, `AiderBackend`, `CrushBackend` |
 | `ai-accounts-litestar`               | Py   | workspace                                                               |
 | `@ai-accounts/ts-core`               | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/ts-core)               |
 | `@ai-accounts/vue-headless`          | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/vue-headless)          |
@@ -107,8 +110,9 @@ from ai_accounts_core.adapters.auth_apikey import ApiKeyAuth
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 from ai_accounts_core.adapters.vault_envkey import EnvKeyVault
 from ai_accounts_core.backends import (
-    ClaudeBackend, CodexBackend, GeminiBackend, OpenCodeBackend,
+    ClaudeBackend, CodexBackend, AntigravityBackend, OpenCodeBackend,
     OpenRouterBackend, OpenAiCompatBackend, KimiBackend,
+    DeepSeekBackend, GooseBackend, AiderBackend, CrushBackend,
 )
 from ai_accounts_litestar.app import create_app
 from ai_accounts_litestar.config import AiAccountsConfig
@@ -119,8 +123,9 @@ app = create_app(AiAccountsConfig(
     vault=EnvKeyVault.from_env(env="production"),  # AI_ACCOUNTS_VAULT_KEY
     auth=ApiKeyAuth(keys={"sk-..."}),
     backends=(
-        ClaudeBackend(), CodexBackend(), GeminiBackend(), OpenCodeBackend(),
+        ClaudeBackend(), CodexBackend(), AntigravityBackend(), OpenCodeBackend(),
         OpenRouterBackend(), OpenAiCompatBackend(), KimiBackend(),
+        DeepSeekBackend(), GooseBackend(), AiderBackend(), CrushBackend(),
     ),
 ))
 ```

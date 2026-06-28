@@ -3,7 +3,7 @@ from ai_accounts_core.install import get_install_strategies, install_backend_cli
 
 
 def test_install_strategies_registered_for_core_kinds():
-    # gemini (Antigravity) is intentionally absent — Antigravity authenticates
+    # antigravity (Antigravity) is intentionally absent — Antigravity authenticates
     # through CLIProxyAPI's -antigravity-login and needs no terminal CLI, so it
     # has no npm install strategy. Same for the keyless API-key/OAuth backends
     # (openrouter, openai_compat, kimi).
@@ -14,7 +14,7 @@ def test_install_strategies_registered_for_core_kinds():
 
 
 def test_keyless_backends_have_no_install_strategy():
-    for kind in ("gemini", "openrouter", "openai_compat", "kimi"):
+    for kind in ("antigravity", "openrouter", "openai_compat", "kimi"):
         assert get_install_strategies(kind) == []
 
 
