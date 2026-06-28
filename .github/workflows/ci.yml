@@ -40,9 +40,11 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # build first: vue-* typecheck/test depend on @ai-accounts/ts-core's
+      # emitted d.ts, which don't exist until ts-core is built.
+      - run: pnpm -r build
       - run: pnpm -r typecheck
       - run: pnpm -r lint
-      - run: pnpm -r build
       - run: pnpm -r test
 
   codegen:
@@ -55,6 +57,7 @@ jobs:
         with:
           node-version: "22"
           cache: pnpm
+      - uses: extractions/setup-just@v2
       - run: uv sync --all-extras --all-packages
       - run: pnpm install --frozen-lockfile
       - run: just codegen
