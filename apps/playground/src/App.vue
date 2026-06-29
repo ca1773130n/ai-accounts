@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useAiAccounts } from '@ai-accounts/vue-headless';
-import { AccountWizard, AiChatPanel } from '@ai-accounts/vue-styled';
+import { AccountWizard, AiChatPanel, AccountReauth } from '@ai-accounts/vue-styled';
 
 type Backend = {
   id: string;
@@ -260,6 +260,7 @@ onMounted(refresh);
             </div>
           </div>
           <div class="account-row__actions">
+            <AccountReauth :account="acc" @reauthed="refresh" />
             <button
               class="btn btn--ghost btn--danger"
               :disabled="removingId === acc.id"
@@ -567,7 +568,7 @@ html, body, #app {
   color: var(--pg-fg-muted);
 }
 
-.account-row__actions { padding-right: 16px; }
+.account-row__actions { padding-right: 16px; display: flex; align-items: center; gap: 8px; }
 
 /* Empty state */
 .empty {

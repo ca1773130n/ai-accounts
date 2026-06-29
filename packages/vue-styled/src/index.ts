@@ -5,6 +5,7 @@ export { default as OnboardingFlow } from './components/OnboardingFlow.vue';
 export { default as LoginStream } from './components/LoginStream.vue';
 export { default as BackendPicker } from './components/BackendPicker.vue';
 export { default as AccountEditForm } from './components/AccountEditForm.vue';
+export { default as AccountReauth } from './components/AccountReauth.vue';
 // Legacy — kept for backward compat; prefer AiChatPanel
 export { default as ChatPanel } from './components/ChatPanel.vue';
 export { default as ChatMessage } from './components/ChatMessage.vue';
@@ -27,5 +28,5 @@ export { default as FinalizationBanner } from './components/FinalizationBanner.v
 // Helpers
 export { forceFreshAccountPrompt } from './components/forceFreshAccountPrompt';
 
-export const version = '0.4.0';
+export const version = '0.4.1';
 

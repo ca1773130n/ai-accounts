@@ -5,7 +5,9 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     host: '0.0.0.0',
-    port: 6173,
+    // Override with AIA_WEB_PORT (e.g. when serving the playground behind a
+    // tunnel/domain on a fixed port); defaults to 6173 for local dev.
+    port: Number(process.env.AIA_WEB_PORT) || 6173,
     strictPort: true,
     allowedHosts: ['burningxoul.mooo.com'],
     proxy: {
