@@ -12,7 +12,7 @@ members = [
 
 [[package]]
 name = "ai-accounts-core"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "aiosqlite" },
@@ -32,7 +32,7 @@ provides-extras = ["testing"]
 
 [[package]]
 name = "ai-accounts-litestar"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/litestar" }
 dependencies = [
     { name = "ai-accounts-core" },

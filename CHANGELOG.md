@@ -2,6 +2,10 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.4.1 — 2026-06-30
+
+Adds **`AccountReauth`** (`@ai-accounts/vue-styled`): a per-account "Re-auth" control that re-runs the backend's login flow against the existing account id, so an expired credential (lapsed OAuth token, rotated key) is refreshed in place without removing + re-adding. Reuses `LoginStream`; resolves login flows from the backend registry (flow chooser when a backend offers more than one). Wired into the playground account blocks. Playground web port is now env-driven via `AIA_WEB_PORT`.
+
 ## 0.4.0 — 2026-06-28
 
 Completes the Gemini → **Antigravity** migration (the kind is now genuinely `antigravity`, not an alias), and adds five backends plus keyless local-LLM support. Also brings CI to green and lands the deferred code-review follow-ups.
