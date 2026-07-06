@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -246,6 +245,33 @@ async def test_chat_keyless_sends_no_auth_headers(tmp_path: Path, httpx_mock):
 
 
 @pytest.mark.asyncio
+async def test_chat_stream_error_event_surfaces(tmp_path: Path, httpx_mock):
+    """In-band {"type":"error"} SSE events (overloaded, gateway failure after
+    HTTP 200) must yield an error event, not silently truncate the reply."""
+    sse = (
+        b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"partial"}}\n\n'
+        b'data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n'
+    )
+    httpx_mock.add_response(
+        url=f"{_BASE_URL}/v1/messages",
+        method="POST",
+        content=sse,
+        headers={"content-type": "text/event-stream"},
+    )
+    backend = ClaudeCustomBackend()
+    events = [
+        e
+        async for e in backend.chat(
+            ChatRequest(messages=(_msg("user", "Hey"),), model="m"),
+            _credential(),
+            isolation_dir=tmp_path,
+        )
+    ]
+    assert [e.kind for e in events] == ["token", "error"]
+    assert "Overloaded" in str(events[-1].payload)
+
+
+@pytest.mark.asyncio
 async def test_chat_empty_credential_errors(tmp_path: Path):
     backend = ClaudeCustomBackend()
     events = [
@@ -334,9 +360,11 @@ async def test_get_usage_empty(tmp_path: Path):
     assert await ClaudeCustomBackend().get_usage(_credential(), isolation_dir=tmp_path) == []
 
 
-def test_pty_env_wires_endpoint_and_config_dir(tmp_path: Path):
+def test_pty_env_wires_endpoint_and_config_dir(tmp_path: Path, monkeypatch):
     """The claude CLI must see the self-hosted endpoint and the user's custom
-    config dir (from the credential — backend.config never reaches pty)."""
+    config dir (from the credential — backend.config never reaches pty), and
+    an ambient AUTH_TOKEN must not override the account's key."""
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "ambient-real-token")
     backend = ClaudeCustomBackend()
     custom_dir = tmp_path / "custom-claude-home"
     env = backend._env(
@@ -345,15 +373,19 @@ def test_pty_env_wires_endpoint_and_config_dir(tmp_path: Path):
     )
     assert env["ANTHROPIC_BASE_URL"] == _BASE_URL
     assert env["ANTHROPIC_API_KEY"] == "sk-test-key"
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
     assert env["ANTHROPIC_MODEL"] == "claude-sonnet-5"
     assert env["CLAUDE_CONFIG_DIR"] == str(custom_dir.resolve())
     assert custom_dir.is_dir()  # created on touch
 
 
-def test_pty_env_defaults_to_isolation_dir_and_omits_key(tmp_path: Path):
+def test_pty_env_keyless_strips_ambient_credentials(tmp_path: Path, monkeypatch):
+    """A keyless account points the CLI at a third-party host — the operator's
+    real Anthropic credentials must never ride along from the environment."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real-key")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "real-token")
     backend = ClaudeCustomBackend()
     env = backend._env(_credential(api_key="", config_path=""), tmp_path / "iso")
     assert env["CLAUDE_CONFIG_DIR"] == str((tmp_path / "iso").resolve())
-    # A keyless account must not add ANTHROPIC_API_KEY beyond what the ambient
-    # environment already carries.
-    assert env.get("ANTHROPIC_API_KEY") == os.environ.get("ANTHROPIC_API_KEY")
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "ANTHROPIC_AUTH_TOKEN" not in env

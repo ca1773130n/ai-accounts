@@ -410,6 +410,16 @@ class ClaudeCustomBackend(CliBackendBase):
                     data = json.loads(line[6:])
                 except (json.JSONDecodeError, ValueError):
                     continue  # self-hosted endpoints emit odd keep-alives
+                if data.get("type") == "error":
+                    # Anthropic streams surface provider errors (overloaded,
+                    # gateway failures) as in-band events after HTTP 200 —
+                    # dropping them would persist a truncated reply as success.
+                    err = data.get("error") or {}
+                    yield ChatStreamEvent(
+                        kind="error",
+                        payload=str(err.get("message") or "stream error"),
+                    )
+                    return
                 if data.get("type") == "content_block_delta":
                     text = data.get("delta", {}).get("text", "")
                     if text:
@@ -449,6 +459,11 @@ class ClaudeCustomBackend(CliBackendBase):
         # so the user's custom CLAUDE_CONFIG_DIR rides in the credential.
         cfg_dir = Path(config_path).expanduser() if config_path else isolation_dir
         env = {**os.environ, "CLAUDE_CONFIG_DIR": str(resolved_iso(cfg_dir))}
+        # The CLI targets a third-party host here — never let the operator's
+        # real Anthropic credentials leak to it from the ambient environment
+        # (or override the account's own key: the CLI prefers AUTH_TOKEN).
+        env.pop("ANTHROPIC_API_KEY", None)
+        env.pop("ANTHROPIC_AUTH_TOKEN", None)
         if base_url:
             env["ANTHROPIC_BASE_URL"] = base_url
         if api_key:
