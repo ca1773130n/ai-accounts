@@ -101,8 +101,9 @@ graph TD
 | `metadata/types.py` | `InstallCheck`, `InputSpec`, `LoginFlowSpec`, `PlanOption`, `BackendMetadata` structs |
 | `metadata/registry.py` | `BackendRegistry` — dict keyed by kind; `register()`, `get()`, `list()` |
 | **backends/** | |
-| `backends/__init__.py` | Re-exports `ClaudeBackend`, `CodexBackend`, `AntigravityBackend`, `OpenCodeBackend`, `OpenRouterBackend`, `KimiBackend`, `OpenAiCompatBackend`, `DeepSeekBackend`, `GooseBackend`, `AiderBackend`, `CrushBackend` |
+| `backends/__init__.py` | Re-exports `ClaudeBackend`, `ClaudeCustomBackend`, `CodexBackend`, `AntigravityBackend`, `OpenCodeBackend`, `OpenRouterBackend`, `KimiBackend`, `OpenAiCompatBackend`, `DeepSeekBackend`, `GooseBackend`, `AiderBackend`, `CrushBackend` |
 | `backends/claude.py` | `ClaudeBackend` + `_ClaudeCliBrowserSession` + `_ClaudeApiKeySession` |
+| `backends/claude_custom.py` | `ClaudeCustomBackend` + `_ClaudeCustomEndpointSession` (self-hosted Anthropic-compatible base_url + optional key + manual model list; credential-JSON carries everything chat/pty need) |
 | `backends/antigravity.py` | `AntigravityBackend` + `_AntigravityApiKeySession` + `_AntigravityCliProxySession` |
 | `backends/opencode.py` | `OpenCodeBackend` + `_OpenCodeCliBrowserSession` + `_OpenCodeApiKeySession` |
 | `backends/codex.py` | `CodexBackend` + `_CodexOAuthDeviceSession` + `_CodexCliBrowserSession` + `_CodexApiKeySession` |
@@ -240,6 +241,7 @@ class BackendProtocol(Protocol):
 | Class | `kind` | `supported_login_flows` | `isolation_env_var` |
 |-------|--------|------------------------|---------------------|
 | `ClaudeBackend` | `"claude"` | `{"api_key", "cli_browser"}` | `CLAUDE_CONFIG_DIR` |
+| `ClaudeCustomBackend` | `"claude_custom"` | `{"api_key"}` | `CLAUDE_CONFIG_DIR` |
 | `AntigravityBackend` | `"antigravity"` | `{"api_key", "cli_browser"}` | `ANTIGRAVITY_HOME` |
 | `OpenCodeBackend` | `"opencode"` | `{"api_key", "cli_browser"}` | `OPENCODE_HOME` |
 | `CodexBackend` | `"codex"` | `{"api_key", "oauth_device", "cli_browser"}` | `CODEX_HOME` |
@@ -454,7 +456,7 @@ The package `__init__.py` only exports `__version__`. All meaningful symbols are
 - `BackendMetadata`, `BackendRegistry`, `InputSpec`, `InstallCheck`, `LoginFlowSpec`, `PlanOption`
 
 **`ai_accounts_core.backends`** — re-exports:
-- `ClaudeBackend`, `CodexBackend`, `AntigravityBackend`, `OpenCodeBackend`, `OpenRouterBackend`, `KimiBackend`, `OpenAiCompatBackend`, `DeepSeekBackend`, `GooseBackend`, `AiderBackend`, `CrushBackend`
+- `ClaudeBackend`, `ClaudeCustomBackend`, `CodexBackend`, `AntigravityBackend`, `OpenCodeBackend`, `OpenRouterBackend`, `KimiBackend`, `OpenAiCompatBackend`, `DeepSeekBackend`, `GooseBackend`, `AiderBackend`, `CrushBackend`
 
 **`ai_accounts_core.services`** — re-exports:
 - `AccountService`, `OnboardingService`, `OnboardingNotFound`, all `ServiceError` subclasses
@@ -571,7 +573,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 -- Registered AI backends (claude, antigravity, etc.)
 CREATE TABLE IF NOT EXISTS backends (
     id           TEXT PRIMARY KEY,   -- e.g. "bkd-ab3fg9h1k2l0"
-    kind         TEXT NOT NULL,      -- "claude" | "antigravity" | "opencode" | "codex" | "openrouter" | "kimi" | "openai_compat" | "deepseek" | "goose" | "aider" | "crush"
+    kind         TEXT NOT NULL,      -- "claude" | "claude_custom" | "antigravity" | "opencode" | "codex" | "openrouter" | "kimi" | "openai_compat" | "deepseek" | "goose" | "aider" | "crush"
     display_name TEXT NOT NULL,
     config       TEXT NOT NULL,      -- JSON-encoded dict
     status       TEXT NOT NULL,      -- BackendStatus enum value
@@ -684,6 +686,7 @@ Each backend receives its credential and isolates state via an env var injected 
 | Backend | Credential env var | Isolation env var |
 |---------|--------------------|------------------|
 | `ClaudeBackend` | `ANTHROPIC_API_KEY` | `CLAUDE_CONFIG_DIR` |
+| `ClaudeCustomBackend` | `x-api-key` + `Authorization: Bearer` (HTTP; optional for keyless gateways); pty sets `ANTHROPIC_BASE_URL` + `ANTHROPIC_MODEL` and strips ambient Anthropic creds | `CLAUDE_CONFIG_DIR` |
 | `AntigravityBackend` | `x-goog-api-key` header (Google AI Studio) | `ANTIGRAVITY_HOME` |
 | `OpenCodeBackend` | `OPENCODE_API_KEY` | `OPENCODE_HOME` |
 | `CodexBackend` | `OPENAI_API_KEY` | `CODEX_HOME` |

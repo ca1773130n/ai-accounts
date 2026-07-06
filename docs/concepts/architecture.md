@@ -7,7 +7,7 @@ Every layer follows the same pattern: typed Protocol, zero-config default adapte
 | `StorageProtocol`      | aiosqlite                    | sqlalchemy                              |
 | `VaultProtocol`        | env-key AES-GCM              | aws-kms, gcp-kms, vault, keychain       |
 | `AuthProtocol`         | no-auth (dev) + api-key      | oidc                                    |
-| `BackendProtocol`      | built-in: claude, codex, antigravity, opencode, openrouter, kimi, openai_compat, deepseek, goose, aider, crush | third-party adapters       |
+| `BackendProtocol`      | built-in: claude, claude_custom, codex, antigravity, opencode, openrouter, kimi, openai_compat, deepseek, goose, aider, crush | third-party adapters       |
 | `TransportProtocol`    | in-process async iterator    | SSE, WebSocket                          |
 | Frontend               | Vue headless composables     | Vue styled components                   |
 
