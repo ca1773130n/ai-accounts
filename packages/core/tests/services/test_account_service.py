@@ -270,3 +270,38 @@ async def test_discover_definitive_failure_still_downgrades(tmp_path, monkeypatc
     await service.discover_existing()
     refreshed = await service.get(b.id)
     assert refreshed.status == BackendStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_discover_other_kind_glob_match_is_ignored(tmp_path, monkeypatch):
+    """A candidate probed as a DIFFERENT kind that happens to glob-match an
+    existing row's config_path (e.g. claude's ".claude*" catching a
+    claude_custom dir) must neither downgrade the row nor surface as
+    importable — the wrong-kind probe's verdict says nothing about it."""
+    service, storage, vault, fake_backend = _make_service(tmp_path)
+    cfg_dir = tmp_path / "backend_dirs" / ".fake-custom"
+    cfg_dir.parent.mkdir(exist_ok=True)
+    cfg_dir.mkdir()
+    b = await service.create("fake", display_name="p1", config={"config_path": str(cfg_dir)})
+    await service.store_credential(b.id, b"fake-credential")
+    b = await service.validate(b.id)
+    assert b.status == BackendStatus.READY
+
+    from ai_accounts_core.services.discovery import DiscoveredConfig
+
+    async def fake_discover_all(kinds, *, probe_timeout=12.0):
+        return [
+            DiscoveredConfig(
+                kind="claude",
+                path=str(cfg_dir),
+                suggested_name="p1",
+                is_logged_in=False,
+                error="not logged in",
+            )
+        ]
+
+    monkeypatch.setattr("ai_accounts_core.services.discovery.discover_all", fake_discover_all)
+    enriched = await service.discover_existing()
+    refreshed = await service.get(b.id)
+    assert refreshed.status == BackendStatus.READY, "wrong-kind probe must not downgrade"
+    assert enriched == []

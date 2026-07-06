@@ -2,6 +2,19 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.4.2 — 2026-07-06
+
+Adds the **self-hosted Claude Code backend** (`claude_custom`): register any Anthropic-compatible endpoint (LiteLLM, claude-code-router, a corporate gateway) as a transparent Claude Code account — chat-able from the playground panel in single/all/compound modes — and fixes a discovery bug where one kind's home-dir glob could break another kind's account.
+
+### Added
+
+- **`claude_custom` backend** (`ai-accounts-core`, `backends/claude_custom.py`). Login is a prompt flow (base URL → API-key-or-keyless menu → manual model list `id` or `id=Display Name`, first entry = default model); everything chat/pty need — base URL, optional key, model list, custom `CLAUDE_CONFIG_DIR` — is baked into the encrypted credential JSON, the only channel that reaches every code path. `chat()` streams Anthropic `/v1/messages` SSE against the custom base URL (both `x-api-key` and `Bearer` sent; keyless supported; in-band `{"type":"error"}` events surface as chat errors). `pty()` spawns the real `claude` CLI with `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`, and the account's config dir, stripping ambient `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` so the operator's real Anthropic credentials never reach a third-party host. `validate()` probes `{base_url}/v1/models` with a 1-token `/v1/messages` fallback.
+- **Frontend kind maps** (`@ai-accounts/vue-styled`) for `claude_custom` — "Claude (self-hosted)" labels/colors, `~/.custom-claude` default config dir, and no-CLI wizard badge. The account wizard, re-auth, and chat panel pick the new kind up automatically from backend metadata.
+
+### Fixed
+
+- **Discovery no longer syncs status across kinds** (`ai-accounts-core`, `services/accounts.py`). Claude's `.claude*` home glob could match another kind's `config_path` (e.g. a `claude_custom` dir), probe it as an OAuth Claude account, and flip the healthy row READY → ERROR, knocking it out of the scheduler. `discover_existing` now ignores candidates whose probed kind differs from the owning row's kind.
+
 ## 0.4.1 — 2026-06-30
 
 Adds **`AccountReauth`** (`@ai-accounts/vue-styled`): a per-account "Re-auth" control that re-runs the backend's login flow against the existing account id, so an expired credential (lapsed OAuth token, rotated key) is refreshed in place without removing + re-adding. Reuses `LoginStream`; resolves login flows from the backend registry (flow chooser when a backend offers more than one). Wired into the playground account blocks. Playground web port is now env-driven via `AIA_WEB_PORT`.

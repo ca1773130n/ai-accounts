@@ -9,6 +9,7 @@
 
 const BACKEND_DISPLAY_NAMES: Record<string, string> = {
   claude: 'Claude',
+  claude_custom: 'Claude (self-hosted)',
   codex: 'Codex',
   antigravity: 'Antigravity',
   opencode: 'OpenCode',

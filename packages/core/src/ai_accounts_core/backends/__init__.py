@@ -1,6 +1,7 @@
 from .aider import AiderBackend
 from .antigravity import AntigravityBackend
 from .claude import ClaudeBackend
+from .claude_custom import ClaudeCustomBackend
 from .codex import CodexBackend
 from .crush import CrushBackend
 from .deepseek import DeepSeekBackend
@@ -13,6 +14,7 @@ from .openrouter import OpenRouterBackend
 __all__ = [
     "AiderBackend",
     "ClaudeBackend",
+    "ClaudeCustomBackend",
     "CodexBackend",
     "AntigravityBackend",
     "CrushBackend",
