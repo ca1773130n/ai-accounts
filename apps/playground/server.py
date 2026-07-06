@@ -24,6 +24,7 @@ from ai_accounts_core.backends import (
     AiderBackend,
     AntigravityBackend,
     ClaudeBackend,
+    ClaudeCustomBackend,
     CodexBackend,
     CrushBackend,
     DeepSeekBackend,
@@ -44,6 +45,7 @@ app = create_app(
         auth=NoAuth(),
         backends=(
             ClaudeBackend(),
+            ClaudeCustomBackend(),
             OpenCodeBackend(),
             AntigravityBackend(),
             CodexBackend(),

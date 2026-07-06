@@ -34,6 +34,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const BACKEND_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
   claude: { bg: 'rgba(139,92,246,0.15)', fg: '#a78bfa', label: 'Claude' },
+  claude_custom: { bg: 'rgba(192,132,252,0.15)', fg: '#c084fc', label: 'Claude (self-hosted)' },
   codex: { bg: 'rgba(16,185,129,0.15)', fg: '#34d399', label: 'Codex' },
   antigravity: { bg: 'rgba(96,165,250,0.15)', fg: '#60a5fa', label: 'Antigravity' },
   opencode: { bg: 'rgba(251,191,36,0.15)', fg: '#fbbf24', label: 'OpenCode' },

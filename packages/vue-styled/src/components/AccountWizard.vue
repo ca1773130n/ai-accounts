@@ -319,6 +319,9 @@ function generateSlug(name: string): string {
 
 const DEFAULT_CONFIG_DIR_MAP: Record<string, string> = {
   claude: '.claude',
+  // Outside the ".claude*" namespace: discovery globs ~/.claude* as claude
+  // OAuth dirs, and a self-hosted account's dir must never match that scan.
+  claude_custom: '.custom-claude',
   codex: '.codex',
   // ``antigravity`` kind is unchanged internally — only the user-facing label
   // is "Antigravity". The config dir stays ~/.antigravity (no DB/config migration).
@@ -405,7 +408,14 @@ const apiKeyEnv = computed(() => {
 // Antigravity, a native cliproxy OAuth flow) — there's no terminal CLI to
 // install, so the cli step shows a "No CLI required" badge instead of an
 // install check. ``antigravity`` is included because Antigravity needs no CLI.
-const NO_CLI_KINDS = ['openrouter', 'openai_compat', 'antigravity', 'kimi', 'deepseek'] as const;
+const NO_CLI_KINDS = [
+  'openrouter',
+  'openai_compat',
+  'antigravity',
+  'kimi',
+  'deepseek',
+  'claude_custom',
+] as const;
 const requiresNoCli = computed(() =>
   NO_CLI_KINDS.includes(
     (backendKind.value ?? '') as (typeof NO_CLI_KINDS)[number]

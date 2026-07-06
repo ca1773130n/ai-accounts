@@ -162,6 +162,13 @@ class AccountService:
             if backend is None:
                 enriched.append(c)
                 continue
+            if backend.kind != c.kind:
+                # A different kind's home glob matched this row's dir (e.g.
+                # claude's ".claude*" catching a claude_custom config_path).
+                # The probe ran as the WRONG kind — its verdict says nothing
+                # about this account, and the dir is already owned, so don't
+                # sync status or surface it as importable.
+                continue
             # Already imported — sync the backend's status to the probe
             # result. The probe is a real prompt (claude -p hello, etc.),
             # so it catches expired tokens that the file-probe validate()

@@ -66,6 +66,7 @@ function backendLabel(b: BackendDTO): string {
   // a single canonical name in the kind dropdown.
   const KIND_LABELS: Record<string, string> = {
     claude: 'Claude',
+    claude_custom: 'Claude (self-hosted)',
     codex: 'Codex',
     antigravity: 'Antigravity',
     opencode: 'OpenCode',
