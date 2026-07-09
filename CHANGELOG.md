@@ -2,6 +2,14 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.4.3 — 2026-07-07
+
+Surfaces vault-key mismatches as account status instead of opaque 500s.
+
+### Fixed
+
+- **Credential decrypt failures now surface as account status** (`ai-accounts-core`, `services/accounts.py` + `ai-accounts-litestar`, `errors.py`). When a stored credential can't be decrypted — almost always the server running with a different `AI_ACCOUNTS_VAULT_KEY` than the one that encrypted it — `validate()`/`list_models()` previously escaped as raw 500 tracebacks and the chat panel showed a misleading "No models available for <kind>" while the account card still said READY. Now the account flips to ERROR with a human-readable `last_error` explaining the vault key mismatch and how to fix it, and the API returns a structured `503 credential_unreadable`.
+
 ## 0.4.2 — 2026-07-06
 
 Adds the **self-hosted Claude Code backend** (`claude_custom`): register any Anthropic-compatible endpoint (LiteLLM, claude-code-router, a corporate gateway) as a transparent Claude Code account — chat-able from the playground panel in single/all/compound modes — and fixes a discovery bug where one kind's home-dir glob could break another kind's account.

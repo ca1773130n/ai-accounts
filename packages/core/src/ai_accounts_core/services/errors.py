@@ -26,5 +26,13 @@ class CredentialMissing(ServiceError):
     code = "credential_missing"
 
 
+class CredentialUnreadable(ServiceError):
+    """Stored credential exists but cannot be decrypted — almost always a vault
+    key mismatch (server started with a different AI_ACCOUNTS_VAULT_KEY than
+    the one that encrypted the credential)."""
+
+    code = "credential_unreadable"
+
+
 class LoginFlowUnsupported(ServiceError):
     code = "login_flow_unsupported"

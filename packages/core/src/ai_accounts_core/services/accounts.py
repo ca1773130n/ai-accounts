@@ -24,7 +24,7 @@ from ai_accounts_core.login import LoginSession
 from ai_accounts_core.login.registry import LoginSessionRegistry
 from ai_accounts_core.protocols.backend import BackendProtocol, ChatRequest, Model
 from ai_accounts_core.protocols.storage import StorageProtocol
-from ai_accounts_core.protocols.vault import VaultProtocol
+from ai_accounts_core.protocols.vault import VaultError, VaultProtocol
 
 from .errors import (
     BackendKindUnknown,
@@ -32,6 +32,7 @@ from .errors import (
     BackendNotReady,
     BackendValidationFailed,
     CredentialMissing,
+    CredentialUnreadable,
     LoginFlowUnsupported,
 )
 
@@ -498,6 +499,22 @@ class AccountService:
         await repo.put_credential(cred)
         return await self._update_status(backend, BackendStatus.VALIDATING)
 
+    async def _decrypt_credential(self, backend: Backend, ciphertext: bytes) -> bytes:
+        """Decrypt a stored credential, surfacing a vault-key mismatch as
+        account status instead of an opaque 500: the row flips to ERROR with a
+        human-readable last_error (shown on the playground account card) and a
+        typed ServiceError propagates to the API."""
+        try:
+            return await self._vault.decrypt(ciphertext, context={"backend_id": backend.id})
+        except VaultError as exc:
+            msg = (
+                "credential unreadable: vault key mismatch — the server is running "
+                "with a different AI_ACCOUNTS_VAULT_KEY than the one that encrypted "
+                "this credential. Restart with the original key, or re-auth the account."
+            )
+            await self._update_status(backend, BackendStatus.ERROR, last_error=msg)
+            raise CredentialUnreadable(backend.id) from exc
+
     async def validate(self, backend_id: str) -> Backend:
         backend = await self.get(backend_id)
         impl = self._backend_impls[backend.kind]
@@ -505,7 +522,7 @@ class AccountService:
         stored = await repo.get_credential(backend_id)
         if stored is None:
             raise CredentialMissing(backend_id)
-        plaintext = await self._vault.decrypt(stored.ciphertext, context={"backend_id": backend_id})
+        plaintext = await self._decrypt_credential(backend, stored.ciphertext)
         config_dir = await self._resolve_config_dir(backend_id)
         ok = await impl.validate(plaintext, isolation_dir=config_dir)
         if not ok:
@@ -590,7 +607,7 @@ class AccountService:
         stored = await repo.get_credential(backend_id)
         if stored is None:
             raise CredentialMissing(backend_id)
-        plaintext = await self._vault.decrypt(stored.ciphertext, context={"backend_id": backend_id})
+        plaintext = await self._decrypt_credential(backend, stored.ciphertext)
         isolation_dir = await self._resolve_config_dir(backend_id)
         return await impl.list_models(plaintext, isolation_dir=isolation_dir)
 

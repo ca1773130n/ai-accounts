@@ -13,6 +13,7 @@ _STATUS_BY_CODE: dict[str, int] = {
     "backend_not_ready": 409,
     "backend_validation_failed": 400,
     "credential_missing": 409,
+    "credential_unreadable": 503,
     "login_flow_unsupported": 400,
     "onboarding_not_found": 404,
 }

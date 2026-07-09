@@ -12,7 +12,7 @@ corporate proxy — with your own base URL and model list).
 Python ([Litestar](https://litestar.dev)) sidecar API + TypeScript / Vue 3
 client packages. Apache-2.0.
 
-**Latest release: `0.4.2`** ([CHANGELOG](./CHANGELOG.md))
+**Latest release: `0.4.3`** ([CHANGELOG](./CHANGELOG.md))
 
 ---
 

@@ -273,6 +273,31 @@ async def test_discover_definitive_failure_still_downgrades(tmp_path, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_vault_key_mismatch_flags_account_error(tmp_path, monkeypatch):
+    """A credential that fails vault decryption (wrong AI_ACCOUNTS_VAULT_KEY)
+    must flip the row to ERROR with a readable last_error and raise a typed
+    CredentialUnreadable — not escape as an opaque 500."""
+    from ai_accounts_core.protocols.vault import VaultError
+    from ai_accounts_core.services.errors import CredentialUnreadable
+
+    service, storage, vault, fake_backend = _make_service(tmp_path)
+    b = await service.create("fake", display_name="p1")
+    await service.store_credential(b.id, b"fake-credential")
+    b = await service.validate(b.id)
+    assert b.status == BackendStatus.READY
+
+    async def bad_decrypt(ciphertext, *, context):
+        raise VaultError("vault decryption failed (tamper, wrong context, or wrong key)")
+
+    monkeypatch.setattr(vault, "decrypt", bad_decrypt)
+    with pytest.raises(CredentialUnreadable):
+        await service.list_models(b.id)
+    refreshed = await service.get(b.id)
+    assert refreshed.status == BackendStatus.ERROR
+    assert "vault key mismatch" in (refreshed.last_error or "")
+
+
+@pytest.mark.asyncio
 async def test_discover_other_kind_glob_match_is_ignored(tmp_path, monkeypatch):
     """A candidate probed as a DIFFERENT kind that happens to glob-match an
     existing row's config_path (e.g. claude's ".claude*" catching a
