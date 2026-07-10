@@ -119,20 +119,30 @@ bump VERSION:
     @echo "Bumped. Verify with: git diff -- packages apps"
 
 # `just release VERSION` runs the full ship sequence:
-#   tests → build → tag → push → npm publish.
+#   tests → build → tag → push → npm publish → PyPI publish.
 # Assumes you've already run `just bump VERSION`, committed, and merged to main.
+# Needs $PYPI_TOKEN in the invoking shell (exported from ~/.zshrc).
 release VERSION:
     @echo "Releasing v{{VERSION}}…"
     @# Bail if the working tree is dirty — releases must be from a clean main.
     @test -z "$(git status --porcelain)" || (echo "ERROR: working tree dirty. Commit or stash first." && exit 1)
     @test "$(git rev-parse --abbrev-ref HEAD)" = "main" || (echo "ERROR: not on main." && exit 1)
+    @# Check PyPI auth up front — failing after the npm publish would leave a
+    @# half-shipped release (npm at VERSION, PyPI behind).
+    @test -n "$PYPI_TOKEN" || (echo "ERROR: PYPI_TOKEN not set — run from a shell that sources ~/.zshrc." && exit 1)
     just build   # build first so JS tests can resolve workspace package entries (ts-core/dist/index.js etc.)
     just test
     git tag -a v{{VERSION}} -m "v{{VERSION}}"
     git push origin main
     git push origin v{{VERSION}}
     pnpm publish -r --access public --no-git-checks
+    uv build --package ai-accounts-core
+    uv build --package ai-accounts-litestar
+    uv publish --token "$PYPI_TOKEN" dist/ai_accounts_core-{{VERSION}}* dist/ai_accounts_litestar-{{VERSION}}*
     @echo "Released v{{VERSION}}. Verify on npm:"
     @for pkg in @ai-accounts/ts-core @ai-accounts/vue-headless @ai-accounts/vue-styled; do \
         printf '  %s latest: ' "$pkg"; npm view "$pkg" version; \
     done
+    @echo "And on PyPI:"
+    @echo "  https://pypi.org/project/ai-accounts-core/{{VERSION}}/"
+    @echo "  https://pypi.org/project/ai-accounts-litestar/{{VERSION}}/"
