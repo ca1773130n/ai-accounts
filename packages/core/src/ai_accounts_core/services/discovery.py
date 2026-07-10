@@ -38,6 +38,7 @@ shell metacharacters. ``shell=True`` is never used.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -56,6 +57,42 @@ _HOME_GLOB: dict[str, str] = {
 }
 
 
+def read_custom_endpoint(config_dir: Path) -> dict[str, str] | None:
+    """Return endpoint info when ``<config_dir>/settings.json`` points the
+    claude CLI at a custom Anthropic-compatible endpoint.
+
+    A dir whose settings.json carries ``env.ANTHROPIC_BASE_URL`` is a
+    self-hosted Claude Code setup — it must be imported as ``claude_custom``
+    (which honours the base URL at chat time), never as plain ``claude``
+    (whose chat is hardwired to CLIProxyAPI / api.anthropic.com).
+
+    Returns ``{"base_url": ..., "model"?: ..., "api_key"?: ...}`` or None
+    when the dir has no settings.json / no custom base URL. ``model`` comes
+    from ``env.ANTHROPIC_MODEL`` or the top-level ``model`` setting;
+    ``api_key`` only from a plaintext ``env`` entry (an ``apiKeyHelper``
+    script is deliberately not executed).
+    """
+    try:
+        settings = json.loads((config_dir / "settings.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(settings, dict):
+        return None
+    env = settings.get("env")
+    env = env if isinstance(env, dict) else {}
+    base_url = str(env.get("ANTHROPIC_BASE_URL") or "").strip()
+    if not base_url:
+        return None
+    out = {"base_url": base_url}
+    model = str(env.get("ANTHROPIC_MODEL") or settings.get("model") or "").strip()
+    if model:
+        out["model"] = model
+    api_key = str(env.get("ANTHROPIC_API_KEY") or env.get("ANTHROPIC_AUTH_TOKEN") or "").strip()
+    if api_key:
+        out["api_key"] = api_key
+    return out
+
+
 def _probe_for(kind: str, config_dir: str) -> tuple[list[str], dict[str, str]]:
     """Build (argv, env_overrides) for the per-kind liveness probe.
 
@@ -69,7 +106,10 @@ def _probe_for(kind: str, config_dir: str) -> tuple[list[str], dict[str, str]]:
     even when logged out, so _run_probe inspects the status text for codex.
     """
     abs_dir = str(Path(config_dir).expanduser().resolve())
-    if kind == "claude":
+    if kind in ("claude", "claude_custom"):
+        # claude_custom candidates are probed with the same CLI run — the CLI
+        # reads the dir's settings.json env, so the probe naturally exercises
+        # the custom endpoint.
         return (["claude", "-p", "hello"], {"CLAUDE_CONFIG_DIR": abs_dir})
     if kind == "codex":
         return (["codex", "login", "status"], {"CODEX_HOME": abs_dir})
@@ -223,16 +263,27 @@ def _glob_candidates(kind: str) -> list[Path]:
     return [p for p in candidates if p.is_dir()]
 
 
-async def discover_for_kind(kind: str, *, probe_timeout: float = 12.0) -> list[DiscoveredConfig]:
-    """Discover + probe all candidates for one backend kind in parallel."""
+async def discover_for_kind(
+    kind: str, *, probe_timeout: float = 12.0, custom_claude: bool = False
+) -> list[DiscoveredConfig]:
+    """Discover + probe all candidates for one backend kind in parallel.
+
+    With ``custom_claude`` (i.e. the host registered ClaudeCustomBackend), a
+    ``claude`` candidate whose settings.json carries a custom
+    ``ANTHROPIC_BASE_URL`` surfaces as a ``claude_custom`` candidate so import
+    routes chat to the self-hosted endpoint instead of Anthropic.
+    """
     candidates = _glob_candidates(kind)
     if not candidates:
         return []
 
     async def _one(path: Path) -> DiscoveredConfig:
-        ok, err = await _run_probe(kind, path, probe_timeout=probe_timeout)
+        eff_kind = kind
+        if kind == "claude" and custom_claude and read_custom_endpoint(path) is not None:
+            eff_kind = "claude_custom"
+        ok, err = await _run_probe(eff_kind, path, probe_timeout=probe_timeout)
         return DiscoveredConfig(
-            kind=kind,
+            kind=eff_kind,
             path=str(path),
             suggested_name=_suggested_name(kind, path),
             is_logged_in=ok,
@@ -247,8 +298,12 @@ async def discover_all(kinds: list[str], *, probe_timeout: float = 12.0) -> list
     known = [k for k in kinds if k in _HOME_GLOB]
     if not known:
         return []
+    custom_claude = "claude_custom" in kinds
     per_kind = await asyncio.gather(
-        *[discover_for_kind(k, probe_timeout=probe_timeout) for k in known]
+        *[
+            discover_for_kind(k, probe_timeout=probe_timeout, custom_claude=custom_claude)
+            for k in known
+        ]
     )
     flat: list[DiscoveredConfig] = []
     for batch in per_kind:

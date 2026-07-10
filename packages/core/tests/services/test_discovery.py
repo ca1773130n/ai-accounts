@@ -15,7 +15,62 @@ from ai_accounts_core.services.discovery import (
     _run_probe,
     _suggested_name,
     discover_for_kind,
+    read_custom_endpoint,
 )
+
+# ── read_custom_endpoint + claude_custom classification ─────────────────
+
+
+def test_read_custom_endpoint_variants(tmp_path: Path):
+    d = tmp_path / ".claude-hosted"
+    d.mkdir()
+    assert read_custom_endpoint(d) is None  # no settings.json
+    (d / "settings.json").write_text('{"env": {}}')
+    assert read_custom_endpoint(d) is None  # no custom base URL
+    (d / "settings.json").write_text("not json")
+    assert read_custom_endpoint(d) is None
+    (d / "settings.json").write_text(
+        '{"env": {"ANTHROPIC_BASE_URL": "https://llm.corp.test",'
+        ' "ANTHROPIC_MODEL": "m1", "ANTHROPIC_API_KEY": "sk-x"}}'
+    )
+    assert read_custom_endpoint(d) == {
+        "base_url": "https://llm.corp.test",
+        "model": "m1",
+        "api_key": "sk-x",
+    }
+    # model falls back to the top-level "model" setting
+    (d / "settings.json").write_text(
+        '{"env": {"ANTHROPIC_BASE_URL": "https://llm.corp.test"}, "model": "top-model"}'
+    )
+    assert read_custom_endpoint(d) == {"base_url": "https://llm.corp.test", "model": "top-model"}
+
+
+@pytest.mark.asyncio
+async def test_claude_candidate_with_custom_base_url_classified_claude_custom(
+    tmp_path: Path, monkeypatch
+):
+    """A ~/.claude* dir whose settings.json points at a custom
+    ANTHROPIC_BASE_URL must surface as a claude_custom candidate (when the
+    host registered that kind) — importing it as plain claude would chat
+    against the wrong endpoint."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    hosted = tmp_path / ".claude-hosted"
+    hosted.mkdir()
+    (hosted / "settings.json").write_text('{"env": {"ANTHROPIC_BASE_URL": "https://llm.test"}}')
+    plain = tmp_path / ".claude-plain"
+    plain.mkdir()
+
+    with patch(
+        "ai_accounts_core.services.discovery._run_probe",
+        new=AsyncMock(return_value=(True, None)),
+    ):
+        found = await discover_for_kind("claude", custom_claude=True)
+        kinds = {Path(c.path).name: c.kind for c in found}
+        assert kinds == {".claude-hosted": "claude_custom", ".claude-plain": "claude"}
+        # Hosts without ClaudeCustomBackend registered keep the old behavior.
+        found_off = await discover_for_kind("claude", custom_claude=False)
+        assert {c.kind for c in found_off} == {"claude"}
+
 
 # ── _suggested_name ─────────────────────────────────────────────────────
 

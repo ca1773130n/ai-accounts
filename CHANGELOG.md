@@ -2,6 +2,18 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.4.4 — 2026-07-10
+
+Auto-discovery now recognizes self-hosted Claude Code setups.
+
+### Added
+
+- **Discovery/import of self-hosted Claude Code dirs** (`ai-accounts-core`, `services/discovery.py` + `services/accounts.py`). The "detect existing logins" scan reads each `~/.claude*` candidate's `settings.json`; a dir carrying `env.ANTHROPIC_BASE_URL` surfaces as a `claude_custom` candidate, and one-click import bakes the base URL (normalized), a plaintext `env` API key/token, the model (`env.ANTHROPIC_MODEL` or top-level `model`, else a `default` placeholder), and the config dir into the credential — so the imported account chats and spawns the CLI against the self-hosted endpoint. Keys behind `apiKeyHelper` and missing model lists are completed via the existing AccountReauth flow. Hosts that don't register `ClaudeCustomBackend` keep the old behavior.
+
+### Fixed
+
+- Such dirs previously imported as **plain `claude` accounts that silently chatted against the wrong endpoint** (CLIProxyAPI / api.anthropic.com instead of the configured base URL); the kind classification above closes that hole.
+
 ## 0.4.3 — 2026-07-07
 
 Surfaces vault-key mismatches as account status instead of opaque 500s.

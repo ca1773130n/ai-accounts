@@ -273,6 +273,51 @@ async def test_discover_definitive_failure_still_downgrades(tmp_path, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_import_discovered_claude_custom_bakes_endpoint_credential(tmp_path):
+    """Importing a discovered self-hosted claude dir bakes settings.json's
+    base_url/model/key into the credential JSON — the only channel chat/pty
+    see — so the imported account targets the custom endpoint."""
+    import json
+
+    from ai_accounts_core.backends.claude_custom import ClaudeCustomBackend
+
+    storage = FakeStorage()
+    vault = FakeVault()
+    cc = ClaudeCustomBackend()
+    service = AccountService(
+        storage=storage,
+        vault=vault,
+        backends={cc.kind: cc},
+        isolation_base_dir=tmp_path / "backend_dirs",
+    )
+    cfg_dir = tmp_path / "backend_dirs" / ".claude-hosted"
+    cfg_dir.mkdir(parents=True)
+    # 127.0.0.1:9 has no listener — the inline validate probe fails fast
+    # offline; the import still lands (status ERROR) with the credential set.
+    (cfg_dir / "settings.json").write_text(
+        json.dumps(
+            {
+                "env": {
+                    "ANTHROPIC_BASE_URL": "http://127.0.0.1:9/v1/",
+                    "ANTHROPIC_API_KEY": "sk-hosted",
+                },
+                "model": "my-model",
+            }
+        )
+    )
+
+    backend = await service.import_discovered("claude_custom", str(cfg_dir), display_name="hosted")
+    repo = await storage.backends()
+    stored = await repo.get_credential(backend.id)
+    plaintext = await vault.decrypt(stored.ciphertext, context={"backend_id": backend.id})
+    decoded = json.loads(plaintext)
+    assert decoded["base_url"] == "http://127.0.0.1:9"  # trailing slash + /v1 stripped
+    assert decoded["api_key"] == "sk-hosted"
+    assert decoded["models"] == [{"id": "my-model", "display_name": "my-model"}]
+    assert decoded["config_path"] == str(cfg_dir)
+
+
+@pytest.mark.asyncio
 async def test_vault_key_mismatch_flags_account_error(tmp_path, monkeypatch):
     """A credential that fails vault decryption (wrong AI_ACCOUNTS_VAULT_KEY)
     must flip the row to ERROR with a readable last_error and raise a typed

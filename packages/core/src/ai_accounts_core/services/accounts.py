@@ -229,6 +229,11 @@ class AccountService:
         Stores an empty credential (CLI-browser flow shape — the CLI owns
         the auth in its config dir) and runs validate to flip the status
         to READY (or ERROR). Reuses AccountService.create's dedup logic.
+
+        ``claude_custom`` imports (a claude dir whose settings.json points at
+        a custom ANTHROPIC_BASE_URL) instead bake the endpoint into the
+        credential JSON — the only channel that reaches chat()/pty() — so the
+        imported account talks to the self-hosted endpoint, not Anthropic.
         """
         cfg: dict[str, object] = {"config_path": config_path}
         backend = await self.create(
@@ -236,7 +241,10 @@ class AccountService:
             display_name=display_name or config_path.split("/")[-1],
             config=cfg,
         )
-        await self.store_credential(backend.id, b"")
+        credential = b""
+        if kind == "claude_custom":
+            credential = self._claude_custom_import_credential(config_path)
+        await self.store_credential(backend.id, credential)
         try:
             return await self.validate(backend.id)
         except Exception:
@@ -244,6 +252,34 @@ class AccountService:
             # the row exists with status=error, which is fine for the UI to
             # surface. Re-fetch so the caller sees the actual final status.
             return await self.get(backend.id)
+
+    def _claude_custom_import_credential(self, config_path: str) -> bytes:
+        """Credential JSON for an imported self-hosted Claude Code dir.
+
+        base_url/model/api_key come from the dir's settings.json (see
+        discovery.read_custom_endpoint). A missing model imports as a
+        "default" placeholder — AccountReauth fills in the real list.
+        """
+        import json
+
+        from ai_accounts_core.services.discovery import read_custom_endpoint
+
+        info = read_custom_endpoint(Path(config_path).expanduser()) or {}
+        base_url = str(info.get("base_url") or "").strip().rstrip("/").removesuffix("/v1")
+        model = str(info.get("model") or "").strip()
+        models = (
+            [{"id": model, "display_name": model}]
+            if model
+            else [{"id": "default", "display_name": "default (server model)"}]
+        )
+        return json.dumps(
+            {
+                "base_url": base_url,
+                "api_key": str(info.get("api_key") or ""),
+                "models": models,
+                "config_path": config_path,
+            }
+        ).encode("utf-8")
 
     def _impl_for(self, kind: str) -> BackendProtocol:
         return self._backend_impls[kind]
