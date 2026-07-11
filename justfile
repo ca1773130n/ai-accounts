@@ -115,7 +115,11 @@ bump VERSION:
     @# `uv run pytest` (and `just release`) sees stale dist-info and fails
     @# collection with ModuleNotFoundError: ai_accounts_core. Force the
     @# re-link explicitly so the release pipeline is reproducible.
-    uv pip install -e packages/core -e packages/litestar
+    @# --no-deps is load-bearing: without it this resolves dependencies FRESH,
+    @# silently upgrading litestar/msgspec past uv.lock in the local venv —
+    @# which made locally-regenerated codegen artifacts diverge from CI's
+    @# locked regeneration (the v0.4.5-0.4.7 codegen CI failures).
+    uv pip install --no-deps -e packages/core -e packages/litestar
     @echo "Bumped. Verify with: git diff -- packages apps"
 
 # `just release VERSION` runs the full ship sequence:

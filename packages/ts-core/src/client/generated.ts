@@ -749,17 +749,17 @@ export interface components {
                 [key: string]: unknown;
             };
             display_name: string;
-            icon_url: string | null;
+            icon_url?: string | null;
             install_check: components["schemas"]["InstallCheck"];
-            isolation_env_var: string | null;
+            isolation_env_var?: string | null;
             kind: string;
             login_flows: components["schemas"]["LoginFlowSpec"][];
-            plan_options: components["schemas"]["PlanOption"][] | null;
+            plan_options?: components["schemas"]["PlanOption"][] | null;
             supports_multi_account: boolean;
         };
         /** CliproxyInstallResult */
         CliproxyInstallResult: {
-            binary_path: string | null;
+            binary_path?: string | null;
             display: string;
             stderr: string;
             stdout: string;
@@ -801,7 +801,7 @@ export interface components {
         };
         /** InstallResult */
         InstallResult: {
-            binary_path: string | null;
+            binary_path?: string | null;
             display: string;
             exit_code: number;
             kind: string;
@@ -982,9 +982,9 @@ export interface components {
         };
         /** _StatusResponse */
         _StatusResponse: {
-            binary_path: string | null;
+            binary_path?: string | null;
             installed: boolean;
-            version: string | null;
+            version?: string | null;
         };
         /** _WriteEagerRequest */
         _WriteEagerRequest: {
