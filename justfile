@@ -109,7 +109,10 @@ bump VERSION:
     done
     sed -i.bak "s/version = '[0-9.]*'/version = '{{VERSION}}'/" packages/vue-styled/src/index.ts packages/vue-headless/src/index.ts
     rm -f packages/*/pyproject.toml.bak packages/*/package.json.bak packages/*/src/index.ts.bak
-    uv sync
+    @# --all-packages matches CI: bare `uv sync` prunes to the root project's
+    @# deps (removing litestar etc.), which the old with-deps editable
+    @# re-link below silently repaired — the --no-deps one does not.
+    uv sync --all-extras --all-packages
     @# `uv sync` resolves the lock but does NOT re-link the editable workspace
     @# packages to the bumped pyproject.toml. Without this step the next
     @# `uv run pytest` (and `just release`) sees stale dist-info and fails
