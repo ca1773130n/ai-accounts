@@ -26,4 +26,4 @@ export type {
   UseStreamingParserReturn,
 } from './composables/useStreamingParser';
 
-export const version = '0.4.7';
+export const version = '0.4.8';
