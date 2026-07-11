@@ -2,6 +2,12 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.4.7 — 2026-07-11
+
+### Fixed
+
+- **`@ai-accounts/council` bin never ran when installed via npm** — the ESM main-module guard compared `process.argv[1]` (the `node_modules/.bin` symlink) against `import.meta.url` (the real path) and never matched, so `aia-council` silently exited 0 doing nothing. The guard now resolves the symlink first. `@ai-accounts/council@0.4.6` is deprecated on npm; use >= 0.4.7.
+
 ## 0.4.6 — 2026-07-11
 
 npm-installable council CLI and opt-in account keep-alive.

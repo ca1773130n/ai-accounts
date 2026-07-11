@@ -1,6 +1,6 @@
 {
   "name": "@ai-accounts/council",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "aia-council CLI — convene a debating council of your AI accounts (Node port, zero dependencies)",
   "license": "Apache-2.0",
   "type": "module",
