@@ -61,6 +61,31 @@ async def _usage_poll_loop(sched: AccountScheduler) -> None:
             logger.exception("usage poll failed")
 
 
+async def _keep_alive_pass(accounts: AccountService) -> None:
+    """Ping READY accounts so idle OAuth tokens refresh; retry ERROR ones —
+    a clean ping promotes them back to READY (keep_alive doubles as recovery,
+    e.g. after a CLIProxyAPI outage flipped healthy accounts to ERROR)."""
+    from ai_accounts_core.domain.backend import BackendStatus
+
+    for b in await accounts.list():
+        if b.status not in (BackendStatus.READY, BackendStatus.ERROR):
+            continue
+        try:
+            await accounts.keep_alive(b.id)
+        except Exception:
+            logger.exception("keep-alive failed for %s", b.id)
+
+
+async def _keep_alive_loop(accounts: AccountService, interval: float) -> None:
+    """Opt-in periodic keep-alive (config.keep_alive_interval_seconds)."""
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await _keep_alive_pass(accounts)
+        except Exception:
+            logger.exception("keep-alive pass failed")
+
+
 @get("/health", sync_to_thread=False)
 def health() -> dict[str, str]:
     return {"status": "ok", "version": core_version}
@@ -184,6 +209,12 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         await config.storage.migrate()
         sweep_task_holder.append(asyncio.create_task(_sweep_loop(login_registry)))
         sweep_task_holder.append(asyncio.create_task(_usage_poll_loop(scheduler)))
+        if config.keep_alive_interval_seconds:
+            sweep_task_holder.append(
+                asyncio.create_task(
+                    _keep_alive_loop(account_service, config.keep_alive_interval_seconds)
+                )
+            )
 
     async def _shutdown(_app: Litestar) -> None:
         for task in sweep_task_holder:

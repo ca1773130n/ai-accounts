@@ -39,7 +39,8 @@ anonymized rebuttals, vote, and let a chairman issue a final decision.
      --json
    ```
 
-   - `aia-council` ships with `pip install ai-accounts-core` (>= 0.4.5).
+   - `aia-council` ships with `npm install -g @ai-accounts/council` (zero-dep
+     Node) or `pip install ai-accounts-core` (>= 0.4.5) — identical contract.
    - It needs a running ai-accounts server (default `http://127.0.0.1:30000`;
      override with `AIA_URL`, bearer key via `AI_ACCOUNTS_API_KEY`).
    - Progress streams to stderr; stdout is the decision JSON. A run takes

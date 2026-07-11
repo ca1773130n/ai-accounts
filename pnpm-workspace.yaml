@@ -2,5 +2,6 @@ packages:
   - "packages/ts-core"
   - "packages/vue-headless"
   - "packages/vue-styled"
+  - "packages/council-cli"
   - "apps/*"
   - "docs"

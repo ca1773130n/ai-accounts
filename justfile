@@ -104,7 +104,7 @@ clean:
 bump VERSION:
     @echo "Bumping all packages to {{VERSION}}…"
     sed -i.bak 's/^version = "[0-9.]*"/version = "{{VERSION}}"/' packages/core/pyproject.toml packages/litestar/pyproject.toml
-    @for f in packages/ts-core/package.json packages/vue-headless/package.json packages/vue-styled/package.json; do \
+    @for f in packages/ts-core/package.json packages/vue-headless/package.json packages/vue-styled/package.json packages/council-cli/package.json; do \
         sed -i.bak 's/"version": "[0-9.]*"/"version": "{{VERSION}}"/' "$f"; \
     done
     sed -i.bak "s/version = '[0-9.]*'/version = '{{VERSION}}'/" packages/vue-styled/src/index.ts packages/vue-headless/src/index.ts
@@ -140,7 +140,7 @@ release VERSION:
     uv build --package ai-accounts-litestar
     uv publish --token "$PYPI_TOKEN" dist/ai_accounts_core-{{VERSION}}* dist/ai_accounts_litestar-{{VERSION}}*
     @echo "Released v{{VERSION}}. Verify on npm:"
-    @for pkg in @ai-accounts/ts-core @ai-accounts/vue-headless @ai-accounts/vue-styled; do \
+    @for pkg in @ai-accounts/ts-core @ai-accounts/vue-headless @ai-accounts/vue-styled @ai-accounts/council; do \
         printf '  %s latest: ' "$pkg"; npm view "$pkg" version; \
     done
     @echo "And on PyPI:"

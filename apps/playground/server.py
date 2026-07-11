@@ -8,6 +8,10 @@ Override via env:
 * ``AIA_HOST=0.0.0.0`` — bind to all interfaces (e.g. when running behind
   vite's network proxy on a remote machine).
 * ``AIA_PORT=6173`` — change the listen port.
+* ``AIA_KEEP_ALIVE_SECONDS=3600`` — keep-alive cadence: ping each account with
+  a 1-token probe every N seconds so idle OAuth tokens stay fresh (a trickle
+  of real tokens — Haiku-priced for Claude). Defaults to 7200 (2 h) in the
+  playground; set ``0`` to disable.
 
 The vite proxy target in ``vite.config.ts`` must match ``AIA_PORT``.
 """
@@ -58,6 +62,11 @@ app = create_app(
             CrushBackend(),
         ),
         backend_dirs_path=Path("./backend_dirs"),
+        # Playground default: ON at 2h (the operator is the account owner and
+        # wants warm tokens). Library default stays None — embedders opt in.
+        keep_alive_interval_seconds=(
+            float(os.environ.get("AIA_KEEP_ALIVE_SECONDS", "7200")) or None
+        ),
     )
 )
 

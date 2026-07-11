@@ -24,7 +24,9 @@ cp -r claude-plugin/council/skills/council ~/.claude/skills/
 
 ### Requirements
 
-- `pip install ai-accounts-core` (>= 0.4.5) — provides the `aia-council` CLI.
+- The `aia-council` CLI — either `npm install -g @ai-accounts/council`
+  (zero-dependency Node) or `pip install ai-accounts-core` (>= 0.4.5);
+  both provide the identical command.
 - A running ai-accounts server with at least one READY account
   (`AIA_URL` overrides the default `http://127.0.0.1:30000`;
   `AI_ACCOUNTS_API_KEY` if the server uses ApiKeyAuth).

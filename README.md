@@ -12,7 +12,7 @@ corporate proxy — with your own base URL and model list).
 Python ([Litestar](https://litestar.dev)) sidecar API + TypeScript / Vue 3
 client packages. Apache-2.0.
 
-**Latest release: `0.4.5`** ([CHANGELOG](./CHANGELOG.md))
+**Latest release: `0.4.6`** ([CHANGELOG](./CHANGELOG.md))
 
 ---
 
@@ -44,6 +44,9 @@ chat/PTY traffic through a unified API gets fiddly fast.
 - **PTY sessions** over WebSocket for interactive CLI work.
 - **Live model discovery** from CLIProxyAPI when registered, with static
   fallbacks per backend so the dropdown is never empty.
+- **Opt-in keep-alive**: `keep_alive_interval_seconds` pings each account with
+  a 1-token probe (cheapest model per kind) so idle OAuth tokens stay fresh —
+  and recovers ERROR accounts whose refresh token still works.
 - **Pluggable adapters** for storage (sqlite/sqlalchemy), vault
   (env-key AES-GCM, KMS, vault, keychain), and auth (none/api-key/OIDC).
 
@@ -58,6 +61,7 @@ chat/PTY traffic through a unified API gets fiddly fast.
 | `@ai-accounts/ts-core`               | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/ts-core)               |
 | `@ai-accounts/vue-headless`          | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/vue-headless)          |
 | `@ai-accounts/vue-styled`            | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/vue-styled)            |
+| `@ai-accounts/council`               | TS   | [npm](https://www.npmjs.com/package/@ai-accounts/council) — `aia-council` CLI (`npm i -g`), zero-dep Node port of the Python CLI |
 | `apps/playground`                    | App  | private — local-dev showcase                                            |
 
 ### Known limitations

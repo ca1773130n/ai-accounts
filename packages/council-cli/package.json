@@ -1,0 +1,22 @@
+{
+  "name": "@ai-accounts/council",
+  "version": "0.4.5",
+  "description": "aia-council CLI — convene a debating council of your AI accounts (Node port, zero dependencies)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "aia-council": "bin/aia-council.mjs"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

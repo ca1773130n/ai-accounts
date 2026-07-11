@@ -2,6 +2,15 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.4.6 — 2026-07-11
+
+npm-installable council CLI and opt-in account keep-alive.
+
+### Added
+
+- **`@ai-accounts/council`** (new npm package). `npm install -g @ai-accounts/council` provides the `aia-council` binary — a zero-dependency Node port (Node ≥ 18.17, global fetch + `node:util` parseArgs) with the identical contract to the Python CLI: same flags/env vars, progress on stderr, decision JSON on stdout, same exit codes and mid-stream-drop handling. Verified end-to-end against a live server side-by-side with the Python CLI. Claude Code skill users now need no Python on the client machine.
+- **Keep-alive loop** (`ai-accounts-litestar`). `AiAccountsConfig.keep_alive_interval_seconds` starts a background loop that sends `AccountService.keep_alive`'s 1-token probe through every READY account each interval, so idle OAuth access tokens keep refreshing (cheapest model per kind — Haiku for Claude). ERROR accounts are retried too: a clean ping promotes them back to READY, so the loop doubles as recovery after e.g. a CLIProxyAPI outage. Library default is `None` (embedders opt in — background token spend shouldn't appear on upgrade); the **playground defaults it ON at 2 h** (`AIA_KEEP_ALIVE_SECONDS` to tune, `0` to disable). This activates the previously dormant `keep_alive()` service method.
+
 ## 0.4.5 — 2026-07-11
 
 Adds **council mode**: delegate a decision to a debating panel of your AI accounts — say "council it" in a Claude Code session and the verdict comes back with rationale, dissent, and a vote tally. Adapted from [karpathy/llm-council](https://github.com/karpathy/llm-council) for decision-making.
