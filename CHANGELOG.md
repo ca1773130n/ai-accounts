@@ -2,6 +2,12 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.4.8 — 2026-07-11
+
+### Fixed
+
+- **Codegen artifacts regenerated under the locked toolchain** (`@ai-accounts/ts-core`). The 0.4.5–0.4.7 `openapi.json`/`generated.ts` were produced by a locally drifted litestar 2.24 / msgspec 0.21.1 while CI (and the lockfile) pin litestar 2.21.1 / msgspec 0.21.0 — breaking the codegen CI gate and shipping slightly divergent client types. Artifacts now match the locked regeneration; runtime behavior is unchanged (request bounds still enforce server-side). The `just bump` recipe's editable re-link now uses `--no-deps` so the local venv can no longer silently outrun `uv.lock`.
+
 ## 0.4.7 — 2026-07-11
 
 ### Fixed
