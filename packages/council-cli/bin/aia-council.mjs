@@ -9,7 +9,7 @@
 // Zero dependencies — global fetch (Node >= 18.17) and node:util parseArgs.
 
 import { parseArgs } from "node:util";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import process from "node:process";
 
@@ -170,6 +170,14 @@ export async function main(argv) {
   return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// npm installs the bin as a SYMLINK in node_modules/.bin — resolve it before
+// comparing, or the guard never matches and the CLI silently does nothing.
+let entryHref = null;
+try {
+  if (process.argv[1]) entryHref = pathToFileURL(realpathSync(process.argv[1])).href;
+} catch {
+  entryHref = null;
+}
+if (entryHref === import.meta.url) {
   main(process.argv.slice(2)).then((code) => process.exit(code));
 }
