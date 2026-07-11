@@ -2,6 +2,17 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.4.5 — 2026-07-11
+
+Adds **council mode**: delegate a decision to a debating panel of your AI accounts — say "council it" in a Claude Code session and the verdict comes back with rationale, dissent, and a vote tally. Adapted from [karpathy/llm-council](https://github.com/karpathy/llm-council) for decision-making.
+
+### Added
+
+- **`CouncilService`** (`ai-accounts-core`, `services/council.py`). Given a question + 2–10 options + context, five role-lensed members (pragmatist, architect, risk-analyst, user-advocate, contrarian) are seated round-robin over READY accounts (one account backs all roles; several accounts share them). Stages: independent positions with `VOTE: n` → anonymized rebuttal round(s) (member accounts/providers are never revealed to each other) → tally → an impartial chairman issues a strict-JSON decision `{choice, confidence, rationale, dissent}`, with a majority-vote fallback and declared tie-breaking. Seating applies the scheduler's rate-limit criteria (skips cooling-down / ≥95%-used accounts) and records `mark_used`; rounds are hard-capped (≤5) at both the API edge and the service.
+- **`POST /api/v1/council`** (`ai-accounts-litestar`, `routes/council.py`). One-shot SSE stream of `CouncilEvent`s (`council_start`, `position`, `rebuttal`, `member_error`, `votes`, `decision`/`council_error`) with heartbeats; request bounds enforced via msgspec constraints.
+- **`aia-council` CLI** (`ai-accounts-core`, `cli_council.py` — the repo's first console script). Streams deliberation progress to stderr, prints the decision JSON to stdout; `--json` for machine consumption; exit 0 decision / 1 failure / 2 usage; `AIA_URL` + `AI_ACCOUNTS_API_KEY` env support; a mid-stream drop after the decision arrived still exits 0 with the decision.
+- **Claude Code plugin `council`** (`claude-plugin/`, marketplace at `.claude-plugin/marketplace.json`). Install with `/plugin marketplace add ca1773130n/ai-accounts` → `/plugin install council@ai-accounts` (or copy the skill dir). Saying "council it" on a pending decision makes Claude assemble the question/options/context brief, run `aia-council`, and proceed with the council's verdict.
+
 ## 0.4.4 — 2026-07-10
 
 Auto-discovery now recognizes self-hosted Claude Code setups.

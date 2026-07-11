@@ -10,6 +10,7 @@ from ai_accounts_core.services.accounts import AccountService
 from ai_accounts_core.services.chat import ChatService
 from ai_accounts_core.services.chat_orchestrator import ChatOrchestrator
 from ai_accounts_core.services.chat_state import ChatStateService
+from ai_accounts_core.services.council import CouncilService
 from ai_accounts_core.services.errors import ServiceError
 from ai_accounts_core.services.onboarding import OnboardingService
 from ai_accounts_core.services.pty import PtyService
@@ -25,6 +26,7 @@ from .routes.backends import BackendsController
 from .routes.chat_send import ChatSendController
 from .routes.cliproxy import CliproxyController
 from .routes.conversations import ConversationsController
+from .routes.council import CouncilController
 from .routes.discovery import DiscoveryController
 from .routes.install import InstallController
 from .routes.login import LoginController
@@ -113,6 +115,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     scheduler = AccountScheduler(account_service=account_service, storage=config.storage)
     orchestrator = ChatOrchestrator(chat_service=chat_service, scheduler=scheduler)
     chat_state = ChatStateService()
+    council_service = CouncilService(account_service=account_service, scheduler=scheduler)
 
     backend_registry = BackendRegistry()
     for b in config.backends:
@@ -145,6 +148,9 @@ def create_app(config: AiAccountsConfig) -> Litestar:
     def _provide_chat_state() -> ChatStateService:
         return chat_state
 
+    def _provide_council() -> CouncilService:
+        return council_service
+
     dependencies: dict[str, Any] = {
         "config": Provide(_provide_config, sync_to_thread=False),
         "account_service": Provide(_provide_account_service, sync_to_thread=False),
@@ -155,6 +161,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
         "scheduler": Provide(_provide_scheduler, sync_to_thread=False),
         "orchestrator": Provide(_provide_orchestrator, sync_to_thread=False),
         "chat_state": Provide(_provide_chat_state, sync_to_thread=False),
+        "council": Provide(_provide_council, sync_to_thread=False),
     }
 
     cors_config = (
@@ -190,6 +197,7 @@ def create_app(config: AiAccountsConfig) -> Litestar:
             ChatSendController,
             CliproxyController,
             ConversationsController,
+            CouncilController,
             DiscoveryController,
             InstallController,
             LoginController,

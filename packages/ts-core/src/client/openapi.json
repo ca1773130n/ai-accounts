@@ -126,9 +126,12 @@
         "required": [
           "config_schema",
           "display_name",
+          "icon_url",
           "install_check",
+          "isolation_env_var",
           "kind",
           "login_flows",
+          "plan_options",
           "supports_multi_account"
         ],
         "title": "BackendMetadata",
@@ -160,6 +163,7 @@
           }
         },
         "required": [
+          "binary_path",
           "display",
           "stderr",
           "stdout",
@@ -326,6 +330,7 @@
           }
         },
         "required": [
+          "binary_path",
           "display",
           "exit_code",
           "kind",
@@ -588,6 +593,37 @@
         "title": "_ChainEntryInput",
         "type": "object"
       },
+      "_CouncilRequest": {
+        "properties": {
+          "context": {
+            "default": "",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 2,
+            "type": "array"
+          },
+          "question": {
+            "type": "string"
+          },
+          "rounds": {
+            "default": 1,
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "options",
+          "question"
+        ],
+        "title": "_CouncilRequest",
+        "type": "object"
+      },
       "_CreateSessionRequest": {
         "properties": {
           "backend_id": {
@@ -601,6 +637,7 @@
             "type": "string"
           },
           "title": {
+            "maxLength": 256,
             "oneOf": [
               {
                 "type": "string"
@@ -990,7 +1027,9 @@
           }
         },
         "required": [
-          "installed"
+          "binary_path",
+          "installed",
+          "version"
         ],
         "title": "_StatusResponse",
         "type": "object"
@@ -2776,6 +2815,75 @@
         "summary": "SendMessage",
         "tags": [
           "conversations"
+        ]
+      }
+    },
+    "/api/v1/council": {
+      "post": {
+        "deprecated": false,
+        "operationId": "ApiV1CouncilConvene",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_CouncilRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Stream Response",
+            "headers": {}
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation Exception",
+                  "examples": [
+                    {
+                      "detail": "Bad Request",
+                      "extra": {},
+                      "status_code": 400
+                    }
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "type": [
+                        "null",
+                        "object",
+                        "array"
+                      ]
+                    },
+                    "status_code": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bad request syntax or unsupported method"
+          }
+        },
+        "summary": "Convene",
+        "tags": [
+          "council"
         ]
       }
     },

@@ -416,6 +416,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/council": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Convene */
+        post: operations["ApiV1CouncilConvene"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/discovery": {
         parameters: {
             query?: never;
@@ -732,17 +749,17 @@ export interface components {
                 [key: string]: unknown;
             };
             display_name: string;
-            icon_url?: string | null;
+            icon_url: string | null;
             install_check: components["schemas"]["InstallCheck"];
-            isolation_env_var?: string | null;
+            isolation_env_var: string | null;
             kind: string;
             login_flows: components["schemas"]["LoginFlowSpec"][];
-            plan_options?: components["schemas"]["PlanOption"][] | null;
+            plan_options: components["schemas"]["PlanOption"][] | null;
             supports_multi_account: boolean;
         };
         /** CliproxyInstallResult */
         CliproxyInstallResult: {
-            binary_path?: string | null;
+            binary_path: string | null;
             display: string;
             stderr: string;
             stdout: string;
@@ -784,7 +801,7 @@ export interface components {
         };
         /** InstallResult */
         InstallResult: {
-            binary_path?: string | null;
+            binary_path: string | null;
             display: string;
             exit_code: number;
             kind: string;
@@ -864,6 +881,15 @@ export interface components {
         _ChainEntryInput: {
             backend_id: string;
             priority: number;
+        };
+        /** _CouncilRequest */
+        _CouncilRequest: {
+            /** @default  */
+            context: string;
+            options: string[];
+            question: string;
+            /** @default 1 */
+            rounds: number;
         };
         /** _CreateSessionRequest */
         _CreateSessionRequest: {
@@ -956,9 +982,9 @@ export interface components {
         };
         /** _StatusResponse */
         _StatusResponse: {
-            binary_path?: string | null;
+            binary_path: string | null;
             installed: boolean;
-            version?: string | null;
+            version: string | null;
         };
         /** _WriteEagerRequest */
         _WriteEagerRequest: {
@@ -1923,6 +1949,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["_SendMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Stream Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Bad request syntax or unsupported method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                        extra?: null | {
+                            [key: string]: unknown;
+                        } | unknown[];
+                        status_code: number;
+                    };
+                };
+            };
+        };
+    };
+    ApiV1CouncilConvene: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_CouncilRequest"];
             };
         };
         responses: {

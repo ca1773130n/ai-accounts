@@ -1,0 +1,13 @@
+{
+  "name": "ai-accounts",
+  "owner": {
+    "name": "ca1773130n"
+  },
+  "plugins": [
+    {
+      "name": "council",
+      "source": "./claude-plugin/council",
+      "description": "Say 'council it' — a council of your AI accounts debates a pending decision and returns a reasoned verdict."
+    }
+  ]
+}

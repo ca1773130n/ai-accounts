@@ -12,7 +12,7 @@ corporate proxy — with your own base URL and model list).
 Python ([Litestar](https://litestar.dev)) sidecar API + TypeScript / Vue 3
 client packages. Apache-2.0.
 
-**Latest release: `0.4.4`** ([CHANGELOG](./CHANGELOG.md))
+**Latest release: `0.4.5`** ([CHANGELOG](./CHANGELOG.md))
 
 ---
 
@@ -36,6 +36,11 @@ chat/PTY traffic through a unified API gets fiddly fast.
 - **Smart chat panel**: single backend, fan-out to all backends, or
   compound-mode synthesis through a primary backend. Live streaming, tool-call
   process groups, tokens-in/out tracking, and per-backend account labels.
+- **Council mode**: delegate a decision to a debating panel of your accounts
+  (five role lenses, anonymized rebuttals, chairman verdict — after
+  [karpathy/llm-council](https://github.com/karpathy/llm-council)). Available
+  as `POST /api/v1/council` (SSE), the `aia-council` CLI, and a Claude Code
+  plugin — say "council it" in a session ([claude-plugin/](./claude-plugin/README.md)).
 - **PTY sessions** over WebSocket for interactive CLI work.
 - **Live model discovery** from CLIProxyAPI when registered, with static
   fallbacks per backend so the dropdown is never empty.

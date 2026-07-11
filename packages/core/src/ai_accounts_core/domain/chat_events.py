@@ -21,6 +21,19 @@ class CompoundEvent(msgspec.Struct, frozen=True, kw_only=True):
     error: str | None = None
 
 
+class CouncilEvent(msgspec.Struct, frozen=True, kw_only=True):
+    kind: str  # "council_start" | "position" | "rebuttal" | "member_error" | "votes" | "decision" | "council_error"
+    role: str | None = None  # council member lens ("pragmatist", …)
+    backend_kind: str | None = None
+    account_label: str | None = None
+    round: int | None = None  # rebuttal round number (1-based)
+    text: str | None = None  # the member's full position/rebuttal text
+    option: int | None = None  # the member's 1-based vote, when parseable
+    error: str | None = None
+    # council_start roster / votes tally / decision object
+    payload: dict[str, object] | None = None
+
+
 class ToolCallEvent(msgspec.Struct, frozen=True, kw_only=True):
     kind: str = "tool_call"
     id: str = ""

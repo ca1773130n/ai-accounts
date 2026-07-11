@@ -1,0 +1,8 @@
+{
+  "name": "council",
+  "description": "Say 'council it' on any pending decision — a council of your AI accounts (via ai-accounts) debates the options and returns a reasoned verdict.",
+  "version": "0.1.0",
+  "author": {
+    "name": "ai-accounts"
+  }
+}
