@@ -365,7 +365,7 @@ async def cliproxy_list_models(kind: str) -> list[dict[str, object]] | None:
     Returns a list of `{id, owned_by, ...}` dicts (raw cliproxy items),
     filtered by `_CLIPROXY_OWNED_BY[kind]`. Returns None when cliproxy is
     not detected or the request fails — the caller is expected to fall
-    back to its static set in that case.
+    back to the cached snapshot in that case.
 
     Empty list is a valid result (cliproxy is up but advertises no models
     for that kind), distinct from None (cliproxy unreachable).
@@ -401,7 +401,7 @@ async def cliproxy_list_models(kind: str) -> list[dict[str, object]] | None:
     ]
     # Best-effort: persist successful results so subsequent offline calls
     # (cliproxy stopped, network gone) can serve a recent snapshot instead
-    # of falling all the way through to the version-pinned static set.
+    # of surfacing an empty model list.
     if filtered:
         from ai_accounts_core.backends import _models_fallback
 

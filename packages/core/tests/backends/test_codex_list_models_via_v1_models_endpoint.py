@@ -56,8 +56,8 @@ async def test_chatgpt_oauth_token_sends_bearer_header(tmp_path, httpx_mock, mon
 
 
 @pytest.mark.asyncio
-async def test_non_200_response_falls_through_to_static(tmp_path, httpx_mock, monkeypatch):
-    """A 401/403 should drop to the static curated list (no cliproxy)."""
+async def test_non_200_response_falls_through_to_empty(tmp_path, httpx_mock, monkeypatch):
+    """A 401/403 with no cliproxy leaves no live source → empty list."""
     _isolate_local_cache(tmp_path, monkeypatch)
     httpx_mock.add_response(
         url="https://api.openai.com/v1/models",
@@ -71,13 +71,12 @@ async def test_non_200_response_falls_through_to_static(tmp_path, httpx_mock, mo
     monkeypatch.setattr("ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy)
     backend = CodexBackend()
     models = await backend.list_models(b"sk-proj-bad", isolation_dir=tmp_path)
-    ids = [m.id for m in models]
-    assert any(i.startswith("gpt-5") for i in ids)
+    assert models == []
 
 
 @pytest.mark.asyncio
 async def test_empty_credential_falls_through(tmp_path, monkeypatch):
-    """No stored credential → skip provider API and drop to static."""
+    """No stored credential → skip the provider API and return empty."""
     _isolate_local_cache(tmp_path, monkeypatch)
 
     async def _no_cliproxy(_kind: str):
@@ -86,4 +85,4 @@ async def test_empty_credential_falls_through(tmp_path, monkeypatch):
     monkeypatch.setattr("ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy)
     backend = CodexBackend()
     models = await backend.list_models(b"", isolation_dir=tmp_path)
-    assert models  # static list non-empty
+    assert models == []

@@ -15,8 +15,8 @@ _API_MODELS_RESPONSE = {
         },
         {
             "type": "model",
-            "id": "claude-sonnet-4-7",
-            "display_name": "Claude Sonnet 4.7",
+            "id": "claude-sonnet-5",
+            "display_name": "Claude Sonnet 5",
             "created_at": "2026-04-15T00:00:00Z",
         },
     ]
@@ -38,7 +38,7 @@ async def test_api_key_credential_sends_x_api_key_header(tmp_path, httpx_mock):
     models = await backend.list_models(b"sk-ant-abc123", isolation_dir=tmp_path)
     ids = [m.id for m in models]
     assert "claude-opus-4-7" in ids
-    assert "claude-sonnet-4-7" in ids
+    assert "claude-sonnet-5" in ids
 
 
 @pytest.mark.asyncio
@@ -55,12 +55,12 @@ async def test_oauth_credential_sends_bearer_and_oauth_beta(tmp_path, httpx_mock
     backend = ClaudeBackend()
     models = await backend.list_models(b"sk-ant-oat-xyz789", isolation_dir=tmp_path)
     ids = [m.id for m in models]
-    assert ids == ["claude-opus-4-7", "claude-sonnet-4-7"]
+    assert ids == ["claude-opus-4-7", "claude-sonnet-5"]
 
 
 @pytest.mark.asyncio
-async def test_non_200_response_falls_through_to_static(tmp_path, httpx_mock, monkeypatch):
-    """A 401/403/etc. should drop to the static curated list (no cliproxy)."""
+async def test_non_200_response_falls_through_to_empty(tmp_path, httpx_mock, monkeypatch):
+    """A 401/403/etc. with no cliproxy leaves no live source → empty list."""
     httpx_mock.add_response(
         url="https://api.anthropic.com/v1/models",
         status_code=401,
@@ -73,10 +73,7 @@ async def test_non_200_response_falls_through_to_static(tmp_path, httpx_mock, mo
     monkeypatch.setattr("ai_accounts_core.cliproxy.cliproxy_list_models", _no_cliproxy)
     backend = ClaudeBackend()
     models = await backend.list_models(b"sk-ant-abc123", isolation_dir=tmp_path)
-    # Static fallback fired — should contain refreshed entries (4.7 family).
-    ids = [m.id for m in models]
-    assert "claude-opus-4-7" in ids
-    assert "claude-sonnet-4-7" in ids
+    assert models == []
 
 
 @pytest.mark.asyncio
@@ -85,7 +82,7 @@ async def test_empty_credential_falls_through(tmp_path, monkeypatch):
 
     The httpx_mock fixture is intentionally absent — if the helper attempted a
     real network call here, pytest-httpx would fail it; instead we expect a
-    direct fall-through to the static curated list.
+    direct fall-through to an empty list.
 
     v0.7.11 added keychain/.credentials.json fallbacks for cli_browser auth,
     so we stub both helpers to return None to preserve the original
@@ -106,5 +103,4 @@ async def test_empty_credential_falls_through(tmp_path, monkeypatch):
     monkeypatch.setattr(ClaudeBackend, "_try_credentials_file_oauth_token", _no_creds_file)
     backend = ClaudeBackend()
     models = await backend.list_models(b"", isolation_dir=tmp_path)
-    assert models  # static list, non-empty
-    assert all(m.id.startswith("claude-") for m in models)
+    assert models == []

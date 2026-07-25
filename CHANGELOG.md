@@ -2,6 +2,15 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.5.0 — 2026-07-25
+
+Model lists come from the provider, not from us.
+
+### Removed
+
+- **Curated static model fallbacks** (`ai-accounts-core`, `backends/_models_fallback.py`). `_STATIC_CLAUDE`, `_STATIC_CODEX`, the 13-key `_STATIC` map and `static_fallback()` are gone; `fallback(provider)` is now just `cached_live(provider) or []`. The lists were stale by construction — providers ship models faster than we ship releases — and the shipped set was wrong in both directions at once: it advertised five Codex ids OpenAI shut down on 2026-07-23 (`gpt-5-codex`, `gpt-5-codex-mini`, `gpt-5.1-codex-max`, `gpt-5.1-codex-mini`, `gpt-5.2-codex`), a `claude-sonnet-4-7` that never existed at all (the Sonnet line went 4.5 → 4.6 → 5), and DeepSeek's `deepseek-chat`/`deepseek-reasoner` (retired 2026-07-24) — while omitting `claude-opus-5`, `claude-sonnet-5` and the whole `gpt-5.6` family. Selecting a dead id 404'd, so the curated list actively produced the failure it existed to prevent. **Behavior change**: with no reachable provider API, no cliproxy, and no cached snapshot, the model dropdown for `claude`/`codex`/`deepseek` is now empty rather than populated with guesses. That was already the shipped behavior for antigravity/opencode/openrouter/kimi/openai_compat, and the chat orchestrator handles an empty list by emitting `backend_error` and skipping the backend (0.3.x). One successful live call writes `~/.ai-accounts/models_cache.json`, which serves every subsequent offline call. Supersedes the 0.4.x note advertising "Static fallback models: DeepSeek V4 Flash / Pro" — there are no static fallbacks now.
+- **`test_static_fallback_omits_deprecated.py`** (93 lines). It policed a list that no longer exists, and its `len(models) == 7` assertion failed on every model release without ever catching a bug. "Never advertise a retired id" is now structural rather than asserted.
+
 ## 0.4.8 — 2026-07-11
 
 ### Fixed

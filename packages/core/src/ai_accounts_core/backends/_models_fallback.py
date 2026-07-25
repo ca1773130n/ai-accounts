@@ -1,4 +1,4 @@
-"""Shared model-list fallbacks + cached-live persistence.
+"""Cached-live model-list persistence.
 
 Three layers, in priority order at backend list_models() call sites:
 
@@ -9,12 +9,17 @@ Three layers, in priority order at backend list_models() call sites:
    ``~/.ai-accounts/models_cache.json`` so subsequent offline calls keep
    working.
 3. ``cached_live(provider)`` — last successful cliproxy snapshot.
-4. ``static_fallback(provider)`` — version-pinned list shipped with the
-   package, refreshed each release.
 
-This module exists because the static lists were drifting per release — three
-fixes in 2026-05 alone. Centralizing them here means one diff per upstream
-mapping change instead of four.
+There is deliberately no fourth layer. This module used to ship curated
+per-provider "static fallback" lists, and they were wrong in every direction:
+they advertised ids the provider had retired (a 404 on select) and omitted the
+current default. Providers ship models faster than we ship releases, so the
+list was stale by construction — four drift fixes across 0.3.9/0.3.10/0.3.12
+and 0.5.0, none of which a curated list could have prevented.
+
+An unreachable upstream now yields an empty dropdown, which is what the
+antigravity/opencode/openrouter/kimi backends already did. Empty is honest;
+a stale id looks like a working choice and isn't.
 """
 
 from __future__ import annotations
@@ -39,8 +44,8 @@ def cache_path() -> Path:
 def cached_live(provider: str) -> list[Model] | None:
     """Return the last successful cliproxy snapshot for ``provider``, or None.
 
-    Never raises — missing/corrupt cache returns None so the caller falls
-    through to the static set.
+    Never raises — a missing/corrupt cache returns None, which the caller
+    treats as "no models known offline".
     """
     path = cache_path()
     if not path.is_file():
@@ -108,75 +113,12 @@ def write_cache(provider: str, items: list[dict[str, Any]]) -> None:
         path.write_text(json.dumps(existing, separators=(",", ":")))
 
 
-# ── Static fallbacks (last resort) ────────────────────────────────────────
-# Refreshed each release. Source of truth: cliproxyapi 6.8.30 provider
-# mappings + the upstream CLI's `models list` output where available.
-# Adding/removing a model? Touch only this file.
-
-_STATIC_CLAUDE: tuple[Model, ...] = (
-    Model(id="claude-opus-4-7", display_name="Claude Opus 4.7", context_window=1_000_000),
-    Model(id="claude-opus-4-6", display_name="Claude Opus 4.6", context_window=1_000_000),
-    Model(id="claude-opus-4-5-20251101", display_name="Claude Opus 4.5", context_window=200_000),
-    Model(id="claude-sonnet-4-7", display_name="Claude Sonnet 4.7", context_window=1_000_000),
-    Model(id="claude-sonnet-4-6", display_name="Claude Sonnet 4.6", context_window=1_000_000),
-    Model(
-        id="claude-sonnet-4-5-20250929", display_name="Claude Sonnet 4.5", context_window=1_000_000
-    ),
-    Model(id="claude-haiku-4-5-20251001", display_name="Claude Haiku 4.5", context_window=200_000),
-)
-
-_STATIC_CODEX: tuple[Model, ...] = (
-    Model(id="gpt-5.5", display_name="GPT-5.5", context_window=400_000),
-    Model(id="gpt-5.3-codex", display_name="GPT-5.3 Codex", context_window=400_000),
-    Model(id="gpt-5.3-codex-spark", display_name="GPT-5.3 Codex Spark", context_window=400_000),
-    Model(id="gpt-5.2-codex", display_name="GPT-5.2 Codex", context_window=400_000),
-    Model(id="gpt-5.1-codex-max", display_name="GPT-5.1 Codex Max", context_window=400_000),
-    Model(id="gpt-5.1-codex-mini", display_name="GPT-5.1 Codex Mini", context_window=400_000),
-    Model(id="gpt-5-codex", display_name="GPT-5 Codex", context_window=400_000),
-    Model(id="gpt-5-codex-mini", display_name="GPT-5 Codex Mini", context_window=400_000),
-    Model(id="gpt-5.2", display_name="GPT-5.2", context_window=400_000),
-    Model(id="gpt-5", display_name="GPT-5", context_window=400_000),
-)
-
-# antigravity and opencode have no shipped static set — both rely on live discovery
-# (Google AI Studio / OpenRouter) which is reliable while the credential is
-# valid. Empty fallback is correct: an unreachable upstream yields an empty
-# dropdown, which is preferable to advertising stale ids.
-
-_STATIC: dict[str, tuple[Model, ...]] = {
-    "claude": _STATIC_CLAUDE,
-    "codex": _STATIC_CODEX,
-    "antigravity": (),
-    "opencode": (),
-    "openrouter": (),
-    "openai_compat": (),
-    "kimi": (),
-    # DeepSeek's /models is live, but ship the two stable ids as a fallback so
-    # the dropdown isn't empty when the endpoint is unreachable.
-    "deepseek": (
-        Model(id="deepseek-chat", display_name="DeepSeek Chat"),
-        Model(id="deepseek-reasoner", display_name="DeepSeek Reasoner"),
-    ),
-    # goose/aider/crush surface their account's configured model from the
-    # credential (see each backend's list_models); the static set stays empty.
-    "goose": (),
-    "aider": (),
-    "crush": (),
-}
-
-
-def static_fallback(provider: str) -> list[Model]:
-    """Return a fresh list copy of the shipped static set for ``provider``."""
-    return list(_STATIC.get(provider, ()))
-
-
 def fallback(provider: str) -> list[Model]:
-    """Resolve the offline fallback for ``provider``: cached-live → static.
+    """Resolve the offline model list for ``provider``: the last cliproxy
+    snapshot, else empty.
 
-    Centralizes the "no live source available" branch. Backends call this
-    after their direct-API and cliproxy paths return empty.
+    Centralizes the "no live source available" branch. Backends call this after
+    their direct-API and cliproxy paths return empty. Returning ``[]`` is a
+    valid, expected outcome — see the module docstring.
     """
-    cached = cached_live(provider)
-    if cached:
-        return cached
-    return static_fallback(provider)
+    return cached_live(provider) or []

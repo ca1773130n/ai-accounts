@@ -72,10 +72,10 @@ async def test_validate_returns_true_when_macos_keychain_has_entry(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_list_models_returns_known_set(tmp_path):
-    """Static fallback when cliproxy isn't reachable. Force the live path
-    to 'unavailable' so the test machine's real cliproxyapi (if any)
-    doesn't shadow the static set.
+async def test_list_models_empty_when_no_live_source(tmp_path):
+    """No credential and no reachable cliproxy → empty list, not a curated
+    static set. Force the live path to 'unavailable' so the test machine's
+    real cliproxyapi (if any) doesn't shadow the result.
 
     v0.7.11 added keychain/.credentials.json fallbacks for the empty-
     credential case, so we also stub those helpers — otherwise this test
@@ -101,6 +101,4 @@ async def test_list_models_returns_known_set(tmp_path):
         ),
     ):
         models = await backend.list_models(b"", isolation_dir=tmp_path)
-    ids = {m.id for m in models}
-    assert "claude-sonnet-4-6" in ids
-    assert all(m.context_window for m in models)
+    assert models == []

@@ -101,9 +101,10 @@ async def test_validate_missing_cli_returns_false(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_list_models_returns_static_set_no_subprocess(tmp_path: Path):
-    """Claude CLI has no `models list` subcommand. With cliproxy unavailable
-    we return a static set, so list_models must not invoke any subprocess."""
+async def test_list_models_no_subprocess_when_offline(tmp_path: Path):
+    """Claude CLI has no `models list` subcommand, so list_models must never
+    invoke a subprocess. With every live source unavailable it returns an empty
+    list rather than a curated set (see _models_fallback's module docstring)."""
     from unittest.mock import AsyncMock as _AsyncMock
 
     backend = ClaudeBackend()
@@ -111,9 +112,9 @@ async def test_list_models_returns_static_set_no_subprocess(tmp_path: Path):
     async def explode(spec):
         raise AssertionError(f"_run must not be called by list_models, got {spec}")
 
-    # Force the cliproxy live-discovery path to "unavailable" so the static
-    # fallback runs deterministically — the test machine may have a real
-    # cliproxyapi running on :8317 which would otherwise win.
+    # Force the cliproxy live-discovery path to "unavailable" — the test
+    # machine may have a real cliproxyapi running on :8317 which would
+    # otherwise win.
     with (
         patch.object(backend, "_run", side_effect=explode),
         patch(
@@ -126,9 +127,7 @@ async def test_list_models_returns_static_set_no_subprocess(tmp_path: Path):
         ),
     ):
         models = await backend.list_models(b"sk-ant-test", isolation_dir=tmp_path / "claude")
-    ids = {m.id for m in models}
-    assert "claude-sonnet-4-6" in ids
-    assert all(m.context_window for m in models)
+    assert models == []
 
 
 # chat() and pty() are now implemented — see test_claude_chat.py and test_pty_spawn.py

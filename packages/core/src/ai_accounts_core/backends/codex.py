@@ -471,7 +471,8 @@ class CodexBackend(CliBackendBase):
         """Read the codex CLI's own ``models_cache.json``. The codex binary
         refreshes this against OpenAI's account-aware backend on use, so it
         captures the user's actual subscription tier — including newer
-        models like ``gpt-5.5`` that aren't in our static fallback.
+        models we'd never know about offline — which is why there is no
+        curated static list (see ``_models_fallback``).
 
         Schema (codex 0.130+): ``{"fetched_at", "etag", "client_version",
         "models": [{"slug", "display_name", "visibility", ...}, ...]}``.

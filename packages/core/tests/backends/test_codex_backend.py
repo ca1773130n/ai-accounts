@@ -76,17 +76,15 @@ async def test_validate_returns_false_when_not_logged_in(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_list_models_returns_static_set(tmp_path: Path):
-    """When every live source is unavailable, list_models() returns the
-    static curated fallback.
+async def test_list_models_empty_when_no_live_source(tmp_path: Path):
+    """When every live source is unavailable, list_models() returns [].
 
-    list_models() walks four sources before the static set:
+    list_models() walks three sources:
       1. ~/.codex/models_cache.json or <isolation>/models_cache.json
       2. Direct OpenAI /v1/models with the credential
-      3. CLIProxyAPI live list
-      4. Static fallback (asserted here)
-    All three must be mocked off so the test isn't shadowed by a real
-    cache or network on the dev machine.
+      3. CLIProxyAPI live list (and its cached snapshot)
+    All must be mocked off so the test isn't shadowed by a real cache or
+    network on the dev machine. There is no curated fourth layer.
     """
     from unittest.mock import AsyncMock as _AsyncMock
 
@@ -111,7 +109,4 @@ async def test_list_models_returns_static_set(tmp_path: Path):
         ),
     ):
         models = await backend.list_models(b"", isolation_dir=tmp_path / "codex")
-    ids = {m.id for m in models}
-    # gpt-5-codex is the canonical codex CLI default and must always be present.
-    assert "gpt-5-codex" in ids
-    assert all(m.context_window for m in models)
+    assert models == []

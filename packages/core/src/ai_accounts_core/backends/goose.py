@@ -14,7 +14,7 @@ each account's ``secrets.yaml`` under its isolated root.
 
 There is no stable HTTP chat endpoint and no ``models list`` command, so
 ``chat()`` drives ``goose run --output-format stream-json`` as a subprocess
-and parses stdout, and ``list_models()`` uses the static fallback. ``pty()``
+and parses stdout, and ``list_models()`` reports the configured model. ``pty()``
 (``goose session``) is the primary, lowest-risk surface.
 """
 
@@ -277,7 +277,7 @@ class GooseBackend(CliBackendBase):
         # Goose exposes no machine-readable models-list command and no stable
         # HTTP surface — models are provider-defined. Surface the model the
         # account was configured with so the chat UI/all-mode has a selectable
-        # entry; fall back to the static set otherwise.
+        # entry; fall back to the cached cliproxy snapshot otherwise.
         from ai_accounts_core.backends._models_fallback import fallback
 
         _provider, _api_key, model = _decode_goose_credential(credential)
