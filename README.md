@@ -12,7 +12,7 @@ corporate proxy — with your own base URL and model list).
 Python ([Litestar](https://litestar.dev)) sidecar API + TypeScript / Vue 3
 client packages. Apache-2.0.
 
-**Latest release: `0.4.8`** ([CHANGELOG](./CHANGELOG.md))
+**Latest release: `0.5.0`** ([CHANGELOG](./CHANGELOG.md))
 
 ---
 
@@ -42,8 +42,12 @@ chat/PTY traffic through a unified API gets fiddly fast.
   as `POST /api/v1/council` (SSE), the `aia-council` CLI, and a Claude Code
   plugin — say "council it" in a session ([claude-plugin/](./claude-plugin/README.md)).
 - **PTY sessions** over WebSocket for interactive CLI work.
-- **Live model discovery** from CLIProxyAPI when registered, with static
-  fallbacks per backend so the dropdown is never empty.
+- **Live model discovery**: the provider's own API first, then CLIProxyAPI's
+  live list when the account is registered there, then the last successful
+  snapshot (cached to `~/.ai-accounts/models_cache.json`). There is
+  deliberately no curated fallback list — providers retire and ship models
+  faster than we ship releases, so an unreachable upstream yields an empty
+  dropdown rather than ids that 404 on selection.
 - **Opt-in keep-alive**: `keep_alive_interval_seconds` pings each account with
   a 1-token probe (cheapest model per kind) so idle OAuth tokens stay fresh —
   and recovers ERROR accounts whose refresh token still works.
