@@ -47,6 +47,41 @@ def _maybe_decompress(body: bytes, encoding: str) -> bytes:
     return body
 
 
+def _accumulate_tool_calls(pending: dict[int, dict[str, str]], fragments: object) -> None:
+    """Merge one delta's `tool_calls` fragments into `pending`, keyed by the
+    upstream `index`. OpenAI sends `id` and `function.name` on the first
+    fragment of a call and streams `function.arguments` across the rest, so a
+    single fragment is never a whole call."""
+    if not isinstance(fragments, list):
+        return
+    for frag in fragments:
+        if not isinstance(frag, dict):
+            continue
+        index = frag.get("index", 0)
+        if not isinstance(index, int):
+            continue
+        call = pending.setdefault(index, {"id": "", "name": "", "arguments": ""})
+        if call_id := frag.get("id"):
+            call["id"] = str(call_id)
+        function = frag.get("function")
+        if not isinstance(function, dict):
+            continue
+        if name := function.get("name"):
+            call["name"] = str(name)
+        if args := function.get("arguments"):
+            call["arguments"] += str(args)
+
+
+def _drain_tool_calls(pending: dict[int, dict[str, str]]) -> list[ChatStreamEvent]:
+    """Turn the accumulated fragments into one event per completed call, in
+    upstream index order, and clear `pending`."""
+    events = [
+        ChatStreamEvent(kind="tool_call", payload=dict(call)) for _, call in sorted(pending.items())
+    ]
+    pending.clear()
+    return events
+
+
 async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEvent]:
     """Route chat through CLIProxyAPI's OpenAI-compatible endpoint.
 
@@ -71,6 +106,20 @@ async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEv
 
     base_url, api_key = proxy
     messages = [{"role": m.role.value, "content": m.content} for m in request.messages]
+    body_json: dict[str, object] = {
+        "model": request.model,
+        "messages": messages,
+        "stream": True,
+    }
+    # Function calling rides on `params`, the same extension channel
+    # `max_tokens` uses in the API-key adapters. Send the OpenAI shape
+    # verbatim; omit the keys entirely when there are no tools, since some
+    # servers read `tools: []` as "tools forbidden" rather than "unspecified".
+    if tools := request.params.get("tools"):
+        body_json["tools"] = tools
+        # `tool_choice` is only meaningful alongside `tools`.
+        if "tool_choice" in request.params:
+            body_json["tool_choice"] = request.params["tool_choice"]
 
     try:
         async with (
@@ -78,7 +127,7 @@ async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEv
             client.stream(
                 "POST",
                 f"{base_url}/chat/completions",
-                json={"model": request.model, "messages": messages, "stream": True},
+                json=body_json,
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
@@ -122,6 +171,8 @@ async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEv
                 )
                 yield ChatStreamEvent(kind="error", payload=msg)
                 return
+            # Tool-call fragments accumulate here until the call is complete.
+            pending_tool_calls: dict[int, dict[str, str]] = {}
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -136,7 +187,14 @@ async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEv
                 delta = choice.get("delta", {})
                 if text := delta.get("content"):
                     yield ChatStreamEvent(kind="token", payload=text)
+                if fragments := delta.get("tool_calls"):
+                    _accumulate_tool_calls(pending_tool_calls, fragments)
                 if choice.get("finish_reason"):
+                    # Flush before `done` — the upstream sends every fragment
+                    # ahead of finish_reason="tool_calls", and consumers may
+                    # stop reading once they see the done event.
+                    for event in _drain_tool_calls(pending_tool_calls):
+                        yield event
                     usage = data.get("usage", {})
                     yield ChatStreamEvent(
                         kind="done",
@@ -147,6 +205,10 @@ async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEv
                             "model": request.model,
                         },
                     )
+            # Proxies that end the stream without a finish_reason would
+            # otherwise swallow the call entirely.
+            for event in _drain_tool_calls(pending_tool_calls):
+                yield event
     except httpx.ConnectError:
         logger.warning("Could not connect to CLIProxyAPI at %s", base_url)
         yield ChatStreamEvent(

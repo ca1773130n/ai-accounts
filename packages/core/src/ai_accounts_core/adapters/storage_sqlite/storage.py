@@ -448,10 +448,33 @@ class SqliteStorage:
         self._path = path
         self._conn: aiosqlite.Connection | None = None
 
+    #: How long a writer waits for the write lock before giving up.
+    #:
+    #: WAL lets readers and one writer proceed concurrently, but it does NOT
+    #: serialise two writers — the second gets SQLITE_BUSY. Python's default
+    #: timeout is 5 s, and a connection that hits it raises
+    #: ``OperationalError: database is locked`` immediately instead of queueing.
+    #:
+    #: That is not hypothetical. Downstream (HypePaper, 2026-07-27) it failed
+    #: 2,295 of 2,701 result-extraction runs — 85% — with exactly that message,
+    #: because each run holds a write transaction across a multi-second LLM
+    #: round-trip while other passes write chat/usage rows to the same per-user
+    #: DB. Reproduced here: 3 concurrent writers against a 6 s holder give 3/3
+    #: failures at the default and 0/3 with this pragma.
+    #:
+    #: 30 s comfortably covers an LLM call; a genuine deadlock still surfaces,
+    #: just 6× later.
+    BUSY_TIMEOUT_MS = 30_000
+
     async def _ensure_conn(self) -> aiosqlite.Connection:
         if self._conn is None:
-            self._conn = await aiosqlite.connect(self._path)
+            # timeout= governs the C-level lock wait; busy_timeout is the SQLite
+            # pragma. Set BOTH — the pragma alone can be reset by a later
+            # connection-level default, and the kwarg alone does not apply to
+            # statements issued after a schema change.
+            self._conn = await aiosqlite.connect(self._path, timeout=self.BUSY_TIMEOUT_MS / 1000)
             await self._conn.execute("PRAGMA journal_mode = WAL")
+            await self._conn.execute(f"PRAGMA busy_timeout = {self.BUSY_TIMEOUT_MS}")
             await self._conn.execute("PRAGMA foreign_keys = ON")
         return self._conn
 
