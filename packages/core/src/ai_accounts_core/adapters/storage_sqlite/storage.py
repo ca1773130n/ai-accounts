@@ -472,9 +472,7 @@ class SqliteStorage:
             # pragma. Set BOTH — the pragma alone can be reset by a later
             # connection-level default, and the kwarg alone does not apply to
             # statements issued after a schema change.
-            self._conn = await aiosqlite.connect(
-                self._path, timeout=self.BUSY_TIMEOUT_MS / 1000
-            )
+            self._conn = await aiosqlite.connect(self._path, timeout=self.BUSY_TIMEOUT_MS / 1000)
             await self._conn.execute("PRAGMA journal_mode = WAL")
             await self._conn.execute(f"PRAGMA busy_timeout = {self.BUSY_TIMEOUT_MS}")
             await self._conn.execute("PRAGMA foreign_keys = ON")

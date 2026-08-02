@@ -6,12 +6,12 @@ writers. Python's 5 s default meant a second writer raised
 2,295 of 2,701 downstream result-extraction runs (85%) on 2026-07-27, because
 each run holds a write transaction across a multi-second LLM round-trip.
 """
+
 import asyncio
 import pathlib
 
 import aiosqlite
 import pytest
-
 from ai_accounts_core.adapters.storage_sqlite import SqliteStorage
 
 
