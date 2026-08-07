@@ -427,13 +427,27 @@ class _SqliteUsageRepo:
         await self._conn.commit()
 
     async def set_chain(self, entries: list[FallbackChainEntry]) -> None:
-        await self._conn.execute("DELETE FROM fallback_chains")
-        for entry in entries:
-            await self._conn.execute(
-                "INSERT INTO fallback_chains (backend_id, priority) VALUES (?, ?)",
-                (entry.backend_id, entry.priority),
-            )
-        await self._conn.commit()
+        # The ONLY write here that spans more than one statement, and therefore
+        # the only one that needs a transaction of its own now that the
+        # connection is in autocommit (see _ensure_conn). Without this the
+        # DELETE would commit on its own and a failure mid-loop would leave the
+        # chain empty — a backend list that silently routes nowhere.
+        #
+        # IMMEDIATE takes the write lock up front instead of on first write, so
+        # two concurrent set_chain callers queue on `busy_timeout` rather than
+        # one of them failing partway with SQLITE_BUSY after already deleting.
+        await self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            await self._conn.execute("DELETE FROM fallback_chains")
+            for entry in entries:
+                await self._conn.execute(
+                    "INSERT INTO fallback_chains (backend_id, priority) VALUES (?, ?)",
+                    (entry.backend_id, entry.priority),
+                )
+        except BaseException:
+            await self._conn.execute("ROLLBACK")
+            raise
+        await self._conn.execute("COMMIT")
 
     async def get_chain(self) -> list[FallbackChainEntry]:
         async with self._conn.execute(
@@ -472,7 +486,30 @@ class SqliteStorage:
             # pragma. Set BOTH — the pragma alone can be reset by a later
             # connection-level default, and the kwarg alone does not apply to
             # statements issued after a schema change.
-            self._conn = await aiosqlite.connect(self._path, timeout=self.BUSY_TIMEOUT_MS / 1000)
+            # isolation_level=None => AUTOCOMMIT, and this is the actual fix for
+            # "database is locked" rather than a longer wait.
+            #
+            # python-sqlite3 defaults to opening an implicit transaction on the
+            # first write and holding it until commit(). Every repo method here
+            # is `execute(...)` then `commit()`, so under normal use that window
+            # is microseconds — but the caller runs these DURING a provider
+            # round-trip, and any await between the two pins the single WAL
+            # writer for the whole call. That is what BUSY_TIMEOUT_MS was raised
+            # to paper over, and why its docstring says "30 s comfortably covers
+            # an LLM call": it does not. Measured 2026-08-08 against HypePaper's
+            # deep-analysis worker, whose calls run 80 s+ — concurrent workers
+            # got `OperationalError: database is locked` and the calls FAILED
+            # BEFORE reaching the provider, so raising concurrency reduced
+            # throughput (48 slots produced literally zero completions).
+            #
+            # In autocommit each write lands and releases immediately, so no
+            # await can sit inside a write transaction. The one genuinely
+            # multi-statement write (`set_chain`) opens an explicit transaction.
+            self._conn = await aiosqlite.connect(
+                self._path,
+                timeout=self.BUSY_TIMEOUT_MS / 1000,
+                isolation_level=None,
+            )
             await self._conn.execute("PRAGMA journal_mode = WAL")
             await self._conn.execute(f"PRAGMA busy_timeout = {self.BUSY_TIMEOUT_MS}")
             await self._conn.execute("PRAGMA foreign_keys = ON")
