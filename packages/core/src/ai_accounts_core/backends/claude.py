@@ -905,31 +905,50 @@ class ClaudeBackend(CliBackendBase):
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
         """Percent-of-quota per rolling window, as Anthropic reports it.
 
-        UNVERIFIED SHAPE — do not trust the ``windows``/``utilization`` keys
-        below. They are not confirmed against any real response, and the
-        matching test mocks these same invented keys, so the test passes while
-        live calls may well parse to ``[]``. The sibling codex parser had
-        exactly this bug: it read a ``rate_limits`` list the API never sends.
+        The old parser read a top-level ``windows`` list. There is no such key
+        — it had the same defect as the codex one and returned ``[]`` on every
+        call, so Anthropic quota has never actually been reported.
 
-        Attempted verification on 2026-07-27 failed with HTTP 401 — the only
-        OAuth token on the machine expired 2026-07-13 and refreshing it would
-        have rotated the user's stored refresh token. Retried 2026-08-09:
-        there is no Anthropic credential on the machine at all (both connected
-        backends are codex), so there is still nothing to call. Left unchanged
-        rather than guessed at — confirm against a real 200 before relying on
-        this.
+        Shape verified against a real HTTP 200 from
+        ``api.anthropic.com/api/oauth/usage`` on 2026-08-09. Each rolling
+        window is its OWN TOP-LEVEL KEY holding an object, or ``null`` when it
+        does not apply to the plan::
 
-        What DID change on 2026-08-09 is that it can no longer fail quietly.
-        A 200 that parses to zero windows is the exact signature of a wrong
-        shape, and it used to be indistinguishable from "this account has no
-        usage to report" — which is why the codex version went unnoticed for
-        months. It now logs a warning naming the keys the endpoint actually
-        returned, so whoever first runs this against a live account can fix
-        the shape from one log line instead of rediscovering the bug.
+            {"five_hour":  {"utilization": 2.0,  "resets_at": "...",
+                            "limit_dollars": null, "used_dollars": null,
+                            "remaining_dollars": null},
+             "seven_day":  {"utilization": 64.0, "resets_at": "...", ...},
+             "seven_day_opus": null, "seven_day_sonnet": null,
+             "nimbus_quill": {"utilization": 0.0, "resets_at": null, ...},
+             "extra_usage": {...}, "limits": [...], "spend": {...}}
+
+        So the windows are discovered, not enumerated: any top-level object
+        carrying a numeric ``utilization`` is one. That matters because the
+        names are plainly internal codenames — ``tangelo``, ``nimbus_quill``,
+        ``cinder_cove``, ``amber_ladder``, ``iguana_necktie`` were all present
+        on the verified response — and a hardcoded list would silently drop
+        whichever ones get renamed next.
+
+        ``limits`` is deliberately not read: it repeats the same percentages
+        (its ``percent: 2`` matched ``five_hour``'s ``utilization: 2.0``) and
+        counting both would double-report.
+
+        No token figures: ``limit_dollars``/``used_dollars`` were null on every
+        window, so ``tokens_used``/``tokens_limit`` stay None. A percentage is
+        the only real number this endpoint gives.
         """
         api_key = credential.decode("utf-8").strip()
-        if api_key.startswith("sk-ant-"):
-            return []  # API keys can't access usage endpoint
+        # `sk-ant-api…` is a console API key and genuinely cannot reach the
+        # OAuth usage endpoint. `sk-ant-oat…` is an OAuth ACCESS TOKEN and
+        # can — verified with a live 200 on 2026-08-09.
+        #
+        # The guard used to match the bare `sk-ant-` prefix, which both share,
+        # so every OAuth credential was rejected before a request was made.
+        # Combined with the wrong response shape below, that gave two
+        # independent reasons for this method to always return [] — and the
+        # second hid the first, because fixing either alone still yields [].
+        if api_key.startswith("sk-ant-api"):
+            return []  # console API key: no access to the OAuth usage endpoint
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
@@ -943,26 +962,43 @@ class ClaudeBackend(CliBackendBase):
                 if resp.status_code != 200:
                     return []
                 data = resp.json()
-                windows = []
-                for w in data.get("windows", []):
-                    resets_at = None
-                    if w.get("resets_at"):
-                        from datetime import datetime
-
-                        resets_at = datetime.fromisoformat(w["resets_at"])
-                    windows.append(
-                        UsageWindow(
-                            window_type=w.get("window_type", "unknown"),
-                            usage_percent=w.get("utilization", 0.0),
-                            resets_at=resets_at,
-                        )
-                    )
-                if not windows:
-                    warn_empty_usage_parse(logger, "claude", data)
-                return windows
-        except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
+        except (httpx.HTTPError, ValueError, OSError) as exc:
             logger.debug("get_usage failed: %r", exc)
             return []
+
+        if not isinstance(data, dict):
+            return []
+
+        windows: list[UsageWindow] = []
+        for name, value in data.items():
+            if not isinstance(value, dict):
+                continue
+            percent = value.get("utilization")
+            # bool is an int in Python, and "not reported" is not "zero" —
+            # a window whose utilization is null must be skipped, not read
+            # as 0%, or an unused plan tier shows as genuinely at 0.
+            if not isinstance(percent, (int, float)) or isinstance(percent, bool):
+                continue
+            resets_at = None
+            raw = value.get("resets_at")
+            if isinstance(raw, str) and raw:
+                from datetime import datetime
+
+                try:
+                    resets_at = datetime.fromisoformat(raw)
+                except ValueError:
+                    resets_at = None
+            windows.append(
+                UsageWindow(
+                    window_type=name,
+                    usage_percent=float(percent),
+                    resets_at=resets_at,
+                )
+            )
+
+        if not windows:
+            warn_empty_usage_parse(logger, "claude", data)
+        return windows
 
     async def chat(
         self,
