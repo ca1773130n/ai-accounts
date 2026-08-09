@@ -54,6 +54,22 @@ class ChatService:
         history = await self._storage.history()
         await history.append_message(message)
 
+    async def delete_session(self, session_id: str) -> bool:
+        """Discard a session and its messages. True if one existed.
+
+        For callers using this service as a one-shot completion api rather than
+        a conversation: create, send, read the answer, delete. Without it every
+        such call leaves a session and its messages behind for ever, since
+        nothing else in this package can remove them.
+
+        Deliberately no `get_session` check first — that would cost a full
+        `list_sessions` scan to decide whether to issue a DELETE that is
+        already idempotent, and would turn a cleanup in a `finally` block into
+        something that can raise while another exception is in flight.
+        """
+        history = await self._storage.history()
+        return await history.delete_session(session_id)
+
     async def send_message(
         self,
         *,

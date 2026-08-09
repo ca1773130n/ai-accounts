@@ -126,6 +126,43 @@ async def _test_history(storage: StorageProtocol) -> None:
     assert await history.list_messages("sess-1") == [msg]
     assert await history.list_sessions("bkd-3") == [session]
 
+    # delete_session, and specifically that the MESSAGES go with it.
+    #
+    # In the SQLite adapter that comes from ON DELETE CASCADE plus
+    # foreign_keys=ON, not from a second DELETE. Asserting it here rather than
+    # in the adapter's own test is deliberate: an in-memory fake that forgot to
+    # drop the messages would otherwise let a caller's test pass against
+    # behaviour the real store does not have, and the leak this method exists
+    # to fix is precisely orphaned message rows.
+    second = ChatSession(
+        id="sess-2",
+        backend_id="bkd-3",
+        title="Second chat",
+        created_at=datetime.now(UTC),
+    )
+    await history.create_session(second)
+    await history.append_message(
+        ChatMessage(
+            id="msg-2",
+            session_id="sess-2",
+            role=ChatRole.USER,
+            content="ephemeral",
+            created_at=datetime.now(UTC),
+        )
+    )
+
+    assert await history.delete_session("sess-2") is True
+    assert await history.list_messages("sess-2") == []
+    assert await history.list_sessions("bkd-3") == [session]
+
+    # Idempotent, and safe on an id that never existed — callers delete from a
+    # `finally`, where raising would mask the original exception.
+    assert await history.delete_session("sess-2") is False
+    assert await history.delete_session("never-existed") is False
+
+    # The unrelated session and its messages are untouched.
+    assert await history.list_messages("sess-1") == [msg]
+
 
 async def _test_sessions(storage: StorageProtocol) -> None:
     repo = await storage.sessions()

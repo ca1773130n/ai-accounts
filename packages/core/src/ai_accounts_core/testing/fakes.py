@@ -111,6 +111,14 @@ class _FakeHistoryRepo:
             sessions = [s for s in sessions if s.backend_id == backend_id]
         return sessions
 
+    async def delete_session(self, session_id: str) -> bool:
+        # Drops the messages too — the SQLite adapter gets that from
+        # ON DELETE CASCADE, and a fake that kept them would let a test pass
+        # against behaviour the real store does not have.
+        existed = self._sessions.pop(session_id, None) is not None
+        self._messages.pop(session_id, None)
+        return existed
+
 
 class _FakeOnboardingRepo:
     def __init__(self) -> None:

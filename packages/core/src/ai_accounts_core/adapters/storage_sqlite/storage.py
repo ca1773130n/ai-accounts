@@ -231,6 +231,30 @@ class _SqliteHistoryRepo:
         )
         await self._conn.commit()
 
+    async def delete_session(self, session_id: str) -> bool:
+        """Remove a session and, by cascade, its messages. True if one existed.
+
+        Until this existed the chat tables were append-only by omission — the
+        repo could create sessions and append messages and had no way to remove
+        either, while backends, credentials and live_sessions all had a delete.
+        Every caller that used the chat api for a ONE-SHOT completion therefore
+        leaked a session plus its messages permanently. One deployment measured
+        3.9 GB, 99,813 sessions and 199,327 messages in nine days, none of it
+        ever read back.
+
+        One statement, no explicit transaction: `chat_messages.session_id` is
+        declared `ON DELETE CASCADE` (schema.sql:40) and `PRAGMA foreign_keys`
+        is ON for every connection (see `_connect`), so the messages go with the
+        parent atomically. Deleting them separately first would be both
+        redundant and — across two autocommit statements — interruptible,
+        leaving a session with no messages or messages with no session.
+        """
+        cur = await self._conn.execute(
+            "DELETE FROM chat_sessions WHERE id = ?", (session_id,)
+        )
+        await self._conn.commit()
+        return bool(cur.rowcount)
+
     async def append_message(self, message: ChatMessage) -> None:
         await self._conn.execute(
             "INSERT INTO chat_messages "
