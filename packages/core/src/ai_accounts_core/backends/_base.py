@@ -16,12 +16,48 @@ forcing a uniform shape onto those would hide real per-CLI quirks
 
 from __future__ import annotations
 
+import logging
 import shutil
 from asyncio import create_subprocess_exec as _spawn_subprocess
 from asyncio import subprocess as _async_subprocess
 from typing import Any, ClassVar
 
 from ai_accounts_core.domain.backend import DetectResult
+
+
+def warn_empty_usage_parse(logger: logging.Logger, backend: str, data: object) -> None:
+    """Log that a 200 response yielded no usage windows, and what it held.
+
+    A ``get_usage`` that returns ``[]`` is ambiguous: it means "this account
+    has nothing to report" AND "the endpoint changed shape and every key we
+    read is missing". Twelve backends define ``get_usage`` and all of them
+    collapse both cases to the same empty list.
+
+    That ambiguity is not theoretical. The codex parser read a top-level
+    ``rate_limits`` list that ``chatgpt.com/backend-api/wham/usage`` has never
+    returned, so every single call parsed to ``[]`` — for months, silently,
+    because an empty list is exactly what a quiet account looks like. Its
+    matching test mocked the invented keys, so the suite stayed green
+    throughout. The claude parser is suspected of the same defect and cannot
+    be checked without an Anthropic credential.
+
+    Logging the keys the endpoint ACTUALLY returned turns the next occurrence
+    into a one-line fix instead of a rediscovery. Only the top-level key names
+    are emitted — never values, which carry quota figures and, depending on
+    the provider, account identifiers.
+    """
+    if isinstance(data, dict):
+        shape = ", ".join(sorted(map(str, data.keys()))) or "(no keys)"
+    else:
+        shape = f"(not an object: {type(data).__name__})"
+    logger.warning(
+        "%s get_usage: HTTP 200 but no usage windows parsed. The response "
+        "carried these top-level keys: %s. If they are not the ones this "
+        "parser reads, the endpoint's shape has changed and usage has been "
+        "silently reported as empty.",
+        backend,
+        shape,
+    )
 
 
 class CliBackendBase:

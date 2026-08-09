@@ -9,12 +9,13 @@ import re
 import shutil
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC
 from pathlib import Path
 from typing import ClassVar
 
 import httpx
 
-from ai_accounts_core.backends._base import CliBackendBase
+from ai_accounts_core.backends._base import CliBackendBase, warn_empty_usage_parse
 from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
 from ai_accounts_core.backends._iso import resolved_iso
 from ai_accounts_core.domain.usage import UsageWindow
@@ -568,7 +569,27 @@ class CodexBackend(CliBackendBase):
         return out or None
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
+        """Percent-of-quota per rolling window, as ChatGPT reports it.
+
+        The response carries no token counts, so ``tokens_used``/``tokens_limit``
+        stay ``None`` — a percentage is the only thing this endpoint knows.
+
+        Shape verified against a real HTTP 200 from
+        ``https://chatgpt.com/backend-api/wham/usage`` on 2026-07-27::
+
+            {"rate_limit": {"primary_window": {"used_percent": 31,
+                                               "limit_window_seconds": 604800,
+                                               "reset_at": 1785611965},
+                            "secondary_window": null},
+             "additional_rate_limits": [{"limit_name": "GPT-5.3-Codex-Spark",
+                                         "rate_limit": {"primary_window": {...}}}]}
+
+        The previous implementation read a top-level ``rate_limits`` list, which
+        this endpoint has never returned; every call parsed to ``[]``.
+        """
         api_key = credential.decode("utf-8").strip()
+        if not api_key:
+            return []
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
@@ -579,27 +600,60 @@ class CodexBackend(CliBackendBase):
                 if resp.status_code != 200:
                     return []
                 data = resp.json()
-                windows = []
-                for rl in data.get("rate_limits", []):
-                    for key in ("primary_window", "secondary_window"):
-                        w = rl.get(key)
-                        if w:
-                            resets_at = None
-                            if w.get("reset_at"):
-                                from datetime import UTC, datetime
-
-                                resets_at = datetime.fromtimestamp(w["reset_at"], tz=UTC)
-                            windows.append(
-                                UsageWindow(
-                                    window_type=key,
-                                    usage_percent=w.get("used_percent", 0.0),
-                                    resets_at=resets_at,
-                                )
-                            )
-                return windows
-        except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
+        except (httpx.HTTPError, ValueError, OSError) as exc:
             logging.getLogger(__name__).debug("codex get_usage failed: %r", exc)
             return []
+        if not isinstance(data, dict):
+            return []
+
+        # (label_prefix, rate_limit_object) for the plan-wide limit plus each
+        # per-feature one. A named feature keeps its name so two windows of the
+        # same type stay tellable apart.
+        groups: list[tuple[str, object]] = [("", data.get("rate_limit"))]
+        extra = data.get("additional_rate_limits")
+        if isinstance(extra, list):
+            for entry in extra:
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get("limit_name") or entry.get("metered_feature") or "additional"
+                groups.append((f"{name}:", entry.get("rate_limit")))
+
+        windows: list[UsageWindow] = []
+        for prefix, rate_limit in groups:
+            if not isinstance(rate_limit, dict):
+                continue
+            for key in ("primary_window", "secondary_window"):
+                w = rate_limit.get(key)
+                if not isinstance(w, dict):
+                    continue
+                percent = w.get("used_percent")
+                if not isinstance(percent, (int, float)) or isinstance(percent, bool):
+                    # No number means "not reported", which is not the same as 0.
+                    continue
+                resets_at = None
+                reset_at = w.get("reset_at")
+                if isinstance(reset_at, (int, float)) and not isinstance(reset_at, bool):
+                    from datetime import datetime
+
+                    try:
+                        resets_at = datetime.fromtimestamp(reset_at, tz=UTC)
+                    except (OverflowError, OSError, ValueError):
+                        resets_at = None
+                windows.append(
+                    UsageWindow(
+                        window_type=f"{prefix}{key}",
+                        usage_percent=float(percent),
+                        resets_at=resets_at,
+                    )
+                )
+        if not windows:
+            # This is the alarm the old parser did not have. It read a
+            # top-level `rate_limits` list this endpoint has never returned, so
+            # every call produced [] — indistinguishable from a quiet account,
+            # and invisible for months. If the shape drifts again, the keys are
+            # in the log.
+            warn_empty_usage_parse(logging.getLogger(__name__), "codex", data)
+        return windows
 
     async def chat(
         self,

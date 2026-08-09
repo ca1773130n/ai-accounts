@@ -17,7 +17,7 @@ from typing import ClassVar
 
 import httpx
 
-from ai_accounts_core.backends._base import CliBackendBase
+from ai_accounts_core.backends._base import CliBackendBase, warn_empty_usage_parse
 from ai_accounts_core.backends._iso import resolved_iso
 from ai_accounts_core.domain.chat import ChatRole
 from ai_accounts_core.domain.usage import UsageWindow
@@ -903,6 +903,30 @@ class ClaudeBackend(CliBackendBase):
         return out or None
 
     async def get_usage(self, credential: bytes, *, isolation_dir: Path) -> list[UsageWindow]:
+        """Percent-of-quota per rolling window, as Anthropic reports it.
+
+        UNVERIFIED SHAPE — do not trust the ``windows``/``utilization`` keys
+        below. They are not confirmed against any real response, and the
+        matching test mocks these same invented keys, so the test passes while
+        live calls may well parse to ``[]``. The sibling codex parser had
+        exactly this bug: it read a ``rate_limits`` list the API never sends.
+
+        Attempted verification on 2026-07-27 failed with HTTP 401 — the only
+        OAuth token on the machine expired 2026-07-13 and refreshing it would
+        have rotated the user's stored refresh token. Retried 2026-08-09:
+        there is no Anthropic credential on the machine at all (both connected
+        backends are codex), so there is still nothing to call. Left unchanged
+        rather than guessed at — confirm against a real 200 before relying on
+        this.
+
+        What DID change on 2026-08-09 is that it can no longer fail quietly.
+        A 200 that parses to zero windows is the exact signature of a wrong
+        shape, and it used to be indistinguishable from "this account has no
+        usage to report" — which is why the codex version went unnoticed for
+        months. It now logs a warning naming the keys the endpoint actually
+        returned, so whoever first runs this against a live account can fix
+        the shape from one log line instead of rediscovering the bug.
+        """
         api_key = credential.decode("utf-8").strip()
         if api_key.startswith("sk-ant-"):
             return []  # API keys can't access usage endpoint
@@ -933,6 +957,8 @@ class ClaudeBackend(CliBackendBase):
                             resets_at=resets_at,
                         )
                     )
+                if not windows:
+                    warn_empty_usage_parse(logger, "claude", data)
                 return windows
         except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
             logger.debug("get_usage failed: %r", exc)
