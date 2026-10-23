@@ -2,6 +2,24 @@
 
 All notable changes to ai-accounts packages in this monorepo.
 
+## 0.6.3 — 2026-10-23
+
+A tool round can reach the model as a tool round instead of flattened text.
+
+### Added
+
+- **Structured tool messages** (`ai-accounts-core`, `domain/chat.py`, `backends/_cliproxy_chat.py`). `ChatMessage` has three new optional fields: `tool_call_id` and `name` on a `TOOL` message, and `tool_calls` (a tuple of the new `ToolCall(id, name, arguments)`) on an `ASSISTANT` message. `_chat_via_cliproxy` sends them in the OpenAI chat-completions shape, built by the new `openai_message()` / `openai_messages()`. Until now the CLIProxyAPI transport sent role and content only, so a caller had to flatten a tool round into text. Measured with codex `gpt-6-luna` through CLIProxyAPI 7.0.0: the structured exchange answered from the tool result, with the assistant's `content` sent as `null` and as `""`.
+- **Capability flag**: `_chat_via_cliproxy.structured_tool_messages = True`. Read it with `getattr(fn, "structured_tool_messages", False)`, so 0.6.2, and any replacement transport that does not set it, read as false.
+- **`response_format`** in `ChatRequest.params` is forwarded to `/chat/completions` when the key is present.
+
+### Changed
+
+- The backends that hand chat to CLIProxyAPI (codex, claude, opencode, antigravity, kimi) wrap that stream in `contextlib.aclosing`. A consumer that stops at `done` now closes the inner stream and its `httpx.AsyncClient` in the same call, instead of leaving it to the event loop's async-generator finalizer. `_chat_via_cliproxy` is annotated `AsyncGenerator`, which it always was.
+
+### Compatibility
+
+- A message without the new fields builds the same request body as 0.6.2, byte for byte. The SQLite store and the HTTP routes still read and write role and content only, so the new fields are never persisted. Only the CLIProxyAPI transport reads them; the API-key paths still send role and content.
+
 ## 0.5.0 — 2026-07-25
 
 Model lists come from the provider, not from us.

@@ -6,13 +6,53 @@ import gzip
 import json
 import logging
 import zlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 
 import httpx
 
+from ai_accounts_core.domain.chat import ChatMessage
 from ai_accounts_core.protocols.backend import ChatRequest, ChatStreamEvent
 
 logger = logging.getLogger(__name__)
+
+
+def openai_message(m: ChatMessage) -> dict[str, object]:
+    """The OpenAI chat-completions form of ``m``.
+
+    A message with none of the 0.6.3 tool fields is exactly 0.6.2's
+    ``{"role", "content"}``. An assistant message that made calls carries them
+    as ``tool_calls`` (``content`` is ``None`` when it said nothing, which is
+    the OpenAI shape; codex via CLIProxyAPI 7.0.0 accepted both ``None`` and
+    ``""``). A tool result carries the ``tool_call_id`` it answers.
+    """
+    if m.tool_calls:
+        return {
+            "role": m.role.value,
+            "content": m.content or None,
+            "tool_calls": [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": call.arguments},
+                }
+                for call in m.tool_calls
+            ],
+        }
+    if m.tool_call_id is not None:
+        out: dict[str, object] = {
+            "role": m.role.value,
+            "tool_call_id": m.tool_call_id,
+            "content": m.content,
+        }
+        if m.name is not None:
+            out["name"] = m.name
+        return out
+    return {"role": m.role.value, "content": m.content}
+
+
+def openai_messages(request: ChatRequest) -> list[dict[str, object]]:
+    """``request.messages`` in the OpenAI chat-completions form, in order."""
+    return [openai_message(m) for m in request.messages]
 
 
 def _maybe_decompress(body: bytes, encoding: str) -> bytes:
@@ -82,7 +122,7 @@ def _drain_tool_calls(pending: dict[int, dict[str, str]]) -> list[ChatStreamEven
     return events
 
 
-async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEvent]:
+async def _chat_via_cliproxy(request: ChatRequest) -> AsyncGenerator[ChatStreamEvent, None]:
     """Route chat through CLIProxyAPI's OpenAI-compatible endpoint.
 
     Used when credential is empty (CLI-browser/OAuth login) — the CLI
@@ -105,12 +145,14 @@ async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEv
         return
 
     base_url, api_key = proxy
-    messages = [{"role": m.role.value, "content": m.content} for m in request.messages]
     body_json: dict[str, object] = {
         "model": request.model,
-        "messages": messages,
+        "messages": openai_messages(request),
         "stream": True,
     }
+    # Copied only when the caller set it: no request without it changes.
+    if "response_format" in request.params:
+        body_json["response_format"] = request.params["response_format"]
     # Function calling rides on `params`, the same extension channel
     # `max_tokens` uses in the API-key adapters. Send the OpenAI shape
     # verbatim; omit the keys entirely when there are no tools, since some
@@ -220,3 +262,10 @@ async def _chat_via_cliproxy(request: ChatRequest) -> AsyncIterator[ChatStreamEv
     except Exception as exc:
         logger.warning("CLIProxyAPI chat error: %s", exc, exc_info=True)
         yield ChatStreamEvent(kind="error", payload=f"CLIProxyAPI error: {exc}")
+
+
+# Capability: this transport sends ChatMessage.tool_call_id / tool_calls / name
+# as OpenAI tool messages (openai_message). Read it as
+# `getattr(fn, "structured_tool_messages", False)`, so 0.6.2 and any
+# replacement transport that does not declare it read as False.
+_chat_via_cliproxy.structured_tool_messages = True  # type: ignore[attr-defined]
