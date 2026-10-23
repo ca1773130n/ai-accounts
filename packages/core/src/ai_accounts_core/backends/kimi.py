@@ -264,8 +264,11 @@ class KimiBackend(CliBackendBase):
         *,
         isolation_dir: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
-        async for event in _chat_via_cliproxy(request):
-            yield event
+        # aclosing: a consumer that stops early (on `done`) closes the cliproxy
+        # stream and its httpx client here, in its own task, not at GC.
+        async with contextlib.aclosing(_chat_via_cliproxy(request)) as stream:
+            async for event in stream:
+                yield event
 
     async def pty(
         self,

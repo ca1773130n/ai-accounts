@@ -450,8 +450,11 @@ class AntigravityBackend(CliBackendBase):
     ) -> AsyncIterator[ChatStreamEvent]:
         api_key = credential.decode("utf-8").strip()
         if not api_key:
-            async for event in _chat_via_cliproxy(request):
-                yield event
+            # aclosing: a consumer that stops early (on `done`) closes the cliproxy
+            # stream and its httpx client here, in its own task, not at GC.
+            async with contextlib.aclosing(_chat_via_cliproxy(request)) as stream:
+                async for event in stream:
+                    yield event
             return
         contents = []
         for m in request.messages:

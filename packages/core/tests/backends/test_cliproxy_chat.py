@@ -5,7 +5,9 @@ The interesting contracts are (a) the non-200 path: we want the user to see
 the upstream cause ("unknown provider for model X", quota exhausted, …)
 instead of the bare "Proxy error 502" we used to emit; and (b) tool calls,
 which ride in on `params["tools"]` and come back as `tool_call` events
-accumulated from the fragments OpenAI streams.
+accumulated from the fragments OpenAI streams; (c) the 0.6.3 request side:
+structured tool messages and `response_format`, with a plain request's body
+byte-for-byte 0.6.2's.
 """
 
 from __future__ import annotations
@@ -16,8 +18,8 @@ from datetime import datetime
 from unittest.mock import patch
 
 import pytest
-from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy
-from ai_accounts_core.domain.chat import ChatMessage, ChatRole
+from ai_accounts_core.backends._cliproxy_chat import _chat_via_cliproxy, openai_message
+from ai_accounts_core.domain.chat import ChatMessage, ChatRole, ToolCall
 from ai_accounts_core.protocols.backend import ChatRequest
 
 
@@ -411,3 +413,166 @@ async def test_plain_token_stream_is_unchanged():
         "tokens_out": 2,
         "model": "x",
     }
+
+
+# --- structured tool messages + response_format (0.6.3) --------------------
+
+
+def _builder_0_6_2(req: ChatRequest) -> dict:
+    """The body 0.6.2 built, verbatim: role and content only."""
+    return {
+        "model": req.model,
+        "messages": [{"role": m.role.value, "content": m.content} for m in req.messages],
+        "stream": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_plain_messages_build_the_0_6_2_body_exactly():
+    req = ChatRequest(
+        messages=(_msg("system", "sys"), _msg("user", "q"), _msg("assistant", "a")),
+        model="x",
+    )
+    _, sent = await _collect_streaming(req, ["data: [DONE]"])
+    assert sent == _builder_0_6_2(req)
+
+
+@pytest.mark.asyncio
+async def test_tool_turns_go_out_as_openai_tool_messages():
+    assistant = ChatMessage(
+        id="a",
+        session_id="s",
+        role=ChatRole.ASSISTANT,
+        content="",
+        created_at=datetime.now(),
+        tool_calls=(
+            ToolCall(id="call_0", name="search_nodes", arguments='{"q": "x"}'),
+            ToolCall(id="call_1", name="timeline"),
+        ),
+    )
+    result = ChatMessage(
+        id="t",
+        session_id="s",
+        role=ChatRole.TOOL,
+        content='{"results": []}',
+        created_at=datetime.now(),
+        tool_call_id="call_0",
+        name="search_nodes",
+    )
+    req = ChatRequest(
+        messages=(_msg("user", "q"), assistant, result), model="x", params={"tools": TOOLS}
+    )
+    _, sent = await _collect_streaming(req, ["data: [DONE]"])
+    assert sent["messages"] == [
+        {"role": "user", "content": "q"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_0",
+                    "type": "function",
+                    "function": {"name": "search_nodes", "arguments": '{"q": "x"}'},
+                },
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "timeline", "arguments": "{}"},
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_0",
+            "content": '{"results": []}',
+            "name": "search_nodes",
+        },
+    ]
+
+
+def test_openai_message_keeps_text_next_to_calls_and_omits_an_unset_name():
+    said = ChatMessage(
+        id="a",
+        session_id="s",
+        role=ChatRole.ASSISTANT,
+        content="Looking that up.",
+        created_at=datetime.now(),
+        tool_calls=(ToolCall(id="c", name="search_nodes"),),
+    )
+    assert openai_message(said)["content"] == "Looking that up."
+    nameless = ChatMessage(
+        id="t",
+        session_id="s",
+        role=ChatRole.TOOL,
+        content="r",
+        created_at=datetime.now(),
+        tool_call_id="c",
+    )
+    assert openai_message(nameless) == {"role": "tool", "tool_call_id": "c", "content": "r"}
+    assert openai_message(_msg("user", "q")) == {"role": "user", "content": "q"}
+
+
+@pytest.mark.asyncio
+async def test_response_format_is_forwarded_only_when_set():
+    fmt = {"type": "json_object"}
+    req = ChatRequest(messages=(_msg("user", "q"),), model="x", params={"response_format": fmt})
+    _, sent = await _collect_streaming(req, ["data: [DONE]"])
+    assert sent["response_format"] == fmt
+
+    plain = ChatRequest(messages=(_msg("user", "q"),), model="x", params={"max_tokens": 5})
+    _, sent = await _collect_streaming(plain, ["data: [DONE]"])
+    assert "response_format" not in sent
+
+
+def test_the_transport_declares_structured_tool_messages():
+    assert _chat_via_cliproxy.structured_tool_messages is True  # type: ignore[attr-defined]
+
+
+# --- backends close the cliproxy stream when their consumer stops ----------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("module", "cls", "patched"),
+    [
+        ("codex", "CodexBackend", "ai_accounts_core.backends.codex._chat_via_cliproxy"),
+        # claude imports the transport at call time, so it is patched at the source.
+        ("claude", "ClaudeBackend", "ai_accounts_core.backends._cliproxy_chat._chat_via_cliproxy"),
+        ("opencode", "OpenCodeBackend", "ai_accounts_core.backends.opencode._chat_via_cliproxy"),
+        (
+            "antigravity",
+            "AntigravityBackend",
+            "ai_accounts_core.backends.antigravity._chat_via_cliproxy",
+        ),
+        ("kimi", "KimiBackend", "ai_accounts_core.backends.kimi._chat_via_cliproxy"),
+    ],
+)
+async def test_closing_a_backend_stream_closes_the_cliproxy_stream_now(
+    module: str, cls: str, patched: str, tmp_path
+):
+    """A consumer that stops at `done` closes the backend's generator. The
+    cliproxy stream inside it (and its httpx client) must close in that same
+    call, not later from the event loop's async-generator finalizer."""
+    import importlib
+
+    from ai_accounts_core.protocols.backend import ChatStreamEvent
+
+    closed: list[str] = []
+
+    async def _fake_transport(request):
+        try:
+            yield ChatStreamEvent(kind="token", payload="hi")
+            yield ChatStreamEvent(kind="done", payload={})
+            yield ChatStreamEvent(kind="token", payload="never read")
+        finally:
+            closed.append("closed")
+
+    backend = getattr(importlib.import_module(f"ai_accounts_core.backends.{module}"), cls)()
+    req = ChatRequest(messages=(_msg("user", "hi"),), model="x")
+    with patch(patched, _fake_transport):
+        stream = backend.chat(req, b"", isolation_dir=tmp_path)
+        async for event in stream:
+            if event.kind == "done":
+                break
+        await stream.aclose()
+        assert closed == ["closed"]
